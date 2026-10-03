@@ -182,6 +182,19 @@ def summary(session: Session, seconds: float) -> list:
     return lines
 
 
+def restart_note(source, seconds_away) -> str:
+    """After a dropout: did the panda restart (power), or did only the USB link drop?"""
+    uptime = getattr(source, "uptime", None)
+    if uptime is None:
+        return ""
+    volts = getattr(source, "voltage", None)
+    supply = f", supply {volts:.2f} V" if volts else ""
+    if uptime <= seconds_away + 5:
+        return (f"The panda had restarted ({uptime} s since power-up{supply}): it lost power or reset. "
+                "On USB power alone, check the cable and the laptop's USB power settings.")
+    return f"The panda kept running ({uptime} s since power-up{supply}): only the USB link dropped."
+
+
 class _Stop:
     requested = False
 
@@ -246,10 +259,11 @@ def capture(open_source, opts: CaptureOptions, console: Console = None, keys: Ke
                         raise SourceError(f"{e}; couldn't reconnect within {opts.reconnect_seconds:g} s") from None
                     session.dropouts += 1
                     back = time.monotonic() - t0
+                    why = restart_note(source, back - last_frame)
                     w.write(f"# reconnected ({t0_unix + back:.6f}), {back - last_frame:.1f} s without frames: "
-                            f"{source.description}\n")
+                            f"{source.description}" + (f". {why}" if why else "") + "\n")
                     w.flush()
-                    console.line("  Reconnected; still recording to the same file.")
+                    console.line("  Reconnected; still recording to the same file." + (f" {why}" if why else ""))
                     stalled = True  # the next frame closes the gap with a stall-ended line
                     last_overflow = None
                     continue

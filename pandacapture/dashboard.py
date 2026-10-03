@@ -20,7 +20,9 @@ and GET /maps, /captures, /match (the running or last match: progress and result
 
 import collections
 import datetime as dt
+import itertools
 import json
+import queue
 import tempfile
 import threading
 import time
@@ -28,7 +30,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
-from .capture import RollingLog, candump_line, default_out_dir
+from .capture import RollingLog, candump_line, default_out_dir, restart_note
 from .firmware import bundled_dir
 from .signals import Evaluator, MapError, builtin_maps, load_map
 from .sources import SourceError
@@ -38,6 +40,7 @@ PUSH_EVERY = 0.1        # normal mode
 STATUS_EVERY = 0.5      # high-resolution mode: status alongside the samples
 SAMPLE_BUFFER = 50000   # samples kept for high-resolution clients that fall behind
 RECONNECT_EVERY = 2.0
+QUEUE_BATCHES = 200000  # USB reads waiting to be decoded (minutes of a busy bus) before any are dropped
 MAX_UPLOAD = 20 * 1024 * 1024
 
 
@@ -59,6 +62,7 @@ class LiveState:
         self.recording = ""
         self.recording_since = None
         self.markers = 0
+        self.dropped = 0       # USB reads dropped because decoding fell minutes behind
         self.map_version = 0
         self._rate_mark = (time.monotonic(), 0)
         self.fps = 0.0
@@ -117,10 +121,13 @@ class LiveState:
                 self.new_samples.wait(timeout)
             if self.seq <= seq:
                 return [], seq, 0
-            oldest = self.samples[0][0] if self.samples else self.seq + 1
-            lost = max(0, oldest - seq - 1)
-            out = [(k, round(v, 4), round(t, 4)) for n, k, v, t in self.samples if n > seq]
-            return out, self.seq, lost
+            new = self.seq - seq
+            take = min(new, len(self.samples))
+            # walk back from the newest: only the samples this client hasn't had, never the whole buffer
+            items = list(itertools.islice(reversed(self.samples), take))
+            last = self.seq
+        items.reverse()
+        return [(k, round(v, 4), round(t, 4)) for _, k, v, t in items], last, new - take
 
     def info(self) -> dict:
         now = time.monotonic()
@@ -130,7 +137,7 @@ class LiveState:
                 self.fps = (self.frames - n0) / (now - t0)
                 self._rate_mark = (now, self.frames)
             return {"frames": self.frames, "fps": round(self.fps), "buses": dict(self.bus_frames),
-                    "status": self.status, "error": self.error, "source": self.source,
+                    "status": self.status, "error": self.error, "source": self.source, "dropped": self.dropped,
                     "recording": self.recording,
                     "recording_for": round(now - self.recording_since) if self.recording_since else None,
                     "markers": self.markers, "map_version": self.map_version, "map_name": self.map.name}
@@ -190,19 +197,28 @@ class Recorder:
 
 
 class Reader(threading.Thread):
-    """Reads the source into the LiveState (reopening it when it fails), and records while asked."""
+    """Drains the source in a thread of its own, and decodes and records in a second one.
 
-    def __init__(self, open_source, state: LiveState, record_dir=None, record=False, split_mb=100.0):
+    The first thread only reads the panda and queues what it gets, so nothing else (pages being
+    served, the recording's disk writes, a slow browser) can hold up reading the panda. The second
+    takes from the queue in order: it updates the LiveState and writes the recording. Notes for the
+    recording (markers, errors) go through the same queue, so the recording keeps its order.
+    """
+
+    def __init__(self, open_source, state: LiveState, record_dir=None, record=False, split_mb=100.0, log=print):
         super().__init__(daemon=True, name="pandacapture-reader")
         self.split_mb = split_mb
         self.open_source = open_source
         self.state = state
+        self.log = log
         self.stop_event = threading.Event()
+        self.queue = queue.Queue(maxsize=QUEUE_BATCHES)
         self.record_dir = Path(record_dir) if record_dir else default_out_dir()
         self.recorder = None
         self.rec_lock = threading.Lock()
         self.description = "waiting for the source"
         self.saved = []   # captures recorded this session
+        self.processor = threading.Thread(target=self._process, daemon=True, name="pandacapture-decoder")
         if record:
             self.start_recording()
 
@@ -233,16 +249,28 @@ class Reader(threading.Thread):
         with self.rec_lock:
             if self.recorder is None:
                 return None
-            with self.state.lock:
-                self.state.markers += 1
-                n = self.state.markers
-            self.recorder.note(f"marker {n} ({time.time():.6f})")
-            return n
+        with self.state.lock:
+            self.state.markers += 1
+            n = self.state.markers
+        self._note(f"marker {n} ({time.time():.6f})")
+        return n
 
-    # ---- reading ----
+    def _note(self, text):
+        """A comment line for the recording, in order with the frames around it."""
+        self._put(("note", text))
+
+    def _put(self, item):
+        try:
+            self.queue.put_nowait(item)
+        except queue.Full:
+            with self.state.lock:
+                self.state.dropped += 1
+
+    # ---- reading the source (this thread) ----
 
     def run(self):
-        source = None
+        self.processor.start()
+        source, lost_at = None, None
         while not self.stop_event.is_set():
             if source is None:
                 try:
@@ -254,31 +282,50 @@ class Reader(threading.Thread):
                 self.description = source.description
                 with self.state.lock:
                     self.state.source = source.description
-                with self.rec_lock:
-                    if self.recorder:
-                        self.recorder.note(f"source: {source.description}")
+                why = restart_note(source, time.monotonic() - lost_at) if lost_at is not None else ""
+                if lost_at is not None:
+                    self.log(f"[{_clock()}] Reconnected after {time.monotonic() - lost_at:.1f} s. {why}")
+                    lost_at = None
+                self._note(f"source: {source.description}" + (f". {why}" if why else ""))
                 self._status("live", "")
             try:
                 frames = source.read()
             except SourceError as e:
-                with self.rec_lock:
-                    if self.recorder:
-                        self.recorder.note(f"adapter error: {e} ({time.time():.6f})")
+                lost_at = time.monotonic()
+                self.log(f"[{_clock()}] Panda error: {e}. Reconnecting every {RECONNECT_EVERY:g} s...")
+                self._note(f"adapter error: {e} ({time.time():.6f})")
                 source.close()
                 source = None
                 self._status("disconnected", f"{e} (reconnecting)")
                 continue
             if frames:
-                self.state.feed(frames, time.monotonic())
-                with self.rec_lock:
-                    if self.recorder and self.recorder.write(frames, time.time()):
-                        with self.state.lock:
-                            self.state.recording = str(self.recorder.path)
+                self._put(("frames", frames, time.monotonic(), time.time()))
             else:
                 time.sleep(0.001)
         if source is not None:
             source.close()
+        self._put(("stop",))
+        self.processor.join(timeout=5)
         self.stop_recording()
+
+    # ---- decoding and recording (the second thread) ----
+
+    def _process(self):
+        while True:
+            item = self.queue.get()
+            if item[0] == "stop":
+                return
+            if item[0] == "frames":
+                _, frames, mono, unix = item
+                self.state.feed(frames, mono, unix)
+                with self.rec_lock:
+                    if self.recorder and self.recorder.write(frames, unix):
+                        with self.state.lock:
+                            self.state.recording = str(self.recorder.path)
+            else:
+                with self.rec_lock:
+                    if self.recorder:
+                        self.recorder.note(item[1])
 
     def _status(self, status, error):
         with self.state.lock:
@@ -287,6 +334,10 @@ class Reader(threading.Thread):
 
     def stop(self):
         self.stop_event.set()
+
+
+def _clock():
+    return dt.datetime.now().strftime("%H:%M:%S")
 
 
 class MatchJob:
@@ -491,10 +542,11 @@ class Dashboard:
     """The reader thread plus the web server, started and stopped together."""
 
     def __init__(self, open_source, address_map, host="127.0.0.1", port=8765, record=False, record_dir=None,
-                 split_mb=100.0):
+                 split_mb=100.0, log=print):
         self.state = LiveState(address_map)
         self.stopping = threading.Event()
-        self.reader = Reader(open_source, self.state, record_dir=record_dir, record=record, split_mb=split_mb)
+        self.reader = Reader(open_source, self.state, record_dir=record_dir, record=record, split_mb=split_mb,
+                             log=log)
         self.match = MatchJob()
         self.server = ThreadingHTTPServer((host, port), make_handler(self))
         self.server.daemon_threads = True

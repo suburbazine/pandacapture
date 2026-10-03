@@ -147,8 +147,13 @@ class PandaSource:
         if self.setup.obd:
             pd.set_obd(True)
         want = p.SAFETY_NOOUTPUT if self.setup.mode == "ack" else p.SAFETY_SILENT
+        self.uptime = None   # seconds the panda had been running when opened; resets if it restarted
+        self.voltage = None
         try:
-            mode = pd.health()["safety_mode"]
+            health = pd.health()
+            mode = health["safety_mode"]
+            self.uptime = health["uptime_s"]
+            self.voltage = health["voltage_mv"] / 1000
         except UsbError:
             # Older firmware: its health packet isn't one PandaCapture reads, so trust the request
             mode = want

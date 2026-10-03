@@ -292,3 +292,38 @@ def test_find_signals_from_the_page(tmp_path):
                 assert best["entry"]["id"] == "0x123" and best["entry"]["source"] == "observed"
     finally:
         dash.stop()
+
+
+def test_restart_note_tells_power_from_usb():
+    from types import SimpleNamespace
+    from pandacapture.capture import restart_note
+    restarted = restart_note(SimpleNamespace(uptime=3, voltage=4.8), seconds_away=4.0)
+    assert "restarted" in restarted and "4.80 V" in restarted
+    assert "only the USB link" in restart_note(SimpleNamespace(uptime=900, voltage=None), seconds_away=4.0)
+    assert restart_note(SimpleNamespace(), seconds_away=4.0) == ""
+
+
+def test_dropout_is_logged_and_recorded(tmp_path, monkeypatch):
+    monkeypatch.setattr("pandacapture.dashboard.RECONNECT_EVERY", 0.2)
+    opened = []
+
+    def open_source():
+        src = SimulatedSource(dropout_at=0.4 if not opened else 0)
+        src.uptime = 2 if opened else 500          # second open: the panda had restarted
+        opened.append(src)
+        return src
+
+    lines = []
+    dash = Dashboard(open_source, parse_map(TEST_MAP), port=0, record=True, record_dir=tmp_path, log=lines.append)
+    dash.start()
+    try:
+        for _ in range(100):
+            if any("Reconnected" in x for x in lines):
+                break
+            time.sleep(0.1)
+    finally:
+        dash.stop()
+    assert any("Panda error" in x for x in lines)
+    assert any("Reconnected after" in x and "restarted" in x for x in lines), lines
+    rec = "".join(p.read_text(encoding="utf-8") for p in dash.reader.saved)
+    assert "# adapter error: simulated dropout" in rec and "The panda had restarted" in rec
