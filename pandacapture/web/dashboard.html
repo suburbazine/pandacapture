@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>PandaCapture Dashboard</title>
 <style>
+  /* Dark by default: the page is made for a car at night. The light theme overrides the same tokens. */
   :root {
     --bg: #0b0e13;
     --panel: #141922;
@@ -21,7 +22,11 @@
     --blue: #4fb3ff;
     --amber: #ffb020;
     --red: #ff4d4f;
-    --radius: 14px;
+    --radius: 12px;
+    --gap: 10px;
+    --pad: 16px;
+    --ctl: 40px;           /* control height: big enough to tap in a moving car */
+    --value: 30px;         /* the big number on a tile */
     color-scheme: dark;
   }
   :root[data-theme="light"] {
@@ -50,59 +55,187 @@
     color: var(--text);
     font: 15px/1.35 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
   }
+  /* Lamp and level colours, set once per element so the rules below can share them */
+  .c-red { --lc: var(--red); }
+  .c-amber { --lc: var(--amber); }
+  .c-green { --lc: var(--green); }
+  .c-blue { --lc: var(--blue); }
+  .lvl-warn { --lc: var(--warn); }
+  .lvl-alert { --lc: var(--alert); }
+
+  /* ---- header: title and status on one row, controls on the next ---- */
   header {
     position: sticky; top: 0; z-index: 2;
-    display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px;
-    padding: 12px 16px;
-    background: color-mix(in srgb, var(--bg) 88%, transparent);
+    display: flex; flex-direction: column; gap: 8px;
+    padding: 8px var(--pad) 10px;
+    background: color-mix(in srgb, var(--bg) 90%, transparent);
     backdrop-filter: blur(8px);
     border-bottom: 1px solid var(--line);
   }
-  .title { display: flex; flex-direction: column; min-width: 0; flex: 1 1 220px; }
-  .title strong { font-size: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bar { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; }
+  .title { display: flex; flex-direction: column; min-width: 0; flex: 1 1 160px; }
+  .title strong { font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .title span { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .strip { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .strip { display: flex; align-items: center; gap: 6px; margin-left: auto; }
   .pill {
     display: inline-flex; align-items: center; gap: 6px;
-    padding: 4px 10px; border-radius: 999px;
+    min-height: 26px; padding: 0 10px; border-radius: 999px;
     background: var(--panel-2); color: var(--muted);
     font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap;
   }
-  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); }
+  .dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--faint); }
+  .pill.live { color: var(--text); }
   .pill.live .dot { background: var(--green); box-shadow: 0 0 8px var(--green); }
   .pill.down { color: var(--alert); }
   .pill.down .dot { background: var(--alert); }
-  @keyframes blink { to { visibility: hidden; } }
-  .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; flex-basis: 100%; }
+
+  .controls { gap: 8px; }
+  .ctl-group { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .ctl-group.mode { margin-left: auto; }
   .ctl {
-    display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 14px;
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    min-height: var(--ctl); min-width: var(--ctl); padding: 0 14px;
     border: 1px solid var(--line); background: var(--panel); color: var(--text);
-    border-radius: 10px; font: inherit; font-size: 14px; cursor: pointer;
+    border-radius: 10px; font: inherit; font-size: 14px; white-space: nowrap; cursor: pointer;
   }
   .ctl:hover:not(:disabled) { border-color: var(--accent); }
   .ctl:disabled { opacity: .45; cursor: default; }
   .ctl.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-  .rec-btn .dot { width: 10px; height: 10px; background: var(--red); }
-  .rec-btn.on { border-color: var(--red); background: color-mix(in srgb, var(--red) 16%, var(--panel)); }
-  .rec-btn.on .dot { animation: blink 1.2s steps(2, start) infinite; }
-  .ctl.select { gap: 6px; padding-right: 6px; }
+  .ctl svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .ctl.icon { padding: 0 10px; }
+  .rec { font-weight: 600; }
+  .rec .dot { width: 10px; height: 10px; background: var(--red); }
+  .rec.on { border-color: var(--red); background: color-mix(in srgb, var(--red) 18%, var(--panel)); }
+  .rec.on .dot { animation: blink 1.2s steps(2, start) infinite; }
+  @keyframes blink { to { visibility: hidden; } }
+  .ctl.select { gap: 6px; padding-right: 6px; flex: 0 1 auto; }
   .ctl.select span { color: var(--muted); font-size: 12px; }
-  .ctl select { border: 0; background: transparent; color: var(--text); font: inherit; max-width: 46vw; }
+  .ctl select { min-width: 0; max-width: 220px; border: 0; background: transparent; color: var(--text); font: inherit; text-overflow: ellipsis; }
   .ctl select option { background: var(--panel); color: var(--text); }
-  .seg button { min-height: 40px; font-size: 13px; padding: 0 12px; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .seg button {
+    min-height: calc(var(--ctl) - 2px); padding: 0 12px; border: 0;
+    background: var(--panel); color: var(--muted); font: inherit; font-size: 14px; white-space: nowrap; cursor: pointer;
+  }
+  .seg button + button { border-left: 1px solid var(--line); }
+  .seg button:hover { color: var(--text); }
+  .seg button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+
+  .banner {
+    margin: 12px var(--pad) 0; padding: 10px 14px; border-radius: 10px;
+    background: color-mix(in srgb, var(--alert) 15%, var(--panel)); color: var(--text);
+    border: 1px solid color-mix(in srgb, var(--alert) 45%, transparent);
+    display: none;
+  }
+  .banner.show { display: block; }
+
+  /* ---- page body: attention strip, gauges, then the groups ---- */
+  main { padding: 4px var(--pad) 32px; max-width: 1400px; margin: 0 auto; }
+  .attention { --lc: var(--muted); display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 2px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 12px 0 10px;
+    border-radius: 999px; font-size: 14px; font-weight: 600; color: var(--text);
+    background: color-mix(in srgb, var(--lc) 18%, var(--panel));
+    border: 1px solid color-mix(in srgb, var(--lc) 55%, transparent);
+  }
+  .chip .dot { background: var(--lc); box-shadow: 0 0 8px var(--lc); }
+  .chip .val { color: var(--lc); font-variant-numeric: tabular-nums; }
+  .band { margin-top: 12px; }
+  .grid { display: grid; gap: var(--gap); grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
+  .grid.gauges { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
+  .grid.lights { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }
+  .grid + .grid { margin-top: var(--gap); }
+
+  .groups-bar { display: flex; align-items: center; gap: 4px; margin: 18px 0 0; }
+  .groups-bar span { flex: 1; font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); }
+  .link { min-height: 36px; padding: 0 10px; border: 0; background: none; color: var(--accent); font: inherit; font-size: 13px; cursor: pointer; border-radius: 8px; }
+  .link:hover { background: var(--panel); }
+  details.group { border-top: 1px solid var(--line); }
+  details.group > summary {
+    list-style: none; display: flex; align-items: center; gap: 10px;
+    min-height: 44px; padding: 2px 0; cursor: pointer; user-select: none;
+  }
+  details.group > summary::-webkit-details-marker { display: none; }
+  details.group > summary:hover .gname { color: var(--text); }
+  .chev { flex: none; width: 8px; height: 8px; margin: 0 4px 3px 2px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(-45deg); transition: transform .15s; }
+  details[open] > summary .chev { transform: rotate(45deg); margin-bottom: 6px; }
+  .gname { font-size: 13px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .gcount { color: var(--faint); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .gbadge { display: none; margin-left: auto; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; color: var(--lc); background: color-mix(in srgb, var(--lc) 16%, transparent); }
+  .gbadge.show { display: inline-block; }
+  .gbadge.on { --lc: var(--green); }
+  details.group > .body { padding: 4px 0 16px; }
+
+  /* ---- tiles ---- */
+  .tile {
+    position: relative; min-width: 0; padding: 10px 12px 12px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  }
+  .tile .head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+  .tile .label { min-width: 0; color: var(--muted); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tile .src { flex: none; font-size: 10px; letter-spacing: .04em; color: var(--faint); text-transform: uppercase; text-align: right; }
+  .tile .hz { display: none; font-variant-numeric: tabular-nums; text-transform: none; letter-spacing: 0; }
+  body.high .tile .hz { display: block; }
+  .num { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0 6px; margin-top: 4px; }
+  .num .v { font-size: var(--value); font-weight: 650; line-height: 1.2; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+  .num .v.txt { font-size: 22px; }     /* a word (gear, drive mode) rather than a number */
+  .num .u { color: var(--muted); font-size: 13px; }
+  .tile.lvl-warn, .tile.lvl-alert { border-color: color-mix(in srgb, var(--lc) 60%, var(--line)); }
+  .tile.lvl-alert { background: color-mix(in srgb, var(--alert) 10%, var(--panel)); }
+  .lvl-warn .v, .lvl-warn .gv, .lvl-alert .v, .lvl-alert .gv { color: var(--lc); fill: var(--lc); }
+  .gauge svg { display: block; width: 100%; height: auto; margin-top: 2px; }
+  .gauge .track { stroke: var(--panel-2); }
+  .gauge .val { stroke: var(--ok); }
+  .gauge.lvl-warn .val, .gauge.lvl-alert .val { stroke: var(--lc); }
+  .gauge .zone-warn { stroke: var(--warn); opacity: .6; }
+  .gauge .zone-alert { stroke: var(--alert); opacity: .7; }
+  .gv { fill: var(--text); font-size: var(--value); font-weight: 650; font-variant-numeric: tabular-nums; }
+  .gu { fill: var(--muted); font-size: 12px; }
+  .gm { fill: var(--faint); font-size: 10px; font-variant-numeric: tabular-nums; }
+  canvas.trace { display: none; width: 100%; height: 34px; margin-top: 6px; }
+  body.high canvas.trace { display: block; }
+
+  /* Lamps: a hollow ring when off, a filled glowing one with a tinted tile when on */
+  .light { display: flex; align-items: center; gap: 12px; min-height: 64px; padding: 10px 14px; }
+  .lamp { flex: none; width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--faint); transition: background .15s, box-shadow .15s; }
+  .light .label { white-space: normal; line-height: 1.25; }
+  .light .sub { color: var(--faint); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .light.on { background: color-mix(in srgb, var(--lc) 14%, var(--panel)); border-color: color-mix(in srgb, var(--lc) 55%, var(--line)); }
+  .light.on .lamp { background: var(--lc); border-color: var(--lc); box-shadow: 0 0 14px var(--lc); }
+  .light.on .label { color: var(--text); font-weight: 600; }
+  .light.on .sub { color: var(--muted); }
+
+  /* Stale and no-data tiles look different from live ones, not just dimmer: dashed edge, grey value, a tag */
+  .tile.stale { border-style: dashed; }
+  .tile.stale .src { visibility: hidden; }
+  .tile.stale::after, .tile.nodata::after {
+    content: "stale"; position: absolute; top: 9px; right: 10px;
+    padding: 1px 7px; border-radius: 999px; font-size: 10px; letter-spacing: .04em; text-transform: uppercase;
+    color: var(--muted); background: var(--panel-2);
+  }
+  .tile.nodata::after { content: "no data"; color: var(--faint); }
+  .tile.stale .v, .tile.stale .gv, .tile.stale .label { color: var(--faint); fill: var(--faint); }
+  .tile.stale .val { stroke: var(--faint); opacity: .5; }
+  .tile.nodata .val { visibility: hidden; }
+  .light.stale .lamp { border-style: dashed; background: transparent; box-shadow: none; }
+
+  footer { color: var(--faint); font-size: 12px; padding: 0 var(--pad) 24px; max-width: 1400px; margin: 0 auto; }
+
+  /* ---- Find signals dialog ---- */
   dialog {
     width: min(960px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto;
     background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: var(--radius);
     padding: 16px 20px 20px;
   }
   dialog::backdrop { background: rgb(0 0 0 / .55); }
-  .dlg-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .dlg-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0; }
   .dlg-head h2 { margin: 0; font-size: 18px; }
   .hint { color: var(--muted); font-size: 13px; }
   .field { margin: 12px 0; border: 0; padding: 0; }
   .field > label:not(.radio), .field legend { display: block; color: var(--muted); font-size: 12px; margin-bottom: 6px; text-transform: uppercase; letter-spacing: .06em; }
-  .field select, .field input[type=file] { width: 100%; min-height: 40px; background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; font: inherit; }
+  .field select, .field input[type=file] { width: 100%; min-height: var(--ctl); background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; font: inherit; }
   .radio { display: block; margin: 8px 0; }
   .radio small { color: var(--muted); }
   .dlg-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
@@ -116,104 +249,56 @@
   .tag { display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 11px; background: var(--panel-2); color: var(--muted); }
   .tag.warn { color: var(--warn); }
   .tag.known { color: var(--green); }
-  .copy { min-height: 30px; padding: 0 10px; font-size: 12px; }
-  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
-  .seg button {
-    border: 0; background: var(--panel); color: var(--muted); font: inherit; font-size: 12px;
-    padding: 5px 10px; cursor: pointer;
+  .copy { min-height: 32px; padding: 0 10px; font-size: 12px; }
+
+  /* ---- narrow screens: a phone in a cradle ---- */
+  @media (max-width: 720px) {
+    .ctl .txt, .seg .txt, .ctl.select span { display: none; }
+    .ctl.select { flex: 1 1 100px; }
+    .ctl select { width: 100%; max-width: none; }
+    .ctl-group.tools { flex: 1 1 100%; order: 3; }
   }
-  .seg button[aria-pressed="true"] { background: var(--accent); color: #fff; }
-  button.icon {
-    border: 1px solid var(--line); background: var(--panel); color: var(--text);
-    border-radius: 8px; padding: 5px 10px; font: inherit; font-size: 12px; cursor: pointer;
-  }
-  button.icon:hover, .seg button:hover { border-color: var(--accent); }
-  .banner {
-    margin: 12px 16px 0; padding: 10px 14px; border-radius: 10px;
-    background: color-mix(in srgb, var(--alert) 15%, var(--panel)); color: var(--text);
-    border: 1px solid color-mix(in srgb, var(--alert) 45%, transparent);
-    display: none;
-  }
-  .banner.show { display: block; }
-  main { padding: 4px 16px 32px; max-width: 1400px; margin: 0 auto; }
-  section h2 {
-    margin: 22px 0 10px; font-size: 12px; font-weight: 600; letter-spacing: .08em;
-    text-transform: uppercase; color: var(--muted);
-  }
-  .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
-  .grid.gauges { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
-  .grid.lights { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
-  .tile {
-    position: relative; background: var(--panel); border: 1px solid var(--line);
-    border-radius: var(--radius); padding: 12px 14px; min-width: 0;
-    transition: opacity .3s;
-  }
-  .tile.stale { opacity: .45; }
-  .tile .label { color: var(--muted); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 44px; }
-  .tile .src {
-    position: absolute; top: 10px; right: 12px; font-size: 10px; letter-spacing: .04em;
-    color: var(--faint); text-transform: uppercase; text-align: right;
-  }
-  .tile .hz { display: none; font-variant-numeric: tabular-nums; text-transform: none; letter-spacing: 0; }
-  body.high .tile .hz { display: block; }
-  .num { display: flex; align-items: baseline; gap: 6px; margin-top: 6px; }
-  .num .v { font-size: 30px; font-weight: 650; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
-  .num .u { color: var(--muted); font-size: 13px; }
-  .lvl-warn .v, .lvl-warn .gv { color: var(--warn); fill: var(--warn); }
-  .lvl-alert .v, .lvl-alert .gv { color: var(--alert); fill: var(--alert); }
-  .lvl-alert { border-color: color-mix(in srgb, var(--alert) 55%, var(--line)); }
-  .gauge svg { display: block; width: 100%; height: auto; margin-top: 2px; }
-  .gauge .track { stroke: var(--panel-2); }
-  .gauge .val { stroke: var(--ok); }
-  .gauge.nodata .val { visibility: hidden; }
-  .gauge.lvl-warn .val { stroke: var(--warn); }
-  .gauge.lvl-alert .val { stroke: var(--alert); }
-  .gauge .zone-warn { stroke: var(--warn); opacity: .6; }
-  .gauge .zone-alert { stroke: var(--alert); opacity: .7; }
-  .gv { fill: var(--text); font-size: 30px; font-weight: 650; font-variant-numeric: tabular-nums; }
-  .gu { fill: var(--muted); font-size: 12px; }
-  .gm { fill: var(--faint); font-size: 10px; font-variant-numeric: tabular-nums; }
-  canvas.trace { display: none; width: 100%; height: 34px; margin-top: 6px; }
-  body.high canvas.trace { display: block; }
-  .light { display: flex; align-items: center; gap: 12px; padding: 14px; }
-  .lamp {
-    flex: none; width: 26px; height: 26px; border-radius: 50%;
-    background: var(--panel-2); border: 1px solid var(--line);
-    transition: background .15s, box-shadow .15s;
-  }
-  .light.on .lamp { border-color: transparent; }
-  .light.on.c-red .lamp { background: var(--red); box-shadow: 0 0 16px var(--red); }
-  .light.on.c-amber .lamp { background: var(--amber); box-shadow: 0 0 16px var(--amber); }
-  .light.on.c-green .lamp { background: var(--green); box-shadow: 0 0 16px var(--green); }
-  .light.on.c-blue .lamp { background: var(--blue); box-shadow: 0 0 16px var(--blue); }
-  .light .label { color: var(--text); white-space: normal; padding-right: 0; }
-  .light .sub { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
-  footer { color: var(--faint); font-size: 12px; padding: 0 16px 24px; max-width: 1400px; margin: 0 auto; }
   @media (max-width: 480px) {
-    .num .v { font-size: 26px; }
-    .grid, .grid.gauges { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    :root { --pad: 12px; --gap: 8px; --value: 26px; }
+    .title span { display: none; }
+    .strip .pill { padding: 0 8px; }
+    .grid, .grid.gauges, .grid.lights { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .tile { padding: 8px 10px 10px; }
+    .light { padding: 8px 10px; gap: 10px; }
   }
 </style>
 </head>
 <body>
 <header>
-  <div class="title"><strong id="mapName">PandaCapture</strong><span id="vehicle">Loading address map…</span></div>
-  <div class="strip">
-    <span class="pill" id="status"><span class="dot"></span><span id="statusText">connecting</span></span>
-    <span class="pill" id="rate">0 frames/s</span>
-    <span class="pill" id="sps" hidden>0 samples/s</span>
+  <div class="bar">
+    <div class="title"><strong id="mapName">PandaCapture</strong><span id="vehicle">Loading address map…</span></div>
+    <div class="strip">
+      <span class="pill" id="status"><span class="dot"></span><span id="statusText">connecting</span></span>
+      <span class="pill" id="rate">0 frames/s</span>
+      <span class="pill" id="sps" hidden>0 samples/s</span>
+    </div>
   </div>
-  <div class="controls">
-    <button class="ctl rec-btn" id="recBtn" type="button" title="Start or stop recording a capture"><span class="dot"></span><span id="recText">Record</span></button>
-    <button class="ctl" id="markBtn" type="button" title="Marker into the recording (key M)" disabled>Marker</button>
-    <label class="ctl select" title="Address map"><span>Map</span><select id="mapSel" aria-label="Address map"></select></label>
-    <button class="ctl" id="findBtn" type="button" title="Find which CAN fields carry which values">Find signals</button>
-    <span class="seg" role="group" aria-label="Update rate">
-      <button type="button" id="modeNormal" aria-pressed="true" title="Latest values, 10 times a second">Normal</button>
-      <button type="button" id="modeHigh" aria-pressed="false" title="Every sample, as fast as it's received">High resolution</button>
-    </span>
-    <button class="ctl" id="theme" type="button" title="Switch light/dark">Theme</button>
-    <button class="ctl" id="full" type="button" title="Full screen">Full screen</button>
+  <div class="bar controls">
+    <div class="ctl-group">
+      <button class="ctl rec" id="recBtn" type="button" title="Start or stop recording a capture"><span class="dot"></span><span id="recText">Record</span></button>
+      <button class="ctl" id="markBtn" type="button" title="Marker into the recording (key M)" disabled>Marker</button>
+    </div>
+    <div class="ctl-group mode">
+      <span class="seg" role="group" aria-label="Update rate">
+        <button type="button" id="modeNormal" aria-pressed="true" title="Latest values, 10 times a second">Normal</button>
+        <button type="button" id="modeHigh" aria-pressed="false" title="Every sample, as fast as it's received">High<span class="txt"> resolution</span></button>
+      </span>
+    </div>
+    <div class="ctl-group tools">
+      <label class="ctl select" title="Address map"><span>Map</span><select id="mapSel" aria-label="Address map"></select></label>
+      <button class="ctl" id="findBtn" type="button" title="Find which CAN fields carry which values">Find signals</button>
+      <button class="ctl icon" id="theme" type="button" title="Switch light/dark" aria-label="Switch light/dark theme">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9c0-.5 0-1-.1-1.4A6 6 0 0 1 13.4 3.1C13 3 12.5 3 12 3z"/></svg><span class="txt">Theme</span>
+      </button>
+      <button class="ctl icon" id="full" type="button" title="Full screen" aria-label="Full screen">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg><span class="txt">Full screen</span>
+      </button>
+    </div>
   </div>
 </header>
 <dialog id="findDlg" aria-labelledby="findTitle">
@@ -241,19 +326,37 @@
   <div id="findResults"></div>
 </dialog>
 <div class="banner" id="banner"></div>
-<main id="main"></main>
+<main id="main">
+  <div class="attention" id="attention" hidden></div>
+  <section class="band" id="gauges" hidden><div class="grid gauges"></div></section>
+  <div class="groups-bar" id="groupsBar" hidden><span>Details</span>
+    <button class="link" id="openAll" type="button">Expand all</button>
+    <button class="link" id="closeAll" type="button">Collapse all</button></div>
+  <div id="groups"></div>
+</main>
 <footer id="foot"></footer>
 
 <script>
 (() => {
   "use strict";
-  const $ = (id) => document.getElementById(id);
-  const STALE_MS = 1500, TRACE_MS = 10000;
-  const tiles = {};
-  const live = {};          // key -> {v, seen (ms), hist: [[ms, v]], count, hz}
-  let signals = [], byKey = {}, source = null, mode = "normal", lastStatus = {}, dirty = true;
+
+  // ---- page state ----
+  const STALE_MS = 1500;     // a value older than this is shown as stale (same as the server)
+  const TRACE_MS = 10000;    // the trace window in high-resolution mode
+  const MAX_POINTS = 2000;   // trace points kept per signal: a 100 Hz signal fills 1,000 in the window
+  const tiles = {};          // key -> tile (see the tile builders)
+  const live = {};           // key -> {v, seen (ms), hist: [[ms, v]], count, hz, level, on, shown}
+  const groups = {};         // group name -> {details, badge, badgeText}
+  let signals = [], source = null, mode = "normal", dirty = true;
   let recording = false, mapVersion = null;
+
+  // ---- small helpers ----
+  const $ = (id) => document.getElementById(id);
+  const root = document.documentElement;
   const clock = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  const fmt = (v, d) => (v === null || v === undefined) ? "--" :
+    Number(v).toLocaleString(undefined, { minimumFractionDigits: d, maximumFractionDigits: d });
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
   const post = (path, body, raw) => fetch(path, raw ? { method: "POST", body } :
     { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) })
     .then(async (r) => { const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || r.statusText); return j; });
@@ -261,32 +364,26 @@
     const b = $("banner"); b.textContent = text; b.classList.add("show");
     clearTimeout(flash.t); flash.t = setTimeout(() => b.classList.remove("show"), 4000);
   };
+  const css = (name) => getComputedStyle(root).getPropertyValue(name).trim();
 
-  // Theme and mode are remembered per browser where possible; dark by default (made for the car)
-  const root = document.documentElement;
+  // ---- remembered per browser: theme, update rate, which groups are open ----
   const remember = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
   const recall = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+  const openGroups = (() => { try { return JSON.parse(recall("pc-groups")) || {}; } catch (e) { return {}; } })();
+  const rememberGroup = (name, open) => { openGroups[name] = open; remember("pc-groups", JSON.stringify(openGroups)); };
+
   if (recall("pc-theme")) root.dataset.theme = recall("pc-theme");
   $("theme").onclick = () => {
     root.dataset.theme = root.dataset.theme === "light" ? "dark" : "light";
     remember("pc-theme", root.dataset.theme);
-    dirty = true;
+    dirty = true;   // traces take their colours from the theme
   };
   $("full").onclick = () => {
     if (document.fullscreenElement) document.exitFullscreen();
-    else document.documentElement.requestFullscreen?.();
+    else root.requestFullscreen?.();
   };
 
-  const fmt = (v, d) => (v === null || v === undefined) ? "--" :
-    Number(v).toLocaleString(undefined, { minimumFractionDigits: d, maximumFractionDigits: d });
-  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
-  const describe = (s) => `${s.label} (${s.key})\n` + (s.expr ? `= ${s.expr}` :
-    `ID ${s.id}, byte ${s.byte}` + (s.bit ? `, bit ${s.bit}` : "") +
-    `, ${s.bits || 8} bits, ${s.order || "little"}-endian\nx${s.scale ?? 1}` + (s.offset ? ` ${s.offset > 0 ? "+" : ""}${s.offset}` : "")) +
-    (s.unit ? ` ${s.unit}` : "") + `\nSource: ${s.source}` + (s.note ? `\n${s.note}` : "");
-  const labelFor = (s, v) => (s.labels && Number.isInteger(v)) ? s.labels[String(v)] : undefined;
-
-  // Same rules as the server's Signal.level() and light_on()
+  // ---- signal rules: the same as the server's Signal.level() and light_on() ----
   const level = (s, v) => {
     if ((s.alert_above != null && v > s.alert_above) || (s.alert_below != null && v < s.alert_below)) return "alert";
     if ((s.warn_above != null && v > s.warn_above) || (s.warn_below != null && v < s.warn_below)) return "warn";
@@ -294,7 +391,13 @@
   };
   const lightOn = (s, v) => (s.on_above != null || s.on_below != null)
     ? ((s.on_above != null && v > s.on_above) || (s.on_below != null && v < s.on_below)) : v !== 0;
+  const labelFor = (s, v) => (s.labels && Number.isInteger(v)) ? s.labels[String(v)] : undefined;
+  const describe = (s) => `${s.label} (${s.key})\n` + (s.expr ? `= ${s.expr}` :
+    `ID ${s.id}, byte ${s.byte}` + (s.bit ? `, bit ${s.bit}` : "") +
+    `, ${s.bits || 8} bits, ${s.order || "little"}-endian\nx${s.scale ?? 1}` + (s.offset ? ` ${s.offset > 0 ? "+" : ""}${s.offset}` : "")) +
+    (s.unit ? ` ${s.unit}` : "") + `\nSource: ${s.source}` + (s.note ? `\n${s.note}` : "");
 
+  // ---- tiles: each is {el, s, hz, canvas, show(v)} ----
   // Gauge: a 270-degree arc around (100, 90). pathLength=100 makes dash lengths percentages.
   const arc = (r) => {
     const a = (deg) => [100 + r * Math.cos(deg * Math.PI / 180), 90 + r * Math.sin(deg * Math.PI / 180)];
@@ -316,12 +419,16 @@
     return out;
   }
 
-  const head = (s) => `<div class="label">${esc(s.label)}</div><div class="src">${esc(s.source)}<div class="hz">–</div></div>`;
+  const head = (s) => `<div class="head"><div class="label">${esc(s.label)}</div><div class="src">${esc(s.source)}<div class="hz">–</div></div></div>`;
+  const tileEl = (s, cls) => {
+    const el = document.createElement("div");
+    el.className = `tile ${cls} stale nodata`;   // every tile starts without data
+    el.title = describe(s);
+    return el;
+  };
 
   function gaugeTile(s) {
-    const el = document.createElement("div");
-    el.className = "tile gauge stale nodata";
-    el.title = describe(s);
+    const el = tileEl(s, "gauge");
     el.innerHTML = head(s) + `
       <svg viewBox="0 0 200 172" role="img" aria-label="${esc(s.label)}">
         <path class="track" d="${ARC}" pathLength="100" fill="none" stroke-width="13" stroke-linecap="round" />
@@ -336,76 +443,108 @@
     return { el, s, hz: el.querySelector(".hz"), canvas: el.querySelector("canvas"), show(v) {
       text.textContent = fmt(v, s.decimals);
       val.setAttribute("stroke-dasharray", `${pct(s, v)} 200`);
-      el.classList.remove("nodata");
     }};
   }
 
   function numberTile(s) {
-    const el = document.createElement("div");
-    el.className = "tile stale";
-    el.title = describe(s);
+    const el = tileEl(s, "number");
     el.innerHTML = head(s) + `<div class="num"><span class="v">--</span><span class="u">${esc(s.unit || "")}</span></div>
       <canvas class="trace"></canvas>`;
     const v = el.querySelector(".v"), u = el.querySelector(".u");
     return { el, s, hz: el.querySelector(".hz"), canvas: el.querySelector("canvas"), show(x) {
       const label = labelFor(s, x);
       v.textContent = label ?? fmt(x, s.decimals);
+      v.classList.toggle("txt", label !== undefined);
       u.hidden = label !== undefined;
     }};
   }
 
   function lightTile(s) {
-    const el = document.createElement("div");
-    el.className = `tile light c-${s.color || "red"} stale`;
-    el.title = describe(s);
+    const el = tileEl(s, `light c-${s.color || "red"}`);
     const cond = s.on_above != null ? `on above ${s.on_above}${s.unit ? " " + s.unit : ""}` :
                  s.on_below != null ? `on below ${s.on_below}${s.unit ? " " + s.unit : ""}` : "";
-    el.innerHTML = `<div class="lamp"></div><div><div class="label">${esc(s.label)}</div><div class="sub">${esc(cond) || "&nbsp;"}</div></div>`;
+    el.innerHTML = `<div class="lamp"></div><div><div class="label">${esc(s.label)}</div>` +
+      (cond ? `<div class="sub">${esc(cond)}</div>` : "") + `</div>`;
     const sub = el.querySelector(".sub");
     return { el, s, show(v) {
-      el.classList.toggle("on", lightOn(s, v));
-      if (cond) sub.textContent = `${fmt(v, s.decimals)} ${s.unit || ""} · ${cond}`;
+      if (sub) sub.textContent = `${fmt(v, s.decimals)} ${s.unit || ""} · ${cond}`;
     }};
   }
 
+  // ---- building the page from the map ----
+  // Gauges go in one band at the top whatever their group: they are the driving values. Every
+  // group then gets a collapsible section for its numbers and lamps, in the map's order.
   function build(map) {
     $("mapName").textContent = map.name;
     $("vehicle").textContent = [map.vehicle, map.bitrate ? `${map.bitrate} kbit/s` : ""].filter(Boolean).join(" · ");
     document.title = `${map.name} · PandaCapture`;
     $("foot").textContent = map.notes || "";
     signals = map.signals;
-    byKey = Object.fromEntries(signals.map((s) => [s.key, s]));
-    const groups = new Map();
+
+    const make = (s) => {
+      const t = s.display === "gauge" ? gaugeTile(s) : s.display === "light" ? lightTile(s) : numberTile(s);
+      tiles[s.key] = t;
+      live[s.key] = { v: null, seen: 0, hist: [], count: 0, hz: 0, level: null, on: false, shown: false };
+      return t.el;
+    };
+    const gaugeGrid = $("gauges").querySelector(".grid");
+    gaugeGrid.innerHTML = "";
+    for (const s of signals) if (s.display === "gauge") gaugeGrid.appendChild(make(s));
+    $("gauges").hidden = !gaugeGrid.children.length;
+
+    const byGroup = new Map();
     for (const s of signals) {
+      if (s.display === "gauge") continue;
       const g = s.group || "Signals";
-      if (!groups.has(g)) groups.set(g, []);
-      groups.get(g).push(s);
+      if (!byGroup.has(g)) byGroup.set(g, []);
+      byGroup.get(g).push(s);
     }
-    const main = $("main");
-    main.innerHTML = "";
-    for (const [name, list] of groups) {
-      const sec = document.createElement("section");
-      sec.innerHTML = `<h2>${esc(name)}</h2>`;
-      for (const kind of ["gauge", "number", "light"]) {
+    const holder = $("groups");
+    holder.innerHTML = "";
+    for (const [name, list] of byGroup) {
+      const details = document.createElement("details");
+      details.className = "group";
+      details.open = openGroups[name] !== false;
+      details.innerHTML = `<summary><span class="chev"></span><span class="gname">${esc(name)}</span>
+        <span class="gcount">${list.length}</span><span class="gbadge"></span></summary><div class="body"></div>`;
+      const body = details.querySelector(".body");
+      for (const kind of ["number", "light"]) {
         const items = list.filter((s) => s.display === kind);
         if (!items.length) continue;
         const grid = document.createElement("div");
-        grid.className = "grid " + (kind === "gauge" ? "gauges" : kind === "light" ? "lights" : "");
-        for (const s of items) {
-          const t = kind === "gauge" ? gaugeTile(s) : kind === "light" ? lightTile(s) : numberTile(s);
-          tiles[s.key] = t;
-          live[s.key] = { v: null, seen: 0, hist: [], count: 0, hz: 0 };
-          grid.appendChild(t.el);
-        }
-        sec.appendChild(grid);
+        grid.className = "grid" + (kind === "light" ? " lights" : "");
+        for (const s of items) grid.appendChild(make(s));
+        body.appendChild(grid);
       }
-      main.appendChild(sec);
+      details.addEventListener("toggle", () => rememberGroup(name, details.open));
+      groups[name] = { details, badge: details.querySelector(".gbadge"), badgeText: "" };
+      for (const s of list) s._group = name;
+      holder.appendChild(details);
     }
+    $("groupsBar").hidden = byGroup.size < 2;
+  }
+  const setAll = (open) => { for (const [name, g] of Object.entries(groups)) { g.details.open = open; rememberGroup(name, open); } };
+  $("openAll").onclick = () => setAll(true);
+  $("closeAll").onclick = () => setAll(false);
+
+  // ---- attention strip: lit lamps and values in a warn or alert zone, above the gauges ----
+  const attention = { sig: "", vals: {} };
+  function showAttention(items) {
+    const sig = items.map((i) => i.key + ":" + i.cls).join(",");
+    const strip = $("attention");
+    if (sig !== attention.sig) {
+      attention.sig = sig;
+      attention.vals = {};
+      strip.innerHTML = items.map((i) => `<span class="chip ${i.cls}"><span class="dot"></span>${esc(i.label)}` +
+        (i.value !== undefined ? ` <span class="val" data-k="${esc(i.key)}"></span>` : "") + `</span>`).join("");
+      strip.querySelectorAll(".val").forEach((el) => attention.vals[el.dataset.k] = el);
+      strip.hidden = !items.length;
+    }
+    for (const i of items) if (i.value !== undefined) attention.vals[i.key].textContent = i.value;
   }
 
   // ---- incoming data ----
   function status(st) {
-    lastStatus = st;
     const ok = st.status === "live";
     $("status").className = "pill " + (ok ? "live" : st.status === "disconnected" ? "down" : "");
     $("statusText").textContent = ok ? "live" : st.status;
@@ -418,7 +557,7 @@
     $("markBtn").disabled = !recording;
     $("markBtn").textContent = st.markers ? `Marker (${st.markers})` : "Marker";
     if (mapVersion === null) mapVersion = st.map_version;
-    else if (st.map_version !== mapVersion) location.reload();
+    else if (st.map_version !== mapVersion) location.reload();   // the map changed: rebuild from scratch
     const banner = $("banner");
     banner.textContent = st.error || "";
     banner.classList.toggle("show", !!st.error);
@@ -437,10 +576,8 @@
     dirty = true;
   }
 
-  let sampleCount = 0;
   // Trace history is trimmed as samples arrive, not only when drawing: browsers stop drawing in
   // hidden tabs, and a trace trimmed only there would grow without limit.
-  const MAX_POINTS = 2000;   // per signal: a 100 Hz signal fills 1,000 in the 10 s window
   function trim(l, now) {
     let drop = 0;
     while (drop < l.hist.length && now - l.hist[drop][0] > TRACE_MS) drop++;
@@ -448,6 +585,7 @@
     if (drop > 0) l.hist.splice(0, drop);
   }
 
+  let sampleCount = 0;
   function samples(batch) {
     const now = performance.now();
     const touched = new Set();
@@ -470,8 +608,6 @@
   }
 
   // ---- drawing, once per screen refresh ----
-  function css(name) { return getComputedStyle(root).getPropertyValue(name).trim(); }
-
   function drawTrace(t, l, now) {
     const c = t.canvas;
     if (!c) return;
@@ -501,6 +637,8 @@
     g.stroke();
   }
 
+  // Tile values, levels and lamps are refreshed only when something arrived (dirty); staleness
+  // and the traces every frame.
   let rateMark = performance.now();
   function frame() {
     const now = performance.now();
@@ -512,6 +650,7 @@
       rateMark = now;
       dirty = true;
     }
+    const noticed = [], counts = {};
     for (const s of signals) {
       const t = tiles[s.key], l = live[s.key];
       if (!t || !l) continue;
@@ -519,21 +658,46 @@
       const stale = l.v === null || now - l.seen > STALE_MS;
       t.el.classList.toggle("stale", stale);
       if (l.v === null) continue;
+      if (!l.shown) { l.shown = true; t.el.classList.remove("nodata"); }
       if (dirty) {
         t.show(l.v);
-        l.level = s.display === "light" ? null : level(s, l.v);
-        t.el.classList.remove("lvl-warn", "lvl-alert");
-        if (l.level && l.level !== "ok" && !stale) t.el.classList.add("lvl-" + l.level);
-        if (t.s.display === "light" && stale) t.el.classList.remove("on");
+        const light = s.display === "light";
+        l.level = light ? null : level(s, l.v);
+        l.on = light && !stale && lightOn(s, l.v);
+        t.el.classList.toggle("on", l.on);
+        t.el.classList.toggle("lvl-warn", !stale && l.level === "warn");
+        t.el.classList.toggle("lvl-alert", !stale && l.level === "alert");
         if (t.hz) t.hz.textContent = mode === "high" ? `${Math.round(l.hz)}/s` : "";
+        const c = counts[s._group] || (counts[s._group] = { alert: 0, warn: 0, on: 0 });
+        if (l.on) {
+          c.on++;
+          // green lamps say all is well ("engine running"): lit on their tile, but not news for the strip
+          if (s.color !== "green") noticed.push({ key: s.key, cls: `c-${s.color || "red"}`, label: s.label });
+        } else if (!stale && l.level !== "ok" && l.level) {
+          c[l.level]++;
+          noticed.push({ key: s.key, cls: `lvl-${l.level}`, label: s.label, value: `${fmt(l.v, s.decimals)} ${s.unit || ""}`.trim() });
+        }
       }
       if (mode === "high") drawTrace(t, l, now);
+    }
+    if (dirty) {
+      showAttention(noticed);
+      for (const [name, g] of Object.entries(groups)) {
+        const c = counts[name] || { alert: 0, warn: 0, on: 0 };
+        const [cls, text] = c.alert ? ["lvl-alert", `${c.alert} alert`] : c.warn ? ["lvl-warn", `${c.warn} warn`] :
+          c.on ? ["on", `${c.on} on`] : ["", ""];
+        if (text !== g.badgeText) {
+          g.badgeText = text;
+          g.badge.textContent = text;
+          g.badge.className = "gbadge " + cls + (text ? " show" : "");
+        }
+      }
     }
     dirty = false;
     requestAnimationFrame(frame);
   }
 
-  // ---- connection ----
+  // ---- the event stream ----
   function connect(newMode) {
     mode = newMode;
     remember("pc-mode", mode);
@@ -564,7 +728,7 @@
   $("modeNormal").onclick = () => mode !== "normal" && connect("normal");
   $("modeHigh").onclick = () => mode !== "high" && connect("high");
 
-  // ---- controls ----
+  // ---- recording, markers and the map picker ----
   $("recBtn").onclick = () => post("/record", { on: !recording })
     .then((j) => flash(j.saved ? `Saved ${j.saved}` : `Recording to ${j.recording}`))
     .catch((e) => flash(e.message));
@@ -583,7 +747,7 @@
     sel.onchange = () => post("/map", { name: sel.value }).catch((e) => flash(e.message));
   });
 
-  // ---- Find signals ----
+  // ---- Find signals dialog ----
   const dlg = $("findDlg");
   let polling = null;
   $("findBtn").onclick = () => {
@@ -642,6 +806,7 @@
     });
   }
 
+  // ---- start: load the map, build the page, connect in the remembered (or requested) mode ----
   fetch("/map").then((r) => r.json()).then((map) => {
     build(map);
     const wanted = new URLSearchParams(location.search).get("mode") || recall("pc-mode") || "normal";
