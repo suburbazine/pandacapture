@@ -46,7 +46,7 @@
   pinned firmware, but these are unconfirmed:
   - auto bit rate detection on a real bus
   - DFU on Windows with Zadig's WinUSB driver
-  - the green LED while armed
+  - the green LED while armed, on a panda that has status LEDs (the oneclone mini blackpanda has none)
   - the heartbeat timeout
 - Restore hasn't been run on hardware yet. The backup of the board's original firmware is kept
   locally.

@@ -33,7 +33,7 @@ module unable to start until it's reflashed. Other modules can't tell your frame
 - You are responsible for what you send.
 
 The panda goes back to listen-only when this command ends, or within about 2 seconds if this
-program stops responding. Its green LED is on while transmitting is armed.
+program stops responding. On pandas with status LEDs, the green LED is on while armed.
 """
 
 

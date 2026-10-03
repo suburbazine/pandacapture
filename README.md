@@ -170,7 +170,8 @@ For scripts, `--i-accept-transmit-risk` skips the typing; the warning is still p
 
 - **Firmware check:** the panda must run PandaCapture firmware. Its transmit gate refuses every
   other way of transmitting, including openpilot's car modes.
-- **Arming:** the green LED is on while transmit is armed.
+- **Arming:** on pandas with status LEDs, the green LED is on while transmit is armed. Some boards,
+  such as oneclone's mini blackpanda, have none; `pandacapture info` shows the mode either way.
 - **Heartbeat:** PandaCapture sends one several times a second. Without it, the panda drops back to
   listen-only within about 2 seconds.
 - **Log:** every frame sent goes to a `tx-….log` in the captures folder.
