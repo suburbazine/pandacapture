@@ -121,7 +121,7 @@ def cmd_list(argv) -> int:
         print(f"ERROR: can't list USB devices: {e}")
         return 1
     if not devices:
-        print("No panda found. Connect the Red Panda by USB (and see the README's driver notes).")
+        print("No panda found. Connect it by USB (and see the README's driver notes).")
     for d in devices:
         kind = {"panda": "panda (firmware running)", "bootstub": "panda bootstub (flasher)",
                 "dfu": "STM32 bootloader (DFU)"}[d.kind]

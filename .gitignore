@@ -20,3 +20,6 @@ __pycache__/
 build/
 dist/
 *.spec
+
+# Whole-flash panda backups (firmware and provisioning of your panda)
+backups/

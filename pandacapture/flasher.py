@@ -7,12 +7,13 @@ signed with the panda project's public development key, as PandaCapture's are. A
 go through the bootstub alone. Same steps as comma's Panda.recover() and Panda.flash().
 """
 
+import sys
 import time
 from pathlib import Path
 
 from . import backup
 from . import protocol as p
-from .dfu import StDfu, list_dfu
+from .dfu import DRIVER_HINT_WINDOWS, StDfu, list_dfu
 from .firmware import Firmware
 from .panda import Panda, list_pandas
 from .usbdev import UsbError
@@ -98,7 +99,14 @@ def enter_dfu(serial, mcu, log):
     bs = Panda.open(serial)
     log("Entering the STM32 bootloader (DFU)")
     bs.reset("bootloader")
-    wait_for(lambda: _dfu_device(dfu_serial), "the STM32 bootloader (USB 0483:DF11)", 20, log)
+    try:
+        wait_for(lambda: _dfu_device(dfu_serial), "the STM32 bootloader (USB 0483:DF11)", 20, log)
+    except FlashError:
+        if sys.platform == "win32":
+            # libusb can't see a device with no driver at all, which is how the bootloader first appears
+            raise FlashError(DRIVER_HINT_WINDOWS + " If Device Manager doesn't list \"STM32 BOOTLOADER\" either, "
+                             "unplug the panda and plug it back in: nothing has been erased.") from None
+        raise
     return dfu_serial
 
 
@@ -283,9 +291,7 @@ def make_backup(folder, serial=None, log=print) -> Path:
         try:
             path = backup_flash(dfus[0].serial, folder, None, "unknown (found in DFU)", log)
         finally:
-            with StDfu.open(dfus[0].serial) as dfu:
-                log("Restarting the panda")
-                dfu.jump(p.FLASH_BASE)
+            leave_dfu(dfus[0].serial, log)
         return path
     if len(pandas) > 1:
         raise FlashError("Several pandas connected; choose one with --serial.")
@@ -307,8 +313,17 @@ def make_backup(folder, serial=None, log=print) -> Path:
         path = backup_flash(dfu_serial, folder, serial, current, log)
     finally:
         # Leave the bootloader whatever happened: nothing was erased, so the panda starts as before
+        leave_dfu(dfu_serial, log)
+    wait_for(lambda: _panda_with(serial, "panda") or _panda_with(serial, "bootstub"), "the panda to restart", 20, log)
+    return path
+
+
+def leave_dfu(dfu_serial, log):
+    """Restarts the panda from the bootloader after a backup. Problems are logged rather than raised,
+    so they don't hide the error that came first; unplugging the panda restarts it too."""
+    try:
         with StDfu.open(dfu_serial) as dfu:
             log("Restarting the panda")
             dfu.jump(p.FLASH_BASE)
-    wait_for(lambda: _panda_with(serial, "panda") or _panda_with(serial, "bootstub"), "the panda to restart", 20, log)
-    return path
+    except UsbError as e:
+        log(f"Couldn't restart the panda from the bootloader ({e}): unplug it and plug it back in.")

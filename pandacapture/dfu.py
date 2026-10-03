@@ -156,12 +156,19 @@ class StDfu:
             raise explain(e, "DFU download") from None
 
     def clear_status(self):
+        """Back to dfuIDLE from an error, or from the middle of an upload or download."""
         st = self._get_status()
-        if st[4] == STATE_ERROR:
-            self._h.controlWrite(DFU_OUT, DFU_CLRSTATUS, 0, 0, b"", 5000)
-        elif st[4] in (STATE_UPLOAD_IDLE, STATE_DNLOAD_IDLE):
-            self._h.controlWrite(DFU_OUT, DFU_ABORT, 0, 0, b"", 5000)
-            self._wait()
+        try:
+            if st[4] == STATE_ERROR:
+                self._h.controlWrite(DFU_OUT, DFU_CLRSTATUS, 0, 0, b"", 5000)
+                st = self._get_status()
+            if st[4] in (STATE_UPLOAD_IDLE, STATE_DNLOAD_IDLE):
+                self._h.controlWrite(DFU_OUT, DFU_ABORT, 0, 0, b"", 5000)
+                st = self._get_status()
+        except usb1.USBError as e:
+            raise explain(e, "DFU clear status") from None
+        if st[4] != STATE_IDLE:
+            raise UsbError(f"The bootloader won't return to idle (status {st[0]}, state {st[4]}).")
 
     def _abort(self):
         """Back to dfuIDLE, where the address pointer can be set and uploads start."""
@@ -175,6 +182,7 @@ class StDfu:
         result doesn't depend on the bootloader's transfer size."""
         out = bytearray()
         size = self.mcu.dfu_block
+        self.clear_status()  # the bootloader can start in its error state; nothing works until cleared
         while len(out) < length:
             n = min(size, length - len(out))
             self._abort()
@@ -212,6 +220,7 @@ class StDfu:
 
     def jump(self, address):
         """Leaves the bootloader and starts the code at [address]. The device disconnects."""
+        self.clear_status()
         self._dnload(0, b"\x21" + struct.pack("<I", address))
         self._wait()
         try:

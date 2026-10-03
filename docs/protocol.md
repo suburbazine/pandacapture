@@ -89,6 +89,12 @@ An app should only arm after its own warning and acknowledgement, the way `panda
 
 - Use `UsbManager.requestPermission`, `openDevice`, and `claimInterface(interface 0, force=true)`.
 - Read endpoint `0x81` with `bulkTransfer` on a background thread, or with `UsbRequest` for queued reads.
+- **Cabling:** the panda's computer port is a USB-A socket, and the panda is always the USB device.
+  - A plain USB-C-to-A cable doesn't work from a phone or a USB-C computer port. Its USB-C plug
+    tells the phone that the A end is a host, so the phone stays a device too, and nothing
+    enumerates. This was seen on a PC with a oneclone board.
+  - What works: an OTG adapter (USB-C plug to USB-A socket, which makes the phone the host) plus a
+    USB A-to-A cable, or a USB-C OTG hub.
 - Check how the Red Panda is powered before relying on a phone: it isn't verified yet whether a
   phone's OTG port can power it alone. A powered OTG hub avoids the question.
 - The FrostBYTE app's CAN log parsers already read PandaCapture's candump output. For multi-bus
