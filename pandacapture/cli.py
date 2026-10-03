@@ -415,6 +415,31 @@ def cmd_maps(argv) -> int:
     return 0
 
 
+def open_app_window(url) -> bool:
+    """Opens [url] in a Chromium-based browser's app mode: one window, no tabs or address bar, sized to
+    the screen. Returns False if no such browser was found."""
+    import os
+    import shutil
+    import subprocess
+    candidates = []
+    if os.name == "nt":
+        for base in (os.environ.get("ProgramFiles(x86)"), os.environ.get("ProgramFiles"), os.environ.get("LOCALAPPDATA")):
+            if base:
+                candidates += [os.path.join(base, "Microsoft", "Edge", "Application", "msedge.exe"),
+                               os.path.join(base, "Google", "Chrome", "Application", "chrome.exe")]
+    else:
+        candidates += [shutil.which(n) for n in ("chromium", "chromium-browser", "google-chrome", "microsoft-edge")]
+    for exe in candidates:
+        if exe and os.path.exists(exe):
+            try:
+                subprocess.Popen([exe, f"--app={url}", "--start-maximized"],
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                return True
+            except OSError:
+                continue
+    return False
+
+
 def cmd_dashboard(argv) -> int:
     from .dashboard import Dashboard
     from .signals import MapError, builtin_maps, load_map
@@ -438,6 +463,9 @@ def cmd_dashboard(argv) -> int:
     ap.add_argument("--lan", action="store_true",
                     help="serve to other devices on this network too (e.g. a phone), not only this computer")
     ap.add_argument("--no-browser", action="store_true", help="don't open the browser")
+    ap.add_argument("--mode", choices=("normal", "high"), help="the page's starting update rate (default: as last used)")
+    ap.add_argument("--app", action="store_true",
+                    help="open in a borderless app window (Edge or Chrome) instead of a browser tab")
     args = ap.parse_args(argv)
 
     maps = builtin_maps()
@@ -487,8 +515,10 @@ def cmd_dashboard(argv) -> int:
         print("  Serving to this network too: open http://<this computer's address>:%d/ on the other device." % args.port)
     print("  Listen-only. Press Q or Ctrl+C to stop.")
     if not args.no_browser:
-        import webbrowser
-        webbrowser.open(dash.url)
+        url = dash.url + (f"?mode={args.mode}" if args.mode else "")
+        if not (args.app and open_app_window(url)):
+            import webbrowser
+            webbrowser.open(url)
     try:
         with KeyReader() as keys:
             while True:

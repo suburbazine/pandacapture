@@ -47,8 +47,12 @@ them live as gauges, numbers and status lights.
 ## 1. Install
 
 Download the program for your system from the [latest release](../../releases/latest):
-`pandacapture-windows-x64.exe` or `pandacapture-linux-x64`. It's one file: put it anywhere, for
-example on the laptop that goes in the car. Each release lists SHA-256 sums. Or run from source:
+- **Windows:** `pandacapture-windows-x64.zip` holds `pandacapture.exe` and double-click launchers
+  (below). `pandacapture-windows-x64.exe` is the program alone.
+- **Linux:** `pandacapture-linux-x64`.
+
+It's one file: put it anywhere, for example on the laptop that goes in the car. Each release lists
+SHA-256 sums. Or run from source:
 
 ```bash
 pip install -e .
@@ -60,6 +64,22 @@ pip install -e .
   - A panda with a USB-A socket needs a USB A-to-A cable. A USB-C-to-A cable won't connect it to a
     USB-C port.
 - **Linux:** install the udev rules in [linux/](linux/README.md), or only root can open the panda.
+
+### Double-click launchers (Windows)
+
+For the car, where typing in a terminal is awkward, the zip has launchers to keep next to
+`pandacapture.exe`:
+
+| Launcher | Starts |
+|---|---|
+| `PandaCapture Dashboard.cmd` | the dashboard with the Stinger map, in high resolution, in a borderless window, recording the drive |
+| `PandaCapture Record.cmd` | recording only. `M` = marker, `Q` = stop and save |
+| `PandaCapture Check.cmd` | shows whether the panda is connected and powered |
+
+- **Desktop or taskbar shortcut:** right-click a launcher, then **Send to → Desktop (create
+  shortcut)**.
+- **Change what a launcher starts:** right-click it, then **Edit**. The options are explained at the
+  top of the file. They're also in [launchers/windows](launchers/windows).
 
 Check it sees the panda:
 
@@ -293,6 +313,8 @@ pandacapture dashboard [options]      live gauges in the browser
   --port N                      web server port (default 8765)
   --lan                         serve to other devices on the network too
   --no-browser                  don't open the browser
+  --mode normal|high            the page's starting update rate
+  --app                         a borderless app window (Edge or Chrome) instead of a browser tab
 
 pandacapture match CAPTURE [REFERENCE.csv | --obd] [options]     find which fields carry which values
   --map NAME|FILE               map with the RPM signal used to line the logs up

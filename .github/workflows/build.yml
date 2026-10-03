@@ -74,10 +74,21 @@ jobs:
           ${{ matrix.exe }} info || true
       - shell: bash
         run: mv ${{ matrix.exe }} dist/${{ matrix.asset }}
+      - name: Windows zip with the double-click launchers
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory bundle | Out-Null
+          Copy-Item dist/${{ matrix.asset }} bundle/pandacapture.exe
+          Copy-Item launchers/windows/* bundle/
+          Compress-Archive -Path bundle/* -DestinationPath dist/pandacapture-windows-x64.zip
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.asset }}
-          path: dist/${{ matrix.asset }}
+          path: |
+            dist/${{ matrix.asset }}
+            dist/pandacapture-windows-x64.zip
+          if-no-files-found: warn
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
