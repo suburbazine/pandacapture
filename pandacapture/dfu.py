@@ -17,6 +17,7 @@ from .usbdev import UsbError, context, explain
 DFU_OUT = 0x21  # class request to the interface
 DFU_IN = 0xA1
 DFU_DNLOAD = 1
+DFU_UPLOAD = 2
 DFU_GETSTATUS = 3
 DFU_CLRSTATUS = 4
 DFU_ABORT = 6
@@ -161,6 +162,37 @@ class StDfu:
         elif st[4] in (STATE_UPLOAD_IDLE, STATE_DNLOAD_IDLE):
             self._h.controlWrite(DFU_OUT, DFU_ABORT, 0, 0, b"", 5000)
             self._wait()
+
+    def _abort(self):
+        """Back to dfuIDLE, where the address pointer can be set and uploads start."""
+        try:
+            self._h.controlWrite(DFU_OUT, DFU_ABORT, 0, 0, b"", 5000)
+        except usb1.USBError as e:
+            raise explain(e, "DFU abort") from None
+
+    def read(self, address, length, progress=None) -> bytes:
+        """Reads flash back (DfuSe upload). The address pointer is set for every block, so the
+        result doesn't depend on the bootloader's transfer size."""
+        out = bytearray()
+        size = self.mcu.dfu_block
+        while len(out) < length:
+            n = min(size, length - len(out))
+            self._abort()
+            self._dnload(0, b"\x21" + struct.pack("<I", address + len(out)))
+            self._wait()
+            self._abort()
+            try:
+                chunk = bytes(self._h.controlRead(DFU_IN, DFU_UPLOAD, 2, 0, n, 5000))
+            except usb1.USBError as e:
+                raise UsbError(f"The bootloader wouldn't read flash back at 0x{address + len(out):08X} ({e}). "
+                               "The chip may be read-protected.") from None
+            if len(chunk) != n:
+                raise UsbError(f"Short read from flash at 0x{address + len(out):08X}: {len(chunk)} of {n} bytes.")
+            out += chunk
+            if progress:
+                progress(len(out), length)
+        self._abort()
+        return bytes(out)
 
     def erase_sector(self, sector):
         self._dnload(0, b"\x41" + struct.pack("<I", self.mcu.sector_address(sector)))

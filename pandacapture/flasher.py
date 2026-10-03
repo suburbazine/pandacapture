@@ -8,7 +8,9 @@ go through the bootstub alone. Same steps as comma's Panda.recover() and Panda.f
 """
 
 import time
+from pathlib import Path
 
+from . import backup
 from . import protocol as p
 from .dfu import StDfu, list_dfu
 from .firmware import Firmware
@@ -52,7 +54,8 @@ def check_hardware(panda: Panda, force: bool) -> p.Mcu:
     """Which firmware build the panda takes: H7 for the Red Panda, F4 for the Black Panda."""
     hw = panda.hw_type()
     name = p.HW_NAMES.get(hw, f"unknown hardware 0x{hw:02X}")
-    if hw in (p.HW_RED_PANDA, p.HW_BLACK_PANDA):
+    # Grey: comma's grey board, and boards that detect as one, such as oneclone's mini blackpanda
+    if hw in (p.HW_RED_PANDA, p.HW_BLACK_PANDA, p.HW_GREY_PANDA):
         return p.MCU_BY_HW[hw]
     if hw == p.HW_WHITE_PANDA:
         if not force:
@@ -99,6 +102,17 @@ def enter_dfu(serial, mcu, log):
     return dfu_serial
 
 
+def backup_flash(dfu_serial, folder, serial, firmware, log):
+    """In DFU: save the whole flash before anything is erased."""
+    with StDfu.open(dfu_serial) as dfu:
+        try:
+            path = backup.save(dfu, folder, serial, firmware, log)
+        except UsbError as e:
+            raise FlashError(f"Backup failed, so nothing was erased: {e}") from None
+    log(f"Backup saved: {path}")
+    return path
+
+
 def write_bootstub(dfu_serial, fw: Firmware, log, serial=None) -> str:
     """In DFU: write PandaCapture's bootstub and start it. Returns the panda's USB serial."""
     before = {d.serial for d in list_pandas()}
@@ -123,10 +137,11 @@ def write_bootstub(dfu_serial, fw: Firmware, log, serial=None) -> str:
     return wait_for(find, "the panda's bootstub", 20, log).serial
 
 
-def flash(load_firmware, serial=None, recover=None, force=False, confirm=None, log=print) -> str:
+def flash(load_firmware, serial=None, recover=None, force=False, confirm=None, log=print, backup_dir=None) -> str:
     """Flashes the firmware load_firmware(mcu) returns for the panda's chip. recover: True = always
     rewrite the bootstub through DFU, False = never, None = only when the panda isn't already running
-    PandaCapture firmware. Returns the new version."""
+    PandaCapture firmware. With backup_dir, the whole flash is saved there before the bootstub is
+    rewritten. Returns the new version."""
     pandas = list_pandas()
     dfus = list_dfu()
     if serial:
@@ -143,6 +158,8 @@ def flash(load_firmware, serial=None, recover=None, force=False, confirm=None, l
             log(f"Firmware to flash: {fw.version}")
             if confirm and not confirm():
                 raise FlashError("Cancelled; nothing was changed.")
+            if backup_dir:
+                backup_flash(dfus[0].serial, backup_dir, None, "unknown (found in DFU)", log)
             serial = write_bootstub(dfus[0].serial, fw, log)
             return finish(serial, fw, True, log)
         if dfus:
@@ -164,6 +181,8 @@ def flash(load_firmware, serial=None, recover=None, force=False, confirm=None, l
     log(f"Firmware to flash: {fw.version}")
     if via_dfu:
         log("This replaces the panda's bootstub through the STM32 bootloader, then its firmware.")
+        if backup_dir:
+            log(f"The whole flash is backed up first, to {backup_dir}.")
     if confirm and not confirm():
         raise FlashError("Cancelled; nothing was changed.")
 
@@ -173,7 +192,10 @@ def flash(load_firmware, serial=None, recover=None, force=False, confirm=None, l
                 log("Entering the bootstub")
                 panda.reset("bootstub")
             wait_for(lambda: _panda_with(serial, "bootstub"), "the panda's bootstub", 15, log)
-        write_bootstub(enter_dfu(serial, mcu, log), fw, log, serial)
+        dfu_serial = enter_dfu(serial, mcu, log)
+        if backup_dir:
+            backup_flash(dfu_serial, backup_dir, serial, current, log)
+        write_bootstub(dfu_serial, fw, log, serial)
     elif pandas[0].kind != "bootstub":
         with Panda.open(serial) as panda:
             log("Entering the bootstub")
@@ -199,3 +221,81 @@ def finish(serial, fw, via_dfu, log) -> str:
     if version != fw.version or signature != fw.signature:
         raise FlashError(f"The panda is running {version!r} after flashing, not {fw.version!r}.")
     return version
+
+
+def restore(path, serial=None, confirm=None, log=print) -> str:
+    """Writes a whole-flash backup back through the STM32 bootloader. Returns what the panda runs after."""
+    try:
+        data, meta, mcu = backup.load(path)
+    except backup.BackupError as e:
+        raise FlashError(str(e)) from None
+    pandas = [d for d in list_pandas() if serial is None or d.serial == serial]
+    dfus = list_dfu()
+    if len(pandas) > 1:
+        raise FlashError("Several pandas connected; choose one with --serial.")
+    if pandas and meta.get("serial") and pandas[0].serial != meta["serial"]:
+        raise FlashError(f"This backup is of panda {meta['serial']}, not {pandas[0].serial}.")
+    log(f"Backup: {Path(path).name}, {meta['mcu']}, firmware {meta.get('firmware')}, made {meta.get('created')}")
+    log("This erases the panda's flash and writes the backup back.")
+    if confirm and not confirm():
+        raise FlashError("Cancelled; nothing was changed.")
+
+    if pandas:
+        serial = pandas[0].serial
+        if pandas[0].kind != "bootstub":
+            with Panda.open(serial) as panda:
+                log("Entering the bootstub")
+                panda.reset("bootstub")
+            wait_for(lambda: _panda_with(serial, "bootstub"), "the panda's bootstub", 15, log)
+        dfu_serial = enter_dfu(serial, mcu, log)
+    elif len(dfus) == 1:
+        if dfus[0].note:
+            raise FlashError(dfus[0].note)
+        dfu_serial = dfus[0].serial
+    else:
+        raise FlashError("No panda found. Connect it by USB.")
+
+    with StDfu.open(dfu_serial) as dfu:
+        if dfu.mcu != mcu:
+            raise FlashError(f"The backup is of an {mcu.name}, but this panda is an {dfu.mcu.name}.")
+        backup.write(dfu, data, log)
+        log("Starting the restored firmware")
+        dfu.jump(p.FLASH_BASE)
+    found = wait_for(lambda: next((d for d in list_pandas() if serial is None or d.serial == serial), None),
+                     "the panda to restart", 20, log)
+    if found.kind == "bootstub":
+        return "its bootstub (the backup's firmware didn't start)"
+    with Panda.open(found.serial) as panda:
+        return panda.version()
+
+
+def make_backup(folder, serial=None, log=print) -> Path:
+    """Saves the whole flash through the STM32 bootloader, then restarts the panda. Writes nothing."""
+    pandas = [d for d in list_pandas() if serial is None or d.serial == serial]
+    if not pandas:
+        raise FlashError("No panda found. Connect it by USB.")
+    if len(pandas) > 1:
+        raise FlashError("Several pandas connected; choose one with --serial.")
+    serial = pandas[0].serial
+    with Panda.open(serial) as panda:
+        hw = panda.hw_type()
+        mcu = p.MCU_BY_HW.get(hw)
+        if mcu is None:
+            raise FlashError(f"PandaCapture doesn't know this panda's flash layout ({p.HW_NAMES.get(hw, hw)}).")
+        current = "bootstub (no firmware running)" if panda.bootstub else panda.version()
+    log(f"Panda {serial} ({mcu.name}): {current}")
+    if pandas[0].kind != "bootstub":
+        with Panda.open(serial) as panda:
+            log("Entering the bootstub")
+            panda.reset("bootstub")
+        wait_for(lambda: _panda_with(serial, "bootstub"), "the panda's bootstub", 15, log)
+    dfu_serial = enter_dfu(serial, mcu, log)
+    try:
+        path = backup_flash(dfu_serial, folder, serial, current, log)
+    finally:
+        # Leave the bootloader whatever happened: nothing was erased, so the panda starts as before
+        with StDfu.open(dfu_serial) as dfu:
+            log("Restarting the panda")
+            dfu.jump(p.FLASH_BASE)
+    wait_for(lambda: _panda_with(serial, "panda") or _panda_with(serial, "bootstub"), "the panda to restart", 20, log)
+    return path

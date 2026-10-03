@@ -114,7 +114,7 @@ MCU_H7 = Mcu("STM32H7", "h7", (0x20000,) * 8, 0x400, 0x200, (0, 1), 0, True)
 # STM32F413 (Black and White Panda): 4 x 16 KiB, 64 KiB, 11 x 128 KiB. From comma's last F4-capable
 # library (firmware/panda-f4): it erased every sector to recover and flashed in 16-byte writes.
 MCU_F4 = Mcu("STM32F4", "f4", (0x4000,) * 4 + (0x10000,) + (0x20000,) * 11, 0x800, 0x10, tuple(range(16)), 0xA, False)
-MCU_BY_HW = {HW_RED_PANDA: MCU_H7, HW_BLACK_PANDA: MCU_F4, HW_WHITE_PANDA: MCU_F4}
+MCU_BY_HW = {HW_RED_PANDA: MCU_H7, HW_BLACK_PANDA: MCU_F4, HW_GREY_PANDA: MCU_F4, HW_WHITE_PANDA: MCU_F4}
 MCU_BY_DFU_SECTORS = {len(MCU_H7.sector_sizes): MCU_H7, len(MCU_F4.sector_sizes): MCU_F4}
 
 # Bit rates the firmware accepts, kbit/s

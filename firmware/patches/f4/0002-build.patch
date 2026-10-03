@@ -64,10 +64,9 @@ index 1a4c875b..78dd85c7 100644
 -  SConscript('tests/libpanda/SConscript')
 +# PandaCapture: no jungle firmware, no host-side test library (it needs a native C compiler)
 diff --git a/SConstruct b/SConstruct
-index 2d263ccc..00d8fe23 100644
 --- a/SConstruct
 +++ b/SConstruct
-@@ -10,7 +10,7 @@ AddOption('--ubsan',
+@@ -14,7 +14,7 @@ AddOption('--compile_db',
  
  env = Environment(
    COMPILATIONDB_USE_ABSPATH=True,
@@ -75,4 +74,4 @@ index 2d263ccc..00d8fe23 100644
 +  tools=["compilation_db"],
  )
  
- env.CompilationDatabase("compile_commands.json")
+ if GetOption('compile_db'):

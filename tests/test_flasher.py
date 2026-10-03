@@ -1,13 +1,15 @@
 """The flash workflow against a simulated panda: app, bootstub and STM32 bootloader states."""
 
+import json
 from pathlib import Path
 
 import pytest
 
-from pandacapture import flasher
+from pandacapture import backup, flasher
 from pandacapture import protocol as p
 from pandacapture.firmware import Firmware
 from pandacapture.panda import DeviceEntry
+from pandacapture.usbdev import UsbError
 
 SERIAL = "1d0032000f51333231373438"
 OURS = "PANDACAPTURE-abc-def-DEBUG"
@@ -34,6 +36,9 @@ class World:
         self.events = []
         self.flashed = None
         self.chunk = None
+        self.read_protected = False
+        self.programmed = None
+        self.original_flash = b"stock bootstub and firmware"
 
     @property
     def mcu(self):
@@ -132,14 +137,26 @@ class FakeDfu:
         if s == 1:
             self.world.flashed = None
 
-    def program(self, address, data):
+    def program(self, address, data, progress=None):
         assert address == p.FLASH_BASE
         self.world.events.append("dfu-program")
         self.world.bootstub_kind = "ours"
+        self.world.programmed = data
+
+    def read(self, address, length, progress=None):
+        assert address == p.FLASH_BASE
+        if self.world.read_protected:
+            raise UsbError("read-protected")
+        self.world.events.append("dfu-read")
+        return self.world.original_flash[:length].ljust(length, b"\xFF")
+
+    serial = property(lambda self: p.dfu_serial(SERIAL, self.world.mcu))
 
     def jump(self, address):
         self.world.events.append("dfu-jump")
-        self.world.state = "bootstub"  # app sector erased: the bootstub stays in its flasher
+        erased = any(e.startswith("dfu-erase") for e in self.world.events)
+        # app sector erased: the bootstub stays in its flasher; otherwise the panda starts as before
+        self.world.state = "bootstub" if erased else "app"
 
 
 class Clock:
@@ -225,9 +242,60 @@ def test_white_panda_needs_force(world):
     assert flasher.flash(load, force=True, log=lambda s: None) == OURS
 
 
-@pytest.mark.parametrize("hw", [p.HW_GREY_PANDA, p.HW_UNO, p.HW_DOS, 0x42])
+@pytest.mark.parametrize("hw", [p.HW_UNO, p.HW_DOS, 0x42])
 def test_refuses_unsupported(world, hw):
     world.hw = hw
     with pytest.raises(flasher.FlashError):
         flasher.flash(load, force=True, log=lambda s: None)
     assert world.events == []
+
+
+def test_grey_panda_takes_the_f4_build(world):
+    world.hw = p.HW_GREY_PANDA  # e.g. oneclone's mini blackpanda detects as grey
+    assert flasher.flash(load, log=lambda s: None) == OURS
+    assert world.chunk == 0x10
+
+
+def test_backup_before_anything_is_erased(world, tmp_path):
+    world.hw = p.HW_GREY_PANDA
+    flasher.flash(load, log=lambda s: None, backup_dir=tmp_path)
+    assert world.events.index("dfu-read") < world.events.index("dfu-erase:0")
+    (bin_file,) = tmp_path.glob("*.bin")
+    data, meta, mcu = backup.load(bin_file)
+    assert data.startswith(b"stock bootstub and firmware") and len(data) == backup.flash_size(p.MCU_F4)
+    assert meta["serial"] == SERIAL and meta["firmware"] == "v1.2.3-RELEASE" and mcu is p.MCU_F4
+
+
+def test_failed_backup_erases_nothing(world, tmp_path):
+    world.read_protected = True
+    with pytest.raises(flasher.FlashError, match="nothing was erased"):
+        flasher.flash(load, log=lambda s: None, backup_dir=tmp_path)
+    assert not any(e.startswith("dfu-erase") for e in world.events)
+
+
+def test_restore_round_trip(world, tmp_path):
+    world.hw = p.HW_GREY_PANDA
+    flasher.flash(load, log=lambda s: None, backup_dir=tmp_path)
+    (bin_file,) = tmp_path.glob("*.bin")
+    world.events.clear()
+    flasher.restore(bin_file, log=lambda s: None)
+    assert world.events[:2] == ["reset:bootstub", "reset:bootloader"]
+    assert [e for e in world.events if e.startswith("dfu-erase")] == [f"dfu-erase:{i}" for i in range(16)]
+    assert world.programmed == b"stock bootstub and firmware"
+
+
+def test_restore_refuses_another_pandas_backup(world, tmp_path):
+    flasher.flash(load, log=lambda s: None, backup_dir=tmp_path)
+    (bin_file,) = tmp_path.glob("*.bin")
+    meta = json.loads(bin_file.with_suffix(".json").read_text())
+    meta["serial"] = "someotherpanda"
+    bin_file.with_suffix(".json").write_text(json.dumps(meta))
+    with pytest.raises(flasher.FlashError, match="someotherpanda"):
+        flasher.restore(bin_file, log=lambda s: None)
+
+
+def test_backup_command_writes_nothing(world, tmp_path):
+    world.hw = p.HW_GREY_PANDA
+    path = flasher.make_backup(tmp_path, log=lambda s: None)
+    assert path.exists() and world.state == "app" and world.version == "v1.2.3-RELEASE"
+    assert not any(e.startswith(("dfu-erase", "dfu-program", "erase", "write")) for e in world.events)

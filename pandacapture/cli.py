@@ -9,13 +9,14 @@ from . import protocol as p
 from .capture import CaptureOptions, Console, capture
 from .dfu import list_dfu
 from .firmware import Firmware, FirmwareError, bundled_versions
-from .flasher import FlashError, flash
+from .backup import default_dir as default_backup_dir
+from .flasher import FlashError, flash, make_backup, restore
 from .panda import Panda, list_pandas
 from .sources import BusSetup, PandaSource, SimulatedSource, SourceError, detect_rates
 from .transmit import ArmedPanda, TransmitRefused, TxLog, acknowledge, read_replay
 from .usbdev import UsbError
 
-COMMANDS = ("capture", "list", "info", "flash", "send", "replay", "selftest")
+COMMANDS = ("capture", "list", "info", "flash", "backup", "restore", "send", "replay", "selftest")
 
 
 def parse_rates(values) -> dict:
@@ -177,7 +178,13 @@ def cmd_flash(argv) -> int:
     g.add_argument("--no-recover", action="store_true", help="never go through DFU (update the app only)")
     ap.add_argument("--force", action="store_true", help="flash a panda that doesn't report itself as a Red Panda")
     ap.add_argument("--yes", "-y", action="store_true", help="don't ask for confirmation")
+    ap.add_argument("--backup-dir", metavar="DIR",
+                    help="where the whole-flash backup goes before the bootstub is replaced (default: backups "
+                         "next to the program)")
+    ap.add_argument("--no-backup", action="store_true",
+                    help="don't back up the flash first (if the chip won't read back, e.g. read protection)")
     args = ap.parse_args(argv)
+
     def load_firmware(mcu):
         try:
             return Firmware.load(mcu, args.firmware)
@@ -195,7 +202,50 @@ def cmd_flash(argv) -> int:
     recover = True if args.recover else False if args.no_recover else None
     try:
         version = flash(load_firmware, serial=args.serial, recover=recover, force=args.force, confirm=confirm,
-                        log=lambda s: print("  " + s))
+                        log=lambda s: print("  " + s),
+                        backup_dir=None if args.no_backup else (args.backup_dir or default_backup_dir()))
+    except (FlashError, UsbError) as e:
+        print(f"ERROR: {e}")
+        return 1
+    print(f"Done: the panda runs {version}")
+    return 0
+
+
+def cmd_backup(argv) -> int:
+    ap = argparse.ArgumentParser(prog="pandacapture backup", description=(
+        "Saves the panda's whole flash (bootstub, firmware, settings) through the STM32 bootloader, then "
+        "restarts it. Nothing is written to the panda. pandacapture restore puts a backup back."))
+    add_common(ap)
+    ap.add_argument("--dir", help="where to save it (default: backups next to the program)")
+    args = ap.parse_args(argv)
+    try:
+        path = make_backup(args.dir or default_backup_dir(), serial=args.serial, log=lambda s: print("  " + s))
+    except (FlashError, UsbError) as e:
+        print(f"ERROR: {e}")
+        return 1
+    print(f"Done: {path}")
+    return 0
+
+
+def cmd_restore(argv) -> int:
+    ap = argparse.ArgumentParser(prog="pandacapture restore", description=(
+        "Writes a whole-flash backup (made by pandacapture flash) back onto the panda, through the STM32 "
+        "bootloader: its bootstub, firmware and settings, as they were."))
+    add_common(ap)
+    ap.add_argument("backup", help="the backup's .bin file (its .json must sit next to it)")
+    ap.add_argument("--yes", "-y", action="store_true", help="don't ask for confirmation")
+    args = ap.parse_args(argv)
+
+    def confirm():
+        if args.yes:
+            return True
+        try:
+            return input("Restore it? [y/N] ").strip().lower() in ("y", "yes")
+        except EOFError:
+            return False
+
+    try:
+        version = restore(args.backup, serial=args.serial, confirm=confirm, log=lambda s: print("  " + s))
     except (FlashError, UsbError) as e:
         print(f"ERROR: {e}")
         return 1
@@ -356,7 +406,7 @@ def main(argv=None) -> int:
         sys.stdout.reconfigure(errors="replace")
     command = argv.pop(0) if argv and argv[0] in COMMANDS else "capture"
     try:
-        return {"capture": cmd_capture, "list": cmd_list, "info": cmd_info, "flash": cmd_flash,
+        return {"capture": cmd_capture, "list": cmd_list, "info": cmd_info, "flash": cmd_flash, "backup": cmd_backup, "restore": cmd_restore,
                 "send": cmd_send, "replay": cmd_replay, "selftest": cmd_selftest}[command](argv)
     except KeyboardInterrupt:
         print("\nStopped.")
