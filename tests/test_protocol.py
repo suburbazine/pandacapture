@@ -167,3 +167,10 @@ def test_legacy_health_parse():
                                    0, 0, 0, 0, 0, 0, 0)
     h = p.parse_legacy_health_v16(raw)
     assert h["safety_mode"] == p.SAFETY_SILENT and h["rx_buffer_overflow"] == 7 and h["temperature_c"] is None
+
+
+def test_can_health_speeds_are_kbps():
+    # Firmware sends bus_config.can_speed / 10 (5000 -> 500): already kbit/s. Seen on a real panda.
+    raw = bytes.fromhex("0000000000000000000000000000000000000000000000000000000000000000"
+                        "000000000000000000f40100000000000000000000000000000000000000000000")
+    assert p.parse_can_health(raw[:p.CAN_HEALTH_STRUCT.size])["speed_kbps"] == 500

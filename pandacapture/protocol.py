@@ -298,8 +298,8 @@ def parse_can_health(dat: bytes) -> dict:
         "total_rx_lost": a[12],
         "total_tx": a[13],
         "total_rx": a[14],
-        "speed_kbps": a[17] / 10,
-        "data_speed_kbps": a[18] / 10,
+        "speed_kbps": a[17],  # the firmware already reports kbit/s
+        "data_speed_kbps": a[18],
         "canfd": bool(a[19]),
         "brs": bool(a[20]),
     }

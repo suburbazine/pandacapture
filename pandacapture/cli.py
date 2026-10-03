@@ -155,7 +155,7 @@ def cmd_info(argv) -> int:
                       f"mode {p.SAFETY_NAMES.get(h['safety_mode'], h['safety_mode'])}")
                 for b in range(p.CAN_BUSES):
                     c = pd.can_health(b)
-                    fd = f" (FD data {c['data_speed_kbps']:g})" if mcu is None or mcu.fd else ""
+                    fd = f" (FD data {c['data_speed_kbps']:g})" if (mcu.fd if mcu else hw not in p.HW_F4) else ""
                     print(f"  bus {b}: {c['speed_kbps']:g} kbit/s{fd}, {c['total_rx']} received, "
                           f"{c['total_errors']} errors, last error {c['last_stored_error']}")
             except UsbError as e:

@@ -135,7 +135,7 @@ class PandaSource:
                 rates[b] = 500
                 note = "no traffic during detection, left at 500"
             pd.set_can_speed(b, rates[b])
-            if mcu is None or mcu.fd:
+            if mcu.fd if mcu else hw not in p.HW_F4:
                 # A data rate at or above the nominal rate turns CAN FD reception on; classic frames still come in
                 pd.set_data_speed(b, max(self.setup.data_rate, rates[b]))
             self.header.append(f"bus {b} (can{b}): {rates[b]} kbit/s, {note}")
