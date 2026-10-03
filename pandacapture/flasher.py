@@ -37,6 +37,19 @@ def wait_for(find, what, timeout, log):
     raise FlashError(f"Timed out after {timeout:.0f} s waiting for {what}.")
 
 
+def open_panda(serial, timeout=5.0):
+    """Opens the panda, retrying briefly: just after a restart, Windows can refuse access while it
+    sets the device up."""
+    end = time.monotonic() + timeout
+    while True:
+        try:
+            return Panda.open(serial)
+        except UsbError:
+            if time.monotonic() > end:
+                raise
+            time.sleep(0.25)
+
+
 def _panda_with(serial, kind):
     return next((d for d in list_pandas() if d.serial == serial and d.kind == kind), None)
 
@@ -71,7 +84,7 @@ def check_hardware(panda: Panda, force: bool) -> p.Mcu:
 
 
 def flash_app_via_bootstub(serial, fw: Firmware, log):
-    bs = Panda.open(serial)
+    bs = open_panda(serial)
     try:
         if not bs.bootstub or not bs.flasher_present():
             raise FlashError("The panda's bootstub didn't answer as a flasher.")
@@ -96,7 +109,7 @@ def flash_app_via_bootstub(serial, fw: Firmware, log):
 def enter_dfu(serial, mcu, log):
     """From the bootstub into the STM32 ROM bootloader. Returns the bootloader's serial (or None)."""
     dfu_serial = p.dfu_serial(serial, mcu)
-    bs = Panda.open(serial)
+    bs = open_panda(serial)
     log("Entering the STM32 bootloader (DFU)")
     bs.reset("bootloader")
     try:
@@ -178,7 +191,7 @@ def flash(load_firmware, serial=None, recover=None, force=False, confirm=None, l
                          "\n    ".join(f"{d.serial} ({d.kind})" for d in pandas))
     serial = pandas[0].serial
 
-    with Panda.open(serial) as panda:
+    with open_panda(serial) as panda:
         mcu = check_hardware(panda, force)
         current = "bootstub (no firmware running)" if panda.bootstub else panda.version()
     fw = load_firmware(mcu)
@@ -196,7 +209,7 @@ def flash(load_firmware, serial=None, recover=None, force=False, confirm=None, l
 
     if via_dfu:
         if not pandas[0].kind == "bootstub":
-            with Panda.open(serial) as panda:
+            with open_panda(serial) as panda:
                 log("Entering the bootstub")
                 panda.reset("bootstub")
             wait_for(lambda: _panda_with(serial, "bootstub"), "the panda's bootstub", 15, log)
@@ -205,7 +218,7 @@ def flash(load_firmware, serial=None, recover=None, force=False, confirm=None, l
             backup_flash(dfu_serial, backup_dir, serial, current, log)
         write_bootstub(dfu_serial, fw, log, serial)
     elif pandas[0].kind != "bootstub":
-        with Panda.open(serial) as panda:
+        with open_panda(serial) as panda:
             log("Entering the bootstub")
             panda.reset("bootstub")
         wait_for(lambda: _panda_with(serial, "bootstub"), "the panda's bootstub", 15, log)
@@ -223,7 +236,7 @@ def finish(serial, fw, via_dfu, log) -> str:
         hint = "" if via_dfu else " Its bootstub is probably comma's: run pandacapture flash --recover."
         raise FlashError("The panda's bootstub refused the new firmware." + hint)
 
-    with Panda.open(serial) as panda:
+    with open_panda(serial) as panda:
         version = panda.version()
         signature = panda.signature()
     # The signature proves the exact build is running. F4 builds from before the version-length fix
@@ -255,7 +268,7 @@ def restore(path, serial=None, confirm=None, log=print) -> str:
     if pandas:
         serial = pandas[0].serial
         if pandas[0].kind != "bootstub":
-            with Panda.open(serial) as panda:
+            with open_panda(serial) as panda:
                 log("Entering the bootstub")
                 panda.reset("bootstub")
             wait_for(lambda: _panda_with(serial, "bootstub"), "the panda's bootstub", 15, log)
@@ -300,7 +313,7 @@ def make_backup(folder, serial=None, log=print) -> Path:
     if len(pandas) > 1:
         raise FlashError("Several pandas connected; choose one with --serial.")
     serial = pandas[0].serial
-    with Panda.open(serial) as panda:
+    with open_panda(serial) as panda:
         hw = panda.hw_type()
         mcu = p.MCU_BY_HW.get(hw)
         if mcu is None:
@@ -308,7 +321,7 @@ def make_backup(folder, serial=None, log=print) -> Path:
         current = "bootstub (no firmware running)" if panda.bootstub else panda.version()
     log(f"Panda {serial} ({mcu.name}): {current}")
     if pandas[0].kind != "bootstub":
-        with Panda.open(serial) as panda:
+        with open_panda(serial) as panda:
             log("Entering the bootstub")
             panda.reset("bootstub")
         wait_for(lambda: _panda_with(serial, "bootstub"), "the panda's bootstub", 15, log)

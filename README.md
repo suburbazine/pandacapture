@@ -18,8 +18,9 @@ acknowledge a warning.
 - **Transmitting is gated.** You type `TRANSMIT` after a warning. Only PandaCapture's firmware can
   transmit at all, and it stops by itself within about 2 seconds if this program goes away.
 
-> **Status:** works in simulation and its unit tests. It hasn't been run against a real panda yet;
-> see [STATUS.md](STATUS.md).
+> **Status:** tested on a oneclone mini blackpanda (STM32F4): capture setup, flash backup,
+> flashing and updating, and the transmit gate. Not yet tested: a Red Panda, and capturing from or
+> transmitting on a real bus. See [STATUS.md](STATUS.md).
 
 ## Hardware
 
@@ -27,7 +28,7 @@ acknowledge a warning.
 |---|---|---|
 | Red Panda (STM32H7) | yes | yes |
 | Black Panda (STM32F4) | yes | yes: built from comma's last panda firmware with every F4 board |
-| Grey Panda (STM32F4), and boards that detect as one, such as oneclone's mini blackpanda | yes (tested on a oneclone board) | yes, same F4 build |
+| Grey Panda (STM32F4), and boards that detect as one, such as oneclone's mini blackpanda | yes (tested on a oneclone board) | yes, same F4 build (flashed and gate-tested on a oneclone board) |
 | White Panda (STM32F4) | yes | the F4 build supports it; untried, needs `flash --force` |
 | Panda inside a comma three / 3X | not supported | refused |
 

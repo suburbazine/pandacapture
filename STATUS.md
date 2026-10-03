@@ -25,6 +25,21 @@
   detection on all three buses, recording and closing.
   - USB power only, no bus connected, so no frames yet.
 - Two fixes came from this run: CAN health bit rates (10x too low) and the FD display on F4 boards.
+- Backup: the whole 1.5 MB flash read back through the STM32 bootloader in about 1.5 minutes. The
+  bootloader started in its error state; PandaCapture now clears it first. The F4 DFU serial formula
+  matched the real bootloader.
+  - The board held a debug bootstub (`v1.0.0-DEV-6e96d044-DEBUG`) and the fork firmware.
+- First flash through DFU: backup, bootstub, firmware. It runs `PANDACAPTURE-…-e462c34d-DEBUG` and boots
+  silent.
+  - It exposed the F4 version string being one character short; fixed in the F4 build patch.
+- Update through the bootstub: 3.5 s, signature verified.
+  - It exposed Windows briefly refusing access to a panda that had just restarted; opens now retry.
+- Transmit gate on the real firmware, with no bus connected and no frames sent:
+  - refused, staying silent: fork mode 29, openpilot's Hyundai mode, ELM327, ALLOUTPUT without
+    the arm code, ALLOUTPUT with a wrong code
+  - allowed: noOutput (ACK only)
+  - armed: ALLOUTPUT with the arm code (controls_allowed on)
+  - Stopping the heartbeats, after a refused request to disable heartbeat checks, disarmed it after 1.6 s.
 
 ## Not yet tested on hardware
 - No Red Panda has been flashed or captured from yet. The protocol follows comma's library for the
@@ -33,7 +48,9 @@
   - DFU on Windows with Zadig's WinUSB driver
   - the green LED while armed
   - the heartbeat timeout
-- No F4 panda has been flashed, backed up or restored yet. Its flash layout, DFU block size, DFU serial formula and
+- Restore hasn't been run on hardware yet. The backup of the board's original firmware is kept
+  locally.
+- Transmitting frames on a real bus, and capturing from one: the board hasn't been wired to a bus yet. Its flash layout, DFU block size, DFU serial formula and
   health layout come from comma's last F4-capable library and firmware, with tests against those
   pinned sources.
 - A Black Panda on old stock firmware: capture needs CAN packet format 4 (2023 or later).
