@@ -1,10 +1,16 @@
 # PandaCapture for comma pandas
 
-Records a car's CAN buses through a [comma](https://comma.ai) Red Panda or Black Panda into a candump log. The log is
-for finding the signals a FrostBYTE water/methanol controller should read (RPM, MAP/boost, intake
-temperature), and the FrostBYTE Android app's signal finder, SavvyCAN and can-utils all read it.
-PandaCapture also flashes its own firmware onto the panda, and can transmit frames once you
-acknowledge a warning.
+Records a car's CAN buses through a [comma](https://comma.ai) Red Panda or Black Panda, and shows
+them live as gauges, numbers and status lights.
+
+- **Captures** are candump logs, for finding the signals a FrostBYTE water/methanol controller
+  should read (RPM, MAP/boost, intake temperature). The FrostBYTE Android app's signal finder,
+  SavvyCAN and can-utils all read them.
+- **The live dashboard** decodes the traffic in your browser with an address map for your vehicle.
+  A Kia Stinger 3.3T map is built in.
+- **The panda's firmware:** PandaCapture flashes its own onto the panda, backing up what was there
+  first.
+- **Transmitting:** it can send frames once you acknowledge a warning.
 
 - **Listen-only by default.** The panda's CAN controllers sit in bus-monitoring mode: no ACKs, no
   error frames, nothing transmitted. The bus can't tell the panda is there.
@@ -17,12 +23,16 @@ acknowledge a warning.
   [docs/protocol.md](docs/protocol.md).
 - **Transmitting is gated.** You type `TRANSMIT` after a warning. Only PandaCapture's firmware can
   transmit at all, and it stops by itself within about 2 seconds if this program goes away.
+- **One file, nothing to install.** The program carries the firmware for both panda families, the
+  dashboard and the built-in maps.
 
 > **Status:** tested on a oneclone mini blackpanda (STM32F4):
 > - flash backup, flashing and updating, and the transmit gate
 > - capture from a Kia Stinger's P-CAN: about 2,430 frames/s for 165 s, with no dropouts
+> - the dashboard: replaying real Stinger captures at full rate, with all 67 map signals decoding
 >
-> Not yet tested: a Red Panda, and transmitting on a real bus. See [STATUS.md](STATUS.md).
+> Not yet tested: a Red Panda, transmitting on a real bus, and the dashboard live in the car.
+> See [STATUS.md](STATUS.md).
 
 ## Hardware
 
@@ -36,15 +46,19 @@ acknowledge a warning.
 
 ## 1. Install
 
-Download the program for your system from [Releases](../../releases): `pandacapture-windows-x64.exe`
-or `pandacapture-linux-x64`. Each release lists SHA-256 sums. Or run from source:
+Download the program for your system from the [latest release](../../releases/latest):
+`pandacapture-windows-x64.exe` or `pandacapture-linux-x64`. It's one file: put it anywhere, for
+example on the laptop that goes in the car. Each release lists SHA-256 sums. Or run from source:
 
 ```bash
 pip install -e .
 ```
 
-- **Windows:** the panda installs its own WinUSB driver when plugged in. The first flash needs one
-  more driver, for the STM32 bootloader; see "Windows driver" below.
+- **Windows:**
+  - The panda installs its own WinUSB driver when plugged in.
+  - The first flash needs one more driver, for the STM32 bootloader; see "Windows driver" below.
+  - A panda with a USB-A socket needs a USB A-to-A cable. A USB-C-to-A cable won't connect it to a
+    USB-C port.
 - **Linux:** install the udev rules in [linux/](linux/README.md), or only root can open the panda.
 
 Check it sees the panda:
@@ -157,27 +171,49 @@ acknowledge them. It still never transmits a frame:
 pandacapture --ack --bitrate 500
 ```
 
-## Live dashboard
+## 5. Watch it live
 
 ```bash
-pandacapture dashboard --map my-car.json
+pandacapture dashboard --map kia-stinger-33t-pcan
 ```
 
-This opens gauges, numbers and status lights in your browser, decoded from the panda's traffic while it listens silently. An **address map** says which CAN IDs and bits mean what for your vehicle:
-- **Built in:** a Kia Stinger 3.3T P-CAN map, `--map kia-stinger-33t-pcan`.
-- **Your own:** a JSON file, see [docs/address-maps.md](docs/address-maps.md). Put it in a `maps` folder next to the program to use it by name.
+Your browser opens on gauges, numbers and status lights, decoded from the panda's traffic while it
+listens silently. Press `Q` in the console to stop.
+
+An **address map** says which CAN IDs and bits mean what for your vehicle:
+- **Built in:** `kia-stinger-33t-pcan`, 67 signals from comma's DBC, tracing of the ECU's CAN code, and captures of the car. It covers:
+  - engine and boost; torque and spark
+  - an idle and lope panel: idle target, 5 s RPM swing and low, alternator duty
+  - cam phasers in degrees, with overlap and off-target lamps
+  - temperatures, battery, fuel pressures
+  - drive mode and gear
+  - engine and chassis lamps
+
+  Each tile says whether its signal was checked on the car, came from a DBC, or was worked out
+  from captures.
+- **Your own:** a JSON file, as described in [docs/address-maps.md](docs/address-maps.md).
+  - Signals can be decoded from frames or derived from other signals.
+  - Enumerated values can show as text.
+  - Put a map in a `maps` folder next to the program to use it by name.
 - **List them:** `pandacapture maps`.
 
 On the page:
 - **Normal:** each value updates 10 times a second.
-- **High resolution:** streams every sample as fast as the bus sends it, with a 10-second trace on each tile.
+- **High resolution:** streams every sample as fast as the bus sends it, with a 10-second trace and
+  the update rate on each tile.
 
 | Option | Does |
 |---|---|
 | `--record` | also saves a candump capture while you watch |
-| `--replay LOG` | plays back a capture instead of reading the panda, e.g. for building a map at your desk |
+| `--replay LOG` | plays back a capture instead of reading the panda: try maps at your desk |
 | `--simulate` | fake traffic |
 | `--lan` | serves the page to other devices on your network, such as a phone on the dash. Only this computer can open it otherwise |
+
+To look at a recorded drive at your desk:
+
+```bash
+pandacapture dashboard --map kia-stinger-33t-pcan --replay captures/capture-20261003-080200.log
+```
 
 ## Transmitting
 
@@ -219,8 +255,27 @@ pandacapture [options]          record
   --simulate                    fake traffic, no panda needed
   --simulate-dropout N          fake traffic that drops out after N seconds
 
+pandacapture dashboard [options]      live gauges in the browser
+  --map NAME|FILE               address map (see: pandacapture maps)
+  --replay LOG [--speed X] [--no-loop]   play back a capture instead of the panda
+  --simulate                    fake traffic
+  --record [--out DIR]          also record a candump capture
+  --bitrate RATE                default: the map's bit rate
+  --port N                      web server port (default 8765)
+  --lan                         serve to other devices on the network too
+  --no-browser                  don't open the browser
+
 pandacapture list | info | dashboard | maps | flash | backup | restore | send | replay | selftest      (each has --help)
 ```
+
+## Documentation
+
+| | |
+|---|---|
+| [docs/wiring.md](docs/wiring.md) | The panda's OBD-C pinout, the comma harness's 26-pin, OBD-II, breakouts, termination |
+| [docs/address-maps.md](docs/address-maps.md) | Writing an address map for the dashboard |
+| [docs/protocol.md](docs/protocol.md) | The panda's USB protocol as PandaCapture uses it, for porting (e.g. to Android) |
+| [STATUS.md](STATUS.md) | What's been tested on real hardware, and what hasn't |
 
 ## Privacy
 
@@ -234,8 +289,8 @@ git clone --recurse-submodules https://github.com/suburbazine/pandacapture
 ```
 
 - **Tests:** `pip install -e ".[dev]"`, then `python -m pytest`.
-- **Firmware:** `python firmware/build.py` builds both targets: `h7` (Red Panda) and `f4` (Black
-  Panda). See the top of [firmware/build.py](firmware/build.py) for the Arm toolchain and
+- **Firmware:** `python firmware/build.py` builds both targets: `h7` (Red Panda) and `f4` (Black,
+  Grey and White Panda). See the top of [firmware/build.py](firmware/build.py) for the Arm toolchain and
   pycryptodome. It builds on Windows, Linux or in Docker (`--docker`).
 - **One-file program:** `pip install ".[package]"`, then `python packaging/build_exe.py`.
 - **CI:** [GitHub Actions](.github/workflows/build.yml) builds the firmware and the Windows and
@@ -246,4 +301,5 @@ The firmware is comma's panda firmware at pinned commits, plus the patches in
 - **Red Panda:** a recent commit.
 - **Black, Grey and White Panda:** comma's last commit before it started removing F4 boards
   (`e462c34d`, June 2025), with the opendbc commit it pinned. comma no longer maintains that firmware.
+
 PandaCapture isn't made or endorsed by comma.ai. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
