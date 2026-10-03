@@ -133,7 +133,15 @@
 
   /* ---- page body: attention strip, gauges, then the groups ---- */
   main { padding: 4px var(--pad) 32px; max-width: 1400px; margin: 0 auto; }
-  .attention { --lc: var(--muted); display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 2px; }
+  /* Always one row of fixed height, so chips coming and going never move the gauges below; more chips
+     than fit scroll sideways rather than wrapping onto a second row */
+  .attention {
+    --lc: var(--muted); display: flex; flex-wrap: nowrap; align-items: center; gap: 8px; height: 36px;
+    margin: 12px 0 2px; overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
+  }
+  .attention::-webkit-scrollbar { display: none; }
+  .attention .calm { color: var(--muted); font-size: 13px; padding-left: 2px; }
+  .attention .chip { flex: none; }
   .chip {
     display: inline-flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 12px 0 10px;
     border-radius: 999px; font-size: 14px; font-weight: 600; color: var(--text);
@@ -327,7 +335,7 @@
 </dialog>
 <div class="banner" id="banner"></div>
 <main id="main">
-  <div class="attention" id="attention" hidden></div>
+  <div class="attention" id="attention"><span class="calm">No warnings</span></div>
   <section class="band" id="gauges" hidden><div class="grid gauges"></div></section>
   <div class="groups-bar" id="groupsBar" hidden><span>Details</span>
     <button class="link" id="openAll" type="button">Expand all</button>
@@ -528,19 +536,29 @@
   $("closeAll").onclick = () => setAll(false);
 
   // ---- attention strip: lit lamps and values in a warn or alert zone, above the gauges ----
-  const attention = { sig: "", vals: {} };
+  // A chip stays HOLD_MS after its condition clears, and keeps its place, so a value hovering at a
+  // threshold (spark on its minimum at idle) doesn't make the strip flicker
+  const HOLD_MS = 3000;
+  const attention = { sig: "", vals: {}, held: new Map() };   // key -> { item, until }, in first-seen order
   function showAttention(items) {
-    const sig = items.map((i) => i.key + ":" + i.cls).join(",");
+    const now = performance.now();
+    for (const i of items) {
+      const h = attention.held.get(i.key);
+      if (h) { h.item = i; h.until = now + HOLD_MS; } else attention.held.set(i.key, { item: i, until: now + HOLD_MS });
+    }
+    for (const [k, h] of attention.held) if (h.until < now) attention.held.delete(k);
+    const shown = [...attention.held.values()].map((h) => h.item);
+    const sig = shown.map((i) => i.key + ":" + i.cls).join(",");
     const strip = $("attention");
     if (sig !== attention.sig) {
       attention.sig = sig;
       attention.vals = {};
-      strip.innerHTML = items.map((i) => `<span class="chip ${i.cls}"><span class="dot"></span>${esc(i.label)}` +
-        (i.value !== undefined ? ` <span class="val" data-k="${esc(i.key)}"></span>` : "") + `</span>`).join("");
+      strip.innerHTML = shown.length ? shown.map((i) => `<span class="chip ${i.cls}"><span class="dot"></span>${esc(i.label)}` +
+        (i.value !== undefined ? ` <span class="val" data-k="${esc(i.key)}"></span>` : "") + `</span>`).join("")
+        : `<span class="calm">No warnings</span>`;
       strip.querySelectorAll(".val").forEach((el) => attention.vals[el.dataset.k] = el);
-      strip.hidden = !items.length;
     }
-    for (const i of items) if (i.value !== undefined) attention.vals[i.key].textContent = i.value;
+    for (const i of shown) if (i.value !== undefined) attention.vals[i.key].textContent = i.value;
   }
 
   // ---- incoming data ----
