@@ -128,6 +128,27 @@ plug. comma sells a pre-crimped development harness, which saves buying Molex's 
 
 Then plug it into the harness box, and the box into the panda with the OBD-C cable.
 
+### Example: a third-party 26-pin pigtail
+
+Colours mean nothing on third-party cables. One supplied with a oneclone mini blackpanda used red
+for ground. Go by cavity number: the harness box fixes each cavity's function, whatever the wire
+colour. This cable read:
+
+| Cavity | Wire | Function |
+|---|---|---|
+| 1, 26 | long red, yellow | ground |
+| 12, 14 | purple, orange | +12 V |
+| 4 / 6 | blue / grey | CAN0 high / low: bus 0, the one to tap |
+| 22 / 24 | long black / green | CAN2 high / low: bus 2, joined to bus 0 by the relay |
+| 9 ↔ 19, 11 ↔ 17 | short brown ↔ short red, short black ↔ short white | pass-throughs, unused |
+
+Read the cavity numbers off the housing, or pair the wires up with a continuity meter through
+the harness box (see Option 3's notes). Confirm ground and +12 V before applying power.
+
+**Check the termination before tapping a car's bus.** With the cable in the box and everything
+unpowered, measure CAN0 high to low. About 120 Ω means the box terminates the bus, which suits a
+bench ECU but adds a third terminator to a car's bus.
+
 ### comma power (RJ45)
 
 comma power plugs into the harness with an RJ45 jack. It brings the OBD-II port's CAN in as
