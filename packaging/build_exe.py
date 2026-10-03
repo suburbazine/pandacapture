@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Builds the one-file FrostCapture program for this OS with PyInstaller, firmware included.
+"""Builds the one-file PandaCapture program for this OS with PyInstaller, firmware included.
 
-Run firmware/build.py first (or put a firmware build in frostcapture/firmware_bin).
-Output: dist/frostcapture(.exe)
+Run firmware/build.py first (or put a firmware build in pandacapture/firmware_bin).
+Output: dist/pandacapture(.exe)
 """
 
 import sys
@@ -11,21 +11,21 @@ from pathlib import Path
 import PyInstaller.__main__
 
 ROOT = Path(__file__).resolve().parent.parent
-FW = ROOT / "frostcapture" / "firmware_bin"
+FW = ROOT / "pandacapture" / "firmware_bin"
 
 if not (FW / "manifest.json").exists():
-    sys.exit("No firmware in frostcapture/firmware_bin: run firmware/build.py first.")
+    sys.exit("No firmware in pandacapture/firmware_bin: run firmware/build.py first.")
 
 sep = ";" if sys.platform == "win32" else ":"
 PyInstaller.__main__.run([
-    str(ROOT / "frostcapture" / "__main__.py"),
-    "--name", "frostcapture",
+    str(ROOT / "pandacapture" / "__main__.py"),
+    "--name", "pandacapture",
     "--onefile",
     "--console",
     "--noconfirm",
     "--clean",
     "--paths", str(ROOT),
-    "--add-data", f"{FW}{sep}frostcapture/firmware_bin",
+    "--add-data", f"{FW}{sep}pandacapture/firmware_bin",
     "--collect-binaries", "libusb_package",
     "--distpath", str(ROOT / "dist"),
     "--workpath", str(ROOT / "build" / "pyinstaller"),

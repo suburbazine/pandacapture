@@ -1,4 +1,4 @@
-"""The panda's USB protocol, as far as FrostCapture uses it.
+"""The panda's USB protocol, as far as PandaCapture uses it.
 
 Constants and pure functions with no USB access, so they can be tested anywhere and ported to the
 FrostBYTE Android app (docs/protocol.md describes the same things). They follow comma's panda
@@ -53,12 +53,12 @@ REQ_SET_DATA_SPEED = 0xF9     # value = bus, index = kbit/s x 10
 SAFETY_SILENT = 0      # bus monitoring: no ACKs, no transmit
 SAFETY_ALLOUTPUT = 17  # transmit anything (debug builds only)
 SAFETY_NOOUTPUT = 19   # ACKs like any node, never transmits a frame
-# The FrostCapture firmware only accepts ALLOUTPUT with this param (firmware/patches/0001-transmit-gate.patch)
-FROSTCAPTURE_TX_ARM = 0x4654
+# The PandaCapture firmware only accepts ALLOUTPUT with this param (firmware/patches/0001-transmit-gate.patch)
+PANDACAPTURE_TX_ARM = 0x4654
 SAFETY_NAMES = {SAFETY_SILENT: "silent", SAFETY_ALLOUTPUT: "transmit armed", SAFETY_NOOUTPUT: "ack only"}
 
-# The FrostCapture firmware's version string starts with this (firmware/patches/0002-build.patch)
-FROSTCAPTURE_BUILDER = "FROSTCAPTURE"
+# The PandaCapture firmware's version string starts with this (firmware/patches/0002-build.patch)
+PANDACAPTURE_BUILDER = "PANDACAPTURE"
 
 # ---- hardware ----
 HW_WHITE_PANDA = 0x01
@@ -258,8 +258,8 @@ def dfu_serial(usb_serial: str):
         return None
 
 
-def is_frostcapture_version(version: str) -> bool:
-    return version.startswith(FROSTCAPTURE_BUILDER + "-")
+def is_pandacapture_version(version: str) -> bool:
+    return version.startswith(PANDACAPTURE_BUILDER + "-")
 
 
 def parse_frame_text(text: str, default_bus: int = 0) -> Frame:

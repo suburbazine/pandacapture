@@ -1,5 +1,5 @@
 [project]
-name = "frostcapture-panda"
+name = "pandacapture"
 dynamic = ["version"]
 description = "CAN capture for the FrostBYTE signal finder, on a comma Red Panda"
 readme = "README.md"
@@ -14,20 +14,20 @@ dev = ["pytest", "scons"]
 package = ["pyinstaller>=6.10"]
 
 [project.scripts]
-frostcapture = "frostcapture.cli:main"
+pandacapture = "pandacapture.cli:main"
 
 [build-system]
 requires = ["setuptools>=61", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = ["frostcapture"]
+packages = ["pandacapture"]
 
 [tool.setuptools.dynamic]
-version = {attr = "frostcapture.__version__"}
+version = {attr = "pandacapture.__version__"}
 
 [tool.setuptools.package-data]
-frostcapture = ["firmware_bin/*"]
+pandacapture = ["firmware_bin/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

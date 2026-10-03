@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from frostcapture import protocol as p
+from pandacapture import protocol as p
 
 ROOT = Path(__file__).resolve().parent.parent
 PANDA = ROOT / "firmware" / "panda"

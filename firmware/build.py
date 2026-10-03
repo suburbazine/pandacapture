@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Builds the FrostCapture firmware for the Red Panda.
+"""Builds the PandaCapture firmware for the Red Panda.
 
 comma's panda firmware (firmware/panda, pinned) with firmware/patches applied, built with comma's
 own SCons build against the pinned opendbc (firmware/opendbc). The app is signed with the panda
 project's public development key, like any panda firmware built from source.
 
-Output (default frostcapture/firmware_bin/): panda_h7.bin.signed, bootstub.panda_h7.bin and
-manifest.json, which `frostcapture flash` uses and release builds carry inside the program.
+Output (default pandacapture/firmware_bin/): panda_h7.bin.signed, bootstub.panda_h7.bin and
+manifest.json, which `pandacapture flash` uses and release builds carry inside the program.
 
 Needs: Python 3.10+ with scons (pip install scons), git, and the arm-none-eabi GCC toolchain:
   Linux / macOS: pip install comma-deps-gcc-arm-none-eabi  (comma's build of it), or your package manager
@@ -37,7 +37,7 @@ PATCHES = sorted((HERE / "patches").glob("*.patch"))
 BUILD = HERE / "build"
 TREE = BUILD / "panda"
 TARGETS = ("board/obj/panda_h7.bin.signed", "board/obj/bootstub.panda_h7.bin")
-DOCKER_IMAGE = "frostcapture-firmware"
+DOCKER_IMAGE = "pandacapture-firmware"
 
 
 def fail(msg):
@@ -69,7 +69,7 @@ def find_gcc(toolchain):
 
 
 def export_tree():
-    """A clean copy of the pinned panda source with the FrostCapture patches applied."""
+    """A clean copy of the pinned panda source with the PandaCapture patches applied."""
     if not (PANDA / "board").is_dir() or not (OPENDBC / "opendbc").is_dir():
         fail("firmware/panda or firmware/opendbc is empty. Run: git submodule update --init")
     if TREE.exists():
@@ -86,8 +86,8 @@ def export_tree():
     for patch in PATCHES:
         print(f"Applying {patch.name}")
         subprocess.run(["git", "apply", "--verbose", str(patch)], cwd=TREE, check=True, env=env)
-    if 'BUILDER = "FROSTCAPTURE"' not in (TREE / "SConscript").read_text():
-        fail("the FrostCapture patches didn't apply")
+    if 'BUILDER = "PANDACAPTURE"' not in (TREE / "SConscript").read_text():
+        fail("the PandaCapture patches didn't apply")
 
 
 def version_hash(path):
@@ -122,11 +122,11 @@ def build(args):
     env = dict(os.environ)
     env["PATH"] = str(gcc_dir) + os.pathsep + env.get("PATH", "")
     env["PYTHONPATH"] = str(OPENDBC) + os.pathsep + env.get("PYTHONPATH", "")
-    env["FROSTCAPTURE_GIT"] = f"{ours}-{panda_commit[:8]}"
+    env["PANDACAPTURE_GIT"] = f"{ours}-{panda_commit[:8]}"
     jobs = str(max(1, (os.cpu_count() or 2) - 1))
     subprocess.run([sys.executable, "-m", "SCons", "-C", str(TREE), "-j", jobs, *TARGETS], env=env, check=True)
 
-    out = Path(args.out) if args.out else ROOT / "frostcapture" / "firmware_bin"
+    out = Path(args.out) if args.out else ROOT / "pandacapture" / "firmware_bin"
     out.mkdir(parents=True, exist_ok=True)
     files = {}
     for target in TARGETS:
@@ -136,7 +136,7 @@ def build(args):
     manifest = {
         "version": (TREE / "board" / "obj" / "version").read_text().strip(),
         "built_utc": dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat(),
-        "frostcapture_commit": ours,
+        "pandacapture_commit": ours,
         "panda_commit": panda_commit,
         "opendbc_commit": opendbc_commit,
         "patches": {p.name: sha256(p) for p in PATCHES},
@@ -154,7 +154,7 @@ def docker_build(args):
     if not shutil.which("docker"):
         fail("docker not found")
     subprocess.run(["docker", "build", "-t", DOCKER_IMAGE, str(HERE)], check=True)
-    out = Path(args.out).resolve() if args.out else ROOT / "frostcapture" / "firmware_bin"
+    out = Path(args.out).resolve() if args.out else ROOT / "pandacapture" / "firmware_bin"
     try:
         rel_out = out.relative_to(ROOT).as_posix()
     except ValueError:
@@ -164,9 +164,9 @@ def docker_build(args):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Build the FrostCapture Red Panda firmware.")
+    ap = argparse.ArgumentParser(description="Build the PandaCapture Red Panda firmware.")
     ap.add_argument("--toolchain", help="folder holding arm-none-eabi-gcc (or its parent)")
-    ap.add_argument("--out", help="output folder (default frostcapture/firmware_bin)")
+    ap.add_argument("--out", help="output folder (default pandacapture/firmware_bin)")
     ap.add_argument("--docker", action="store_true", help="build inside Docker (firmware/Dockerfile)")
     args = ap.parse_args()
     try:

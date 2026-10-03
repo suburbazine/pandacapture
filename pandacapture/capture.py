@@ -1,6 +1,6 @@
 """Records CAN traffic to a candump log, with markers, stall and dropout marks, and a summary.
 
-The log format matches the NEXIQ FrostCapture's, so the FrostBYTE Android signal finder, SavvyCAN and
+The log format matches the NEXIQ FrostCapture's (in the FrostBYTE Android repository), so the FrostBYTE Android signal finder, SavvyCAN and
 can-utils read it: `(unix time) canN ID#DATA`, and `#` comment lines for markers and events.
 """
 
@@ -170,7 +170,7 @@ def capture(open_source, opts: CaptureOptions, console: Console = None, keys: Ke
     console.line("Keys: M = marker, 1-9 = numbered marker, Q or Esc = stop.\n")
 
     with open(path, "w", encoding="utf-8", newline="\n") as w, keys:
-        w.write("# FrostCapture candump log\n")
+        w.write("# PandaCapture candump log\n")
         w.write(f"# source: {source.description}\n")
         for h in source.header:
             w.write(f"# {h}\n")

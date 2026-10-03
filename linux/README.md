@@ -1,9 +1,9 @@
 # Linux USB permissions
 
-Without these rules, only root can open the panda, and FrostCapture reports "permission denied".
+Without these rules, only root can open the panda, and PandaCapture reports "permission denied".
 
 ```bash
-sudo cp linux/50-frostcapture-panda.rules /etc/udev/rules.d/
+sudo cp linux/50-pandacapture.rules /etc/udev/rules.d/
 ```
 
 ```bash

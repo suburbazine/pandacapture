@@ -1,7 +1,7 @@
 # Red Panda USB protocol (for the Android OTG port)
 
-What FrostCapture says to a Red Panda over USB, and everything the FrostBYTE Android app would need
-to capture from one over USB OTG. `frostcapture/protocol.py` holds the same constants and the packet
+What PandaCapture says to a Red Panda over USB, and everything the FrostBYTE Android app would need
+to capture from one over USB OTG. `pandacapture/protocol.py` holds the same constants and the packet
 code in a form that ports line for line to Kotlin.
 
 ## Device
@@ -28,7 +28,7 @@ All vendor requests to the device: `bmRequestType` `0xC0` to read, `0x40` to wri
 | Request | Direction | value | index | What |
 |---|---|---|---|---|
 | `0xC1` | in, 1 byte | | | hardware type: `7` = Red Panda |
-| `0xD6` | in, ≤64 bytes | | | firmware version string. FrostCapture's starts `FROSTCAPTURE-` |
+| `0xD6` | in, ≤64 bytes | | | firmware version string. PandaCapture's starts `PANDACAPTURE-` |
 | `0xDD` | in, 8 bytes | | | health and CAN packet layout hashes (two little-endian u32) |
 | `0xD2` | in | | | health packet (`health_t` in `board/health.h`) |
 | `0xC2` | in | bus | | CAN health of one bus (`can_health_t`): error counters, bit rates |
@@ -37,8 +37,8 @@ All vendor requests to the device: `bmRequestType` `0xC0` to read, `0x40` to wri
 | `0xDC` | out | mode | param | safety mode: `0` silent, `19` ACK only, `17` transmit (see below) |
 | `0xDE` | out | bus | kbit/s × 10 | nominal bit rate: 10, 20, 50, 100, 125, 250, 500, 1000 kbit/s |
 | `0xF9` | out | bus | kbit/s × 10 | CAN FD data rate. At or above the nominal rate, it also turns FD reception on |
-| `0xE8` | out | bus | 0/1 | automatic CAN FD switching. FrostCapture sets 0 |
-| `0xDB` | out | 0/1 | | route the harness OBD-II pins to bus 1 |
+| `0xE8` | out | bus | 0/1 | automatic CAN FD switching. PandaCapture sets 0 |
+| `0xDB` | out | 0/1 | | put CAN3 (the multiplexed bus) on bus 1 instead of CAN1 |
 | `0xC0` | out | | | reset the USB packet reassembly (send after connecting) |
 | `0xF1` | out | `0xFFFF` | | empty the panda's receive queue |
 | `0xF3` | out | 1 | | heartbeat. Needed every second while transmit is armed |
@@ -50,7 +50,7 @@ ACK, never send error frames, never transmit. To capture:
 
 1. `0xF8`, then `0xE7` with value 0.
 2. `0xDC` with mode 0 (silent).
-3. `0xDE` for each bus, then `0xF9` for each bus (FrostCapture uses 2000 kbit/s for the FD data rate).
+3. `0xDE` for each bus, then `0xF9` for each bus (PandaCapture uses 2000 kbit/s for the FD data rate).
 4. `0xC0`, then `0xF1` with value `0xFFFF`.
 5. Read `0x81` in a loop with a 16 KiB buffer. The panda answers at once, with an empty transfer
    when it has nothing. Wait about 1 ms after an empty read.
@@ -76,14 +76,14 @@ bytes 6..  data: length from the DLC: 0-8, then 12, 16, 20, 24, 32, 48, 64
 - `rejected` marks a frame the firmware refused to send.
 - Packets carry no timestamp: stamp them when the transfer arrives.
 
-## Transmitting (FrostCapture firmware only)
+## Transmitting (PandaCapture firmware only)
 
-FrostCapture's firmware only transmits in mode `17` with param `0x4654` (`0xDC`, value 17, index
+PandaCapture's firmware only transmits in mode `17` with param `0x4654` (`0xDC`, value 17, index
 0x4654). Any other mode request falls back to silent. While armed, the firmware needs `0xF3` at
 least every second, and returns to silent by itself within about 2 seconds without it. The green
 LED is on while armed. To disarm, send `0xDC` with mode 0.
 
-An app should only arm after its own warning and acknowledgement, the way `frostcapture send` does.
+An app should only arm after its own warning and acknowledgement, the way `pandacapture send` does.
 
 ## Android notes
 
@@ -91,5 +91,5 @@ An app should only arm after its own warning and acknowledgement, the way `frost
 - Read endpoint `0x81` with `bulkTransfer` on a background thread, or with `UsbRequest` for queued reads.
 - Check how the Red Panda is powered before relying on a phone: it isn't verified yet whether a
   phone's OTG port can power it alone. A powered OTG hub avoids the question.
-- The FrostBYTE app's CAN log parsers already read FrostCapture's candump output. For multi-bus
+- The FrostBYTE app's CAN log parsers already read PandaCapture's candump output. For multi-bus
   logs they would need to keep the `canN` interface, which they currently ignore.

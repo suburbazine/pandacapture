@@ -2,10 +2,10 @@
 
 Three locks, all of which have to open before a frame reaches the bus:
 1. The user acknowledges the warning: types TRANSMIT, or passes --i-accept-transmit-risk for a script.
-2. The panda runs FrostCapture firmware, whose transmit gate only allows sending in ALLOUTPUT
-   with FrostCapture's arm code (firmware/patches/0001-transmit-gate.patch); stock comma
+2. The panda runs PandaCapture firmware, whose transmit gate only allows sending in ALLOUTPUT
+   with PandaCapture's arm code (firmware/patches/0001-transmit-gate.patch); stock comma
    firmware can't send arbitrary frames at all.
-3. While armed, the firmware needs FrostCapture's heartbeat. If this program stops, crashes or the
+3. While armed, the firmware needs PandaCapture's heartbeat. If this program stops, crashes or the
    USB cable comes out, the panda drops back to silent within about 2 seconds.
 """
 
@@ -66,7 +66,7 @@ class TxLog:
         out_dir.mkdir(parents=True, exist_ok=True)
         self.path = out_dir / f"tx-{dt.datetime.now().strftime('%Y%m%d-%H%M%S')}.log"
         self._f = open(self.path, "w", encoding="utf-8", newline="\n")
-        self._f.write("# FrostCapture transmit log (frames sent, not received)\n")
+        self._f.write("# PandaCapture transmit log (frames sent, not received)\n")
         self._f.write(f"# panda: {description}\n")
         self._f.write(f"# started: {dt.datetime.now(dt.timezone.utc).isoformat().replace('+00:00', 'Z')}\n")
 
@@ -92,12 +92,12 @@ class ArmedPanda:
 
     def __enter__(self):
         version = self.panda.version()
-        if not p.is_frostcapture_version(version):
-            raise TransmitRefused(f"The panda runs {version!r}, not FrostCapture firmware, so it can't "
-                                  "transmit. Flash it with: frostcapture flash")
+        if not p.is_pandacapture_version(version):
+            raise TransmitRefused(f"The panda runs {version!r}, not PandaCapture firmware, so it can't "
+                                  "transmit. Flash it with: pandacapture flash")
         try:
             self.panda.heartbeat(True)
-            self.panda.set_safety(p.SAFETY_ALLOUTPUT, p.FROSTCAPTURE_TX_ARM)
+            self.panda.set_safety(p.SAFETY_ALLOUTPUT, p.PANDACAPTURE_TX_ARM)
             self.beat(force=True)
             mode = self.panda.health()["safety_mode"]
             if mode != p.SAFETY_ALLOUTPUT:

@@ -90,13 +90,13 @@ class PandaSource:
         hw_name = p.HW_NAMES.get(hw, f"panda type 0x{hw:02X}")
         self.serial = pd.serial
         if hw != p.HW_RED_PANDA:
-            self.header.append(f"note: this is a {hw_name}; FrostCapture is designed for the Red Panda")
+            self.header.append(f"note: this is a {hw_name}; PandaCapture is designed for the Red Panda")
         expected = expected_packet_versions()
         if expected and pd.packet_versions()[1] != expected[1]:
-            self.header.append("note: the panda's CAN packet layout differs from this FrostCapture's firmware; "
-                               "run frostcapture flash if frames look wrong")
-        if not p.is_frostcapture_version(version):
-            self.header.append("note: not FrostCapture firmware (capture works; transmitting needs it)")
+            self.header.append("note: the panda's CAN packet layout differs from this PandaCapture's firmware; "
+                               "run pandacapture flash if frames look wrong")
+        if not p.is_pandacapture_version(version):
+            self.header.append("note: not PandaCapture firmware (capture works; transmitting needs it)")
 
         # Stay out of openpilot's power saving, and listen before anything else
         pd.disable_heartbeat()

@@ -9,15 +9,15 @@ from pathlib import Path
 
 import pytest
 
-from frostcapture import protocol as p
-from frostcapture.firmware import APP_FILE, BOOTSTUB_FILE, MANIFEST_FILE, Firmware, FirmwareError
+from pandacapture import protocol as p
+from pandacapture.firmware import APP_FILE, BOOTSTUB_FILE, MANIFEST_FILE, Firmware, FirmwareError
 
 ROOT = Path(__file__).resolve().parent.parent
 PATCHES = sorted((ROOT / "firmware" / "patches").glob("*.patch"))
 PANDA = ROOT / "firmware" / "panda"
 
 
-def write_fw(folder, app, bootstub, version="FROSTCAPTURE-a-b-DEBUG", tamper=False):
+def write_fw(folder, app, bootstub, version="PANDACAPTURE-a-b-DEBUG", tamper=False):
     folder.mkdir(parents=True, exist_ok=True)
     (folder / APP_FILE).write_bytes(app)
     (folder / BOOTSTUB_FILE).write_bytes(bootstub)
@@ -43,7 +43,7 @@ def test_checksum_mismatch(tmp_path):
 
 def test_rejects_other_builds(tmp_path):
     write_fw(tmp_path, b"A" * 1000, b"B" * 10, version="DEV-1234-DEBUG")
-    with pytest.raises(FirmwareError, match="FrostCapture"):
+    with pytest.raises(FirmwareError, match="PandaCapture"):
         Firmware.load(tmp_path)
 
 
@@ -54,11 +54,11 @@ def test_missing(tmp_path):
 
 def test_patch_constants_match_host():
     gate = (ROOT / "firmware" / "patches" / "0001-transmit-gate.patch").read_text()
-    assert int(re.search(r"#define FROSTCAPTURE_TX_ARM (0x[0-9A-F]+)U", gate)[1], 16) == p.FROSTCAPTURE_TX_ARM
+    assert int(re.search(r"#define PANDACAPTURE_TX_ARM (0x[0-9A-F]+)U", gate)[1], 16) == p.PANDACAPTURE_TX_ARM
     # bit 0 of the ALLOUTPUT param is comma's bus-forwarding switch: the arm code must leave it off
-    assert p.FROSTCAPTURE_TX_ARM & 1 == 0
+    assert p.PANDACAPTURE_TX_ARM & 1 == 0
     build = (ROOT / "firmware" / "patches" / "0002-build.patch").read_text()
-    assert f'+BUILDER = "{p.FROSTCAPTURE_BUILDER}"' in build
+    assert f'+BUILDER = "{p.PANDACAPTURE_BUILDER}"' in build
 
 
 @pytest.mark.skipif(not (PANDA / "board").exists() or not shutil.which("git"), reason="needs git and firmware/panda")

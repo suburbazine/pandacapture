@@ -1,5 +1,5 @@
-# comma panda (firmware and bootstub) and the STM32 ROM bootloader (DFU), for FrostCapture.
-# Install: sudo cp 50-frostcapture-panda.rules /etc/udev/rules.d/ && sudo udevadm control --reload-rules && sudo udevadm trigger
+# comma panda (firmware and bootstub) and the STM32 ROM bootloader (DFU), for PandaCapture.
+# Install: sudo cp 50-pandacapture.rules /etc/udev/rules.d/ && sudo udevadm control --reload-rules && sudo udevadm trigger
 SUBSYSTEM=="usb", ATTRS{idVendor}=="bbaa", ATTRS{idProduct}=="ddcc", MODE="0666"
 SUBSYSTEM=="usb", ATTRS{idVendor}=="bbaa", ATTRS{idProduct}=="ddee", MODE="0666"
 SUBSYSTEM=="usb", ATTRS{idVendor}=="3801", ATTRS{idProduct}=="ddcc", MODE="0666"

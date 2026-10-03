@@ -4,13 +4,13 @@ from pathlib import Path
 
 import pytest
 
-from frostcapture import flasher
-from frostcapture import protocol as p
-from frostcapture.firmware import Firmware
-from frostcapture.panda import DeviceEntry
+from pandacapture import flasher
+from pandacapture import protocol as p
+from pandacapture.firmware import Firmware
+from pandacapture.panda import DeviceEntry
 
 SERIAL = "1d0032000f51333231373438"
-OURS = "FROSTCAPTURE-abc-def-DEBUG"
+OURS = "PANDACAPTURE-abc-def-DEBUG"
 
 
 def firmware():
@@ -19,7 +19,7 @@ def firmware():
 
 
 class World:
-    """One panda. bootstub_kind 'comma' only starts comma-signed apps; 'ours' starts FrostCapture's."""
+    """One panda. bootstub_kind 'comma' only starts comma-signed apps; 'ours' starts PandaCapture's."""
 
     def __init__(self, state="app", version="v1.2.3-RELEASE", bootstub_kind="comma", hw=p.HW_RED_PANDA):
         self.state = state  # "app", "bootstub" or "dfu"
@@ -160,7 +160,7 @@ def test_first_install_goes_through_dfu(world):
 
 
 def test_update_uses_bootstub_only(world):
-    world.version, world.bootstub_kind = "FROSTCAPTURE-old-DEBUG", "ours"
+    world.version, world.bootstub_kind = "PANDACAPTURE-old-DEBUG", "ours"
     assert flasher.flash(firmware(), log=lambda s: None) == OURS
     assert not any(e.startswith("dfu") for e in world.events)
 

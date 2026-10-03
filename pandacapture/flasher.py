@@ -1,9 +1,9 @@
-"""Puts the FrostCapture firmware on a Red Panda.
+"""Puts the PandaCapture firmware on a Red Panda.
 
 A panda's flash has a bootstub (sector 0) that checks the app's signature before starting it. comma
 ships pandas with a release bootstub that only starts comma-signed apps, so the first install goes
-through the STM32's ROM bootloader (DFU) to write FrostCapture's bootstub, which also starts apps
-signed with the panda project's public development key, as FrostCapture's are. After that, updates
+through the STM32's ROM bootloader (DFU) to write PandaCapture's bootstub, which also starts apps
+signed with the panda project's public development key, as PandaCapture's are. After that, updates
 go through the bootstub alone. Same steps as comma's Panda.recover() and Panda.flash().
 """
 
@@ -54,13 +54,13 @@ def check_hardware(panda: Panda, force: bool):
         return
     name = p.HW_NAMES.get(hw, f"unknown hardware 0x{hw:02X}")
     if hw in p.HW_F4:
-        raise FlashError(f"This is a {name}, which has an STM32F4. FrostCapture firmware is built for the "
+        raise FlashError(f"This is a {name}, which has an STM32F4. PandaCapture firmware is built for the "
                          "Red Panda's STM32H7 and can't run on it (comma's firmware no longer supports the F4). "
                          "It can still capture with its current firmware.")
     if hw in (p.HW_TRES, p.HW_CUATRO, p.HW_BODY):
-        raise FlashError(f"This is a {name}, not a Red Panda. FrostCapture firmware is only for the Red Panda.")
+        raise FlashError(f"This is a {name}, not a Red Panda. PandaCapture firmware is only for the Red Panda.")
     if not force:
-        raise FlashError(f"This panda reports {name}. FrostCapture firmware is built for the Red Panda "
+        raise FlashError(f"This panda reports {name}. PandaCapture firmware is built for the Red Panda "
                          "(STM32H7); use --force only if you know it's the same hardware.")
 
 
@@ -98,14 +98,14 @@ def enter_dfu(serial, log):
 
 
 def write_bootstub(dfu_serial, fw: Firmware, log, serial=None) -> str:
-    """In DFU: write FrostCapture's bootstub and start it. Returns the panda's USB serial."""
+    """In DFU: write PandaCapture's bootstub and start it. Returns the panda's USB serial."""
     before = {d.serial for d in list_pandas()}
     with StDfu.open(dfu_serial) as dfu:
         dfu.clear_status()
         log("Erasing the bootstub and the first app sector")
         dfu.erase_sector(0)
         dfu.erase_sector(1)
-        log(f"Writing FrostCapture's bootstub ({len(fw.bootstub) // 1024} KiB)")
+        log(f"Writing PandaCapture's bootstub ({len(fw.bootstub) // 1024} KiB)")
         dfu.program(p.FLASH_BASE, fw.bootstub)
         log("Starting the bootstub")
         dfu.jump(p.FLASH_BASE)
@@ -120,7 +120,7 @@ def write_bootstub(dfu_serial, fw: Firmware, log, serial=None) -> str:
 
 def flash(fw: Firmware, serial=None, recover=None, force=False, confirm=None, log=print) -> str:
     """Flashes [fw]. recover: True = always rewrite the bootstub through DFU, False = never,
-    None = only when the panda isn't already running FrostCapture firmware. Returns the new version."""
+    None = only when the panda isn't already running PandaCapture firmware. Returns the new version."""
     pandas = list_pandas()
     dfus = list_dfu()
     if serial:
@@ -147,7 +147,7 @@ def flash(fw: Firmware, serial=None, recover=None, force=False, confirm=None, lo
     with Panda.open(serial) as panda:
         check_hardware(panda, force)
         current = "bootstub (no firmware running)" if panda.bootstub else panda.version()
-    ours = p.is_frostcapture_version(current)
+    ours = p.is_pandacapture_version(current)
     via_dfu = recover if recover is not None else not ours
 
     log(f"Panda {serial}: {current}")
@@ -180,7 +180,7 @@ def finish(serial, fw, via_dfu, log) -> str:
     came_back = wait_for(lambda: _panda_with(serial, "panda") or _panda_with(serial, "bootstub"),
                          "the panda to restart", 20, log)
     if came_back.kind == "bootstub":
-        hint = "" if via_dfu else " Its bootstub is probably comma's: run frostcapture flash --recover."
+        hint = "" if via_dfu else " Its bootstub is probably comma's: run pandacapture flash --recover."
         raise FlashError("The panda's bootstub refused the new firmware." + hint)
 
     with Panda.open(serial) as panda:

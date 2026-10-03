@@ -1,4 +1,4 @@
-"""Command line: frostcapture [capture options] | list | info | flash | send | replay | selftest"""
+"""Command line: pandacapture [capture options] | list | info | flash | send | replay | selftest"""
 
 import argparse
 import sys
@@ -40,13 +40,13 @@ def parse_rates(values) -> dict:
 
 
 def add_common(ap):
-    ap.add_argument("--serial", help="which panda, when several are connected (see: frostcapture list)")
+    ap.add_argument("--serial", help="which panda, when several are connected (see: pandacapture list)")
 
 
 def capture_parser():
-    ap = argparse.ArgumentParser(prog="frostcapture", description=(
+    ap = argparse.ArgumentParser(prog="pandacapture", description=(
         "Records a car's CAN buses through a comma Red Panda into a candump log, listen-only by default. "
-        "Other commands: list, info, flash, send, replay, selftest (frostcapture COMMAND --help)."))
+        "Other commands: list, info, flash, send, replay, selftest (pandacapture COMMAND --help)."))
     add_common(ap)
     ap.add_argument("--bitrate", action="append", metavar="RATE",
                     help="auto (default), or kbit/s for every bus (500), or per bus (0=500); repeatable")
@@ -57,7 +57,7 @@ def capture_parser():
     ap.add_argument("--ack", action="store_true",
                     help="acknowledge frames like a normal node (needed when the panda is the only other node, "
                          "e.g. an ECU on the bench). Never transmits frames. Needs --bitrate")
-    ap.add_argument("--obd", action="store_true", help="route the harness's OBD-II pins to bus 1")
+    ap.add_argument("--obd", action="store_true", help="record CAN3 (the multiplexed OBD bus, OBD-C pins B10/B11) as bus 1 instead of CAN1")
     ap.add_argument("--out", help="folder for capture files (default: captures next to the program)")
     ap.add_argument("--seconds", type=float, default=0, help="stop after this many seconds")
     ap.add_argument("--no-reconnect", action="store_true", help="stop on a panda error instead of reconnecting")
@@ -65,9 +65,9 @@ def capture_parser():
     ap.add_argument("--simulate", action="store_true", help="fake traffic, to try the tool without a panda")
     ap.add_argument("--simulate-dropout", type=float, metavar="N",
                     help="fake traffic that drops out after N seconds, to try reconnecting")
-    ap.add_argument("--list", action="store_true", help="same as: frostcapture list")
-    ap.add_argument("--selftest", action="store_true", help="same as: frostcapture selftest")
-    ap.add_argument("--version", action="version", version=f"FrostCapture {__version__}")
+    ap.add_argument("--list", action="store_true", help="same as: pandacapture list")
+    ap.add_argument("--selftest", action="store_true", help="same as: pandacapture selftest")
+    ap.add_argument("--version", action="version", version=f"PandaCapture {__version__}")
     return ap
 
 
@@ -113,7 +113,7 @@ def cmd_capture(argv) -> int:
 
 
 def cmd_list(argv) -> int:
-    argparse.ArgumentParser(prog="frostcapture list", description="Connected pandas and STM32 bootloaders.").parse_args(argv)
+    argparse.ArgumentParser(prog="pandacapture list", description="Connected pandas and STM32 bootloaders.").parse_args(argv)
     try:
         devices = list_pandas() + list_dfu()
     except Exception as e:  # noqa: BLE001 - libusb missing etc.
@@ -129,7 +129,7 @@ def cmd_list(argv) -> int:
 
 
 def cmd_info(argv) -> int:
-    ap = argparse.ArgumentParser(prog="frostcapture info", description="Firmware, health and bus settings of a panda.")
+    ap = argparse.ArgumentParser(prog="pandacapture info", description="Firmware, health and bus settings of a panda.")
     add_common(ap)
     args = ap.parse_args(argv)
     try:
@@ -143,13 +143,13 @@ def cmd_info(argv) -> int:
             hw = pd.hw_type()
             print(f"Panda {pd.serial}: {p.HW_NAMES.get(hw, f'type 0x{hw:02X}')}")
             if pd.bootstub:
-                print("  In its bootstub (flasher): no firmware running. Run: frostcapture flash")
+                print("  In its bootstub (flasher): no firmware running. Run: pandacapture flash")
                 return 0
             version = pd.version()
-            ours = p.is_frostcapture_version(version)
-            print(f"  Firmware: {version}" + ("" if ours else "  (not FrostCapture: capture only, no transmit)"))
+            ours = p.is_pandacapture_version(version)
+            print(f"  Firmware: {version}" + ("" if ours else "  (not PandaCapture: capture only, no transmit)"))
             if bundled and ours and version != bundled.version:
-                print("  A different FrostCapture build than the bundled one: frostcapture flash updates it.")
+                print("  A different PandaCapture build than the bundled one: pandacapture flash updates it.")
             h = pd.health()
             print(f"  Supply {h['voltage_mv'] / 1000:.2f} V, {h['temperature_c']:.0f} C, up {h['uptime_s']} s, "
                   f"mode {p.SAFETY_NAMES.get(h['safety_mode'], h['safety_mode'])}")
@@ -164,8 +164,8 @@ def cmd_info(argv) -> int:
 
 
 def cmd_flash(argv) -> int:
-    ap = argparse.ArgumentParser(prog="frostcapture flash", description=(
-        "Puts the FrostCapture firmware on a Red Panda. The first time, this also replaces comma's bootstub "
+    ap = argparse.ArgumentParser(prog="pandacapture flash", description=(
+        "Puts the PandaCapture firmware on a Red Panda. The first time, this also replaces comma's bootstub "
         "through the STM32 bootloader (DFU)."))
     add_common(ap)
     ap.add_argument("--firmware", metavar="DIR", help="firmware folder (default: the one bundled with this program)")
@@ -236,7 +236,7 @@ def prepare_tx(args, buses):
 
 
 def cmd_send(argv) -> int:
-    ap = tx_parser("frostcapture send", "Transmits frames, after a warning you have to acknowledge.")
+    ap = tx_parser("pandacapture send", "Transmits frames, after a warning you have to acknowledge.")
     ap.add_argument("frames", nargs="+", metavar="FRAME", help="candump notation: 7DF#02010C, 18DB33F1#0201")
     ap.add_argument("--bus", type=int, default=0, choices=range(p.CAN_BUSES), help="bus to send on (default 0)")
     ap.add_argument("--count", type=int, default=1, help="send the frames this many times (default 1)")
@@ -262,9 +262,9 @@ def _send(armed, log, frames, args):
 
 
 def cmd_replay(argv) -> int:
-    ap = tx_parser("frostcapture replay", "Transmits the frames of a candump log with their original timing, "
+    ap = tx_parser("pandacapture replay", "Transmits the frames of a candump log with their original timing, "
                    "after a warning you have to acknowledge.")
-    ap.add_argument("log", help="candump log, e.g. a FrostCapture capture")
+    ap.add_argument("log", help="candump log, e.g. a PandaCapture capture")
     ap.add_argument("--bus-map", action="append", metavar="FROM:TO",
                     help="send the log's bus FROM on panda bus TO (repeatable); default each bus to itself")
     ap.add_argument("--ids", help="only these ids, comma separated hex (316,329)")
@@ -315,9 +315,9 @@ def run_tx(args, buses, body, details) -> int:
     try:
         with pd:
             version = pd.version()
-            if not p.is_frostcapture_version(version):
-                raise TransmitRefused(f"The panda runs {version!r}, not FrostCapture firmware, so it can't "
-                                      "transmit. Flash it with: frostcapture flash")
+            if not p.is_pandacapture_version(version):
+                raise TransmitRefused(f"The panda runs {version!r}, not PandaCapture firmware, so it can't "
+                                      "transmit. Flash it with: pandacapture flash")
             rate_text = ", ".join(f"bus {b} at {rates[b]} kbit/s" for b in buses)
             acknowledge(args.i_accept_transmit_risk, f"About to send {details}\n({rate_text})")
             log = TxLog(args.out, f"{pd.serial}, {version}, {rate_text}")

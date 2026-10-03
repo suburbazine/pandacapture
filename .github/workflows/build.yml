@@ -22,7 +22,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: firmware
-          path: frostcapture/firmware_bin/
+          path: pandacapture/firmware_bin/
 
   test:
     strategy:
@@ -38,7 +38,7 @@ jobs:
           python-version: "3.12"
       - run: pip install -e ".[dev]"
       - run: python -m pytest -q
-      - run: python -m frostcapture selftest
+      - run: python -m pandacapture selftest
 
   package:
     needs: [firmware, test]
@@ -46,15 +46,15 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-            asset: frostcapture-windows-x64.exe
-            exe: dist/frostcapture.exe
+            asset: pandacapture-windows-x64.exe
+            exe: dist/pandacapture.exe
           - os: ubuntu-22.04  # older glibc, so the program runs on more distributions
-            asset: frostcapture-linux-x64
-            exe: dist/frostcapture
+            asset: pandacapture-linux-x64
+            exe: dist/pandacapture
           # macOS comes later:
           # - os: macos-14
-          #   asset: frostcapture-macos-arm64
-          #   exe: dist/frostcapture
+          #   asset: pandacapture-macos-arm64
+          #   exe: dist/pandacapture
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -64,7 +64,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: firmware
-          path: frostcapture/firmware_bin
+          path: pandacapture/firmware_bin
       - run: pip install ".[package]"
       - run: python packaging/build_exe.py
       - name: Smoke test

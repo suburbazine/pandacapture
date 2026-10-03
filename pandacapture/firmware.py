@@ -1,4 +1,4 @@
-"""The Red Panda firmware FrostCapture flashes: built by firmware/build.py, bundled into releases."""
+"""The Red Panda firmware PandaCapture flashes: built by firmware/build.py, bundled into releases."""
 
 import hashlib
 import json
@@ -15,7 +15,7 @@ MANIFEST_FILE = "manifest.json"
 
 def bundled_dir() -> Path:
     base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
-    return base / "frostcapture" / "firmware_bin"
+    return base / "pandacapture" / "firmware_bin"
 
 
 class FirmwareError(Exception):
@@ -56,17 +56,17 @@ class Firmware:
             app = (folder / APP_FILE).read_bytes()
             bootstub = (folder / BOOTSTUB_FILE).read_bytes()
         except FileNotFoundError as e:
-            where = "bundled with this FrostCapture" if folder == bundled_dir() else f"in {folder}"
+            where = "bundled with this PandaCapture" if folder == bundled_dir() else f"in {folder}"
             raise FirmwareError(f"No firmware {where} ({Path(e.filename).name} missing). Build it with "
-                                "firmware/build.py, or use a release of FrostCapture.") from None
+                                "firmware/build.py, or use a release of PandaCapture.") from None
         except (OSError, ValueError) as e:
             raise FirmwareError(f"Can't read the firmware in {folder}: {e}") from None
         for name, blob in ((APP_FILE, app), (BOOTSTUB_FILE, bootstub)):
             want = manifest.get("sha256", {}).get(name)
             if want != hashlib.sha256(blob).hexdigest():
                 raise FirmwareError(f"{name} doesn't match its manifest checksum: rebuild the firmware.")
-        if not p.is_frostcapture_version(manifest.get("version", "")):
-            raise FirmwareError(f"{folder} doesn't hold a FrostCapture firmware build.")
+        if not p.is_pandacapture_version(manifest.get("version", "")):
+            raise FirmwareError(f"{folder} doesn't hold a PandaCapture firmware build.")
         fw = cls(app, bootstub, manifest, folder)
         fw.app_sectors()
         if len(bootstub) > p.SECTOR_SIZE:

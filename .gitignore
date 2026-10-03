@@ -4,8 +4,8 @@ captures/
 
 # Firmware build output (firmware/build.py); releases ship it inside the exe
 firmware/build/
-frostcapture/firmware_bin/*
-!frostcapture/firmware_bin/README.txt
+pandacapture/firmware_bin/*
+!pandacapture/firmware_bin/README.txt
 
 # Local Arm toolchain (firmware/build.py --toolchain .toolchain/...)
 .toolchain/

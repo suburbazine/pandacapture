@@ -27,7 +27,7 @@ STATE_ERROR = 10
 
 DRIVER_HINT_WINDOWS = ("The STM32 bootloader (USB 0483:DF11) is connected but Windows has no WinUSB driver "
                        "for it. Install one with Zadig (see \"Windows driver\" in the README), then run "
-                       "frostcapture flash again.")
+                       "pandacapture flash again.")
 
 
 def list_dfu() -> list:

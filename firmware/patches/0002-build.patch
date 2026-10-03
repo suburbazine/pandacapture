@@ -12,7 +12,7 @@ index 027ef7b3..9b768ee4 100644
  
  PREFIX = "arm-none-eabi-"
 -BUILDER = "DEV"
-+BUILDER = "FROSTCAPTURE"
++BUILDER = "PANDACAPTURE"
  
  common_flags = []
  
@@ -20,9 +20,9 @@ index 027ef7b3..9b768ee4 100644
      return '$OBJCOPY -O binary %s %s' % (source[0], target[0])
  
  def get_version(builder, build_type):
-+  # FrostCapture builds from an exported tree; build.py passes the source commits in
-+  if os.getenv("FROSTCAPTURE_GIT"):
-+    return f"{builder}-{os.getenv('FROSTCAPTURE_GIT')}-{build_type}"
++  # PandaCapture builds from an exported tree; build.py passes the source commits in
++  if os.getenv("PANDACAPTURE_GIT"):
++    return f"{builder}-{os.getenv('PANDACAPTURE_GIT')}-{build_type}"
    try:
      git = subprocess.check_output(["git", "rev-parse", "--short=8", "HEAD"], encoding='utf8').strip()
    except subprocess.CalledProcessError:
@@ -63,7 +63,7 @@ index 027ef7b3..9b768ee4 100644
 -
 -# test files
 -SConscript('tests/libpanda/SConscript')
-+# FrostCapture: no host-side test library (it needs a native C compiler)
++# PandaCapture: no host-side test library (it needs a native C compiler)
 diff --git a/SConstruct b/SConstruct
 index 6e40beb0..048e4d14 100644
 --- a/SConstruct

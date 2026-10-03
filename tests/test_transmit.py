@@ -1,8 +1,8 @@
 import pytest
 
-from frostcapture import protocol as p
-from frostcapture import transmit
-from frostcapture.transmit import ArmedPanda, TransmitRefused, acknowledge, read_replay
+from pandacapture import protocol as p
+from pandacapture import transmit
+from pandacapture.transmit import ArmedPanda, TransmitRefused, acknowledge, read_replay
 
 
 def test_acknowledge_needs_the_word():
@@ -29,7 +29,7 @@ def test_flag_still_shows_warning():
 
 
 class FakePanda:
-    def __init__(self, version="FROSTCAPTURE-a-b-DEBUG", arms=True):
+    def __init__(self, version="PANDACAPTURE-a-b-DEBUG", arms=True):
         self._version = version
         self.arms = arms
         self.mode = p.SAFETY_SILENT
@@ -45,7 +45,7 @@ class FakePanda:
 
     def set_safety(self, mode, param=0):
         self.calls.append(("safety", mode, param))
-        firmware_accepts = mode != p.SAFETY_ALLOUTPUT or (self.arms and param == p.FROSTCAPTURE_TX_ARM)
+        firmware_accepts = mode != p.SAFETY_ALLOUTPUT or (self.arms and param == p.PANDACAPTURE_TX_ARM)
         self.mode = mode if firmware_accepts else p.SAFETY_SILENT
 
     def health(self):
@@ -76,7 +76,7 @@ def test_arm_send_disarm():
     pd = FakePanda()
     frame = p.Frame(0, 0x7DF, bytes([2, 1, 0x0C]))
     with ArmedPanda(pd) as armed:
-        assert ("safety", p.SAFETY_ALLOUTPUT, p.FROSTCAPTURE_TX_ARM) in pd.calls
+        assert ("safety", p.SAFETY_ALLOUTPUT, p.PANDACAPTURE_TX_ARM) in pd.calls
         armed.send([frame])
         assert armed.returned == 1
     assert pd.mode == p.SAFETY_SILENT
@@ -93,7 +93,7 @@ def test_disarms_after_error():
 
 def test_refuses_stock_firmware():
     pd = FakePanda(version="v1.0-RELEASE")
-    with pytest.raises(TransmitRefused, match="not FrostCapture firmware"):
+    with pytest.raises(TransmitRefused, match="not PandaCapture firmware"):
         with ArmedPanda(pd):
             pass
     assert not any(c[0] == "safety" and c[1] == p.SAFETY_ALLOUTPUT for c in pd.calls if isinstance(c, tuple))
@@ -117,7 +117,7 @@ def test_wait_keeps_heartbeat(monkeypatch):
 
 def test_read_replay(tmp_path):
     log = tmp_path / "c.log"
-    log.write_text("# FrostCapture candump log\n"
+    log.write_text("# PandaCapture candump log\n"
                    "(100.000000) can0 316#0011\n"
                    "(100.010000) can1 329#22\n"
                    "# marker 1 (100.02)\n"

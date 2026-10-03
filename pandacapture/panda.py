@@ -65,7 +65,7 @@ class Panda:
             bootstub = dev.getProductID() == p.PID_BOOTSTUB
             if bootstub and not bootstub_ok:
                 raise UsbError("The panda is in its bootstub (flasher), not running firmware. "
-                               "Flash it with: frostcapture flash")
+                               "Flash it with: pandacapture flash")
             try:
                 handle = dev.open()
                 if sys.platform.startswith("linux"):

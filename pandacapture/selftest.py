@@ -1,4 +1,4 @@
-"""frostcapture selftest: checks the packet decoder and a short simulated capture, no panda needed."""
+"""pandacapture selftest: checks the packet decoder and a short simulated capture, no panda needed."""
 
 import tempfile
 from pathlib import Path

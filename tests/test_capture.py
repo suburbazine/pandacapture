@@ -1,8 +1,8 @@
 import re
 
-from frostcapture import protocol as p
-from frostcapture.capture import CaptureOptions, Console, capture
-from frostcapture.sources import SimulatedSource, SourceError
+from pandacapture import protocol as p
+from pandacapture.capture import CaptureOptions, Console, capture
+from pandacapture.sources import SimulatedSource, SourceError
 
 # The FrostBYTE Android signal finder's patterns (canlog/LogParsers.kt)
 ANDROID_CANDUMP = re.compile(r"\(\s*([0-9.]+)\)\s+\S+\s+([0-9A-Fa-f]{3,8})#(R?[0-9A-Fa-f]*)")
@@ -56,7 +56,7 @@ def test_log_readable_by_android_finder(tmp_path):
     assert frames and all(ANDROID_CANDUMP.search(line) for line in frames)
     markers = [ANDROID_MARKER.match(line) for line in lines if line.startswith("# marker")]
     assert [m[1] for m in markers] == ["1", "3"]
-    assert lines[0] == "# FrostCapture candump log"
+    assert lines[0] == "# PandaCapture candump log"
     assert any(line.startswith("# 0x316 (engine RPM) present") for line in lines)
 
 
