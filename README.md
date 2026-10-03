@@ -18,9 +18,11 @@ acknowledge a warning.
 - **Transmitting is gated.** You type `TRANSMIT` after a warning. Only PandaCapture's firmware can
   transmit at all, and it stops by itself within about 2 seconds if this program goes away.
 
-> **Status:** tested on a oneclone mini blackpanda (STM32F4): capture setup, flash backup,
-> flashing and updating, and the transmit gate. Not yet tested: a Red Panda, and capturing from or
-> transmitting on a real bus. See [STATUS.md](STATUS.md).
+> **Status:** tested on a oneclone mini blackpanda (STM32F4):
+> - flash backup, flashing and updating, and the transmit gate
+> - capture from a Kia Stinger's P-CAN: about 2,430 frames/s for 165 s, with no dropouts
+>
+> Not yet tested: a Red Panda, and transmitting on a real bus. See [STATUS.md](STATUS.md).
 
 ## Hardware
 

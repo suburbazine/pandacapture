@@ -48,10 +48,17 @@
   - DFU on Windows with Zadig's WinUSB driver
   - the green LED while armed, on a panda that has status LEDs (the oneclone mini blackpanda has none)
   - the heartbeat timeout
+- First real-bus capture (reported by the user's tuning session, 2026-10-03): Kia Stinger 3.3T
+  P-CAN at 500k through the oneclone board's 26-pin, on PandaCapture firmware.
+  - 400,330 frames in 164.9 s (about 2,430 frames/s), 64 IDs, no dropouts or stalls.
+  - Bit rate auto-detected on bus 0 (980 frames during detection), recorded silent / listen-only.
+  - For comparison, the NEXIQ USB-Link 2 FrostCapture managed about 1,870 frames/s, with an
+    adapter dropout and a 10.3 s stall.
 - Restore hasn't been run on hardware yet. The backup of the board's original firmware is kept
   locally.
-- Transmitting frames on a real bus, and capturing from one: the board hasn't been wired to a bus yet. Its flash layout, DFU block size, DFU serial formula and
-  health layout come from comma's last F4-capable library and firmware, with tests against those
-  pinned sources.
+- Transmitting frames on a real bus: the transmit gate is verified, but no frame has been sent yet.
+- A genuine comma Black Panda. The F4 flash layout, DFU block size, DFU serial formula and health
+  layout come from comma's last F4-capable library and firmware, with tests against those pinned
+  sources; the oneclone board confirmed the DFU serial and health layout.
 - A Black Panda on old stock firmware: capture needs CAN packet format 4 (2023 or later).
   Anything older is refused with a hint to flash.
