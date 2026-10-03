@@ -7,6 +7,9 @@ firmware/build/
 pandacapture/firmware_bin/*
 !pandacapture/firmware_bin/README.txt
 
+# Your own address maps, used by name from maps/ next to the program
+/maps/
+
 # Local Arm toolchain (firmware/build.py --toolchain .toolchain/...)
 .toolchain/
 

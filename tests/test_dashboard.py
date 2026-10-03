@@ -6,8 +6,20 @@ import pytest
 
 from pandacapture import protocol as p
 from pandacapture.dashboard import Dashboard, LiveState
+from pandacapture import signals
 from pandacapture.signals import MapError, builtin_maps, load_map, parse_map
 from pandacapture.sources import ReplaySource, SimulatedSource
+
+
+# A made-up map for the tests: a few signals laid out like a typical ECU broadcast
+TEST_MAP = {"name": "Test car", "bitrate": 500, "signals": [
+    {"key": "rpm", "id": "0x316", "byte": 2, "bits": 16, "scale": 0.25, "unit": "rpm", "display": "gauge",
+     "min": 0, "max": 7000},
+    {"key": "battery", "id": "0x545", "byte": 3, "scale": 0.1015625, "unit": "V"},
+    {"key": "mil", "id": "0x545", "byte": 0, "bit": 1, "bits": 1, "display": "light"},
+    {"key": "gear", "id": "0x112", "byte": 1, "bits": 4, "labels": {"0": "P", "14": "R"}},
+    {"key": "rpm_swing", "expr": "p2p(rpm, 5)"},
+]}
 
 
 def sig(**kw):
@@ -64,23 +76,26 @@ def test_duplicate_keys():
         parse_map({"signals": [{"key": "a", "id": 1, "byte": 0}, {"key": "a", "id": 2, "byte": 0}]})
 
 
-def test_builtin_maps_load():
-    assert builtin_maps()
-    for name in builtin_maps():
-        m = load_map(name)
-        assert m.signals
-        for s in m.signals:
-            j = s.to_json()
-            assert ("expr" in j) != ("id" in j) and ("id" not in j or j["id"].startswith("0x"))
+def test_maps_folder_lookup(tmp_path, monkeypatch):
+    folder = tmp_path / "maps"
+    folder.mkdir()
+    (folder / "test-car.json").write_text(json.dumps(TEST_MAP))
+    monkeypatch.setattr(signals, "user_dir", lambda: folder)
+    assert "test-car" in builtin_maps()
+    m = load_map("test-car")
+    assert m.name == "Test car" and len(m.signals) == 5
+    with pytest.raises(MapError, match="No address map"):
+        load_map("no-such-car")
 
 
-def test_stinger_rpm_and_mil():
-    m = load_map("kia-stinger-33t-pcan")
-    state = LiveState(m)
+def test_decode_rpm_mil_battery():
+    state = LiveState(parse_map(TEST_MAP))
     state.feed([p.Frame(0, 0x316, bytes([0, 0x10, 0x80, 0x0C, 0, 0, 0, 0])),
-                p.Frame(0, 0x545, bytes([0b10, 0, 0, 140, 0, 0, 0, 0]))], time.monotonic())
+                p.Frame(0, 0x545, bytes([0b10, 0, 0, 140, 0, 0, 0, 0])),
+                p.Frame(0, 0x112, bytes([0, 0, 0]))], time.monotonic())
     snap = state.snapshot()["values"]
     assert snap["rpm"]["v"] == 800 and snap["mil"]["on"] and snap["battery"]["v"] == pytest.approx(14.22, abs=0.01)
+    assert snap["gear"]["text"] == "P" and snap["rpm_swing"]["v"] == 0
 
 
 def test_high_resolution_keeps_every_sample_and_reports_loss():
@@ -103,7 +118,7 @@ def get(url, timeout=2):
 
 
 def test_server_end_to_end():
-    dash = Dashboard(SimulatedSource, load_map("kia-stinger-33t-pcan"), port=0)
+    dash = Dashboard(SimulatedSource, parse_map(TEST_MAP), port=0)
     dash.start()
     try:
         assert b"PandaCapture" in get(dash.url)
@@ -194,6 +209,14 @@ def test_expression_rejects(expr, msg):
 def test_derived_cannot_also_decode():
     with pytest.raises(MapError, match="can't also have"):
         parse_map({"signals": [{"key": "a", "id": 1, "byte": 0}, {"key": "b", "expr": "a", "byte": 0}]})
+
+
+def test_shipped_maps_load():
+    for path in signals.builtin_dir().glob("*.json"):
+        m = load_map(path)
+        for s in m.signals:
+            j = s.to_json()
+            assert ("expr" in j) != ("id" in j) and ("id" not in j or j["id"].startswith("0x"))
 
 
 def test_stinger_map_cam_conventions():

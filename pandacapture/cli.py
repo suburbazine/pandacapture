@@ -397,11 +397,12 @@ def run_tx(args, buses, body, details) -> int:
 
 
 def cmd_maps(argv) -> int:
-    argparse.ArgumentParser(prog="pandacapture maps", description="Built-in address maps.").parse_args(argv)
-    from .signals import MapError, builtin_maps, load_map
+    argparse.ArgumentParser(prog="pandacapture maps", description=(
+        "Address maps found in the maps folder next to the program (or the current folder from source).")).parse_args(argv)
+    from .signals import MapError, builtin_maps, load_map, user_dir
     maps = builtin_maps()
     if not maps:
-        print("No built-in address maps.")
+        print(f"No address maps yet. Put .json maps in {user_dir()}, or pass a file with --map.")
     for name in maps:
         try:
             m = load_map(name)
@@ -421,7 +422,7 @@ def cmd_dashboard(argv) -> int:
         "Live gauges, numbers and status lights in your browser, decoded from the panda's traffic (listen-only) "
         "with an address map. Normal mode updates 10 times a second; high resolution streams every sample."))
     add_common(ap)
-    ap.add_argument("--map", help="built-in map name (see: pandacapture maps) or a .json file")
+    ap.add_argument("--map", help="a map's name from your maps folder (see: pandacapture maps) or a .json file")
     src = ap.add_mutually_exclusive_group()
     src.add_argument("--simulate", action="store_true", help="fake traffic, no panda needed")
     src.add_argument("--replay", metavar="LOG", help="play back a candump log instead of reading the panda")
@@ -440,7 +441,8 @@ def cmd_dashboard(argv) -> int:
     maps = builtin_maps()
     name = args.map or (next(iter(maps)) if len(maps) == 1 else None)
     if name is None:
-        print("ERROR: choose an address map with --map (see: pandacapture maps)")
+        print("ERROR: choose an address map with --map: a .json file, or a name from your maps folder "
+              "(see: pandacapture maps, and docs/address-maps.md)")
         return 2
     try:
         address_map = load_map(name)

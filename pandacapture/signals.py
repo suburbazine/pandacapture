@@ -11,13 +11,15 @@ an expression ("expr": "(tqi_acor - tqfr) * 5"). Expressions allow numbers, sign
 + - * / and comparisons, abs/min/max, and windowed p2p/lo/hi(key, seconds). They're checked when
 the map loads and evaluated by walking the syntax tree, never with eval().
 
-Built-in maps live in pandacapture/maps/ and are found by file name without ".json".
+Maps are found by file name without ".json" in a "maps" folder next to the program (the current
+folder when running from source), then among any shipped with PandaCapture (pandacapture/maps/).
 """
 
 import ast
 import collections
 import json
 import operator
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -394,9 +396,19 @@ def builtin_dir() -> Path:
     return bundled_dir().parent / "maps"
 
 
+def user_dir() -> Path:
+    """Your own maps: a "maps" folder next to the program, or in the current folder from source."""
+    base = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path.cwd()
+    return base / "maps"
+
+
 def builtin_maps() -> dict:
-    """Map name -> path, for the maps shipped with PandaCapture."""
-    return {f.stem: f for f in sorted(builtin_dir().glob("*.json"))}
+    """Map name -> path: the maps shipped with PandaCapture, and yours (which win on a name clash)."""
+    found = {}
+    for folder in (builtin_dir(), user_dir()):
+        if folder.is_dir():
+            found.update({f.stem: f for f in sorted(folder.glob("*.json"))})
+    return dict(sorted(found.items()))
 
 
 def load_map(name_or_path) -> AddressMap:
@@ -404,8 +416,8 @@ def load_map(name_or_path) -> AddressMap:
     if not path.exists():
         builtin = builtin_maps()
         if str(name_or_path) not in builtin:
-            raise MapError(f"No address map {name_or_path!r}: not a file, and not one of the built-in maps "
-                           f"({', '.join(builtin) or 'none'}).")
+            raise MapError(f"No address map {name_or_path!r}: not a file, and not in {user_dir()} "
+                           f"({', '.join(builtin) or 'no maps there'}). See docs/address-maps.md.")
         path = builtin[str(name_or_path)]
     try:
         d = json.loads(path.read_text(encoding="utf-8"))

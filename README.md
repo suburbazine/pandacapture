@@ -160,12 +160,13 @@ pandacapture --ack --bitrate 500
 ## Live dashboard
 
 ```bash
-pandacapture dashboard --map kia-stinger-33t-pcan
+pandacapture dashboard --map my-car.json
 ```
 
 This opens gauges, numbers and status lights in your browser, decoded from the panda's traffic while it listens silently. An **address map** says which CAN IDs and bits mean what for your vehicle:
-- **Built-in:** see `pandacapture maps`.
-- **Your own:** write a JSON file; see [docs/address-maps.md](docs/address-maps.md).
+- **Built in:** a Kia Stinger 3.3T P-CAN map, `--map kia-stinger-33t-pcan`.
+- **Your own:** a JSON file, see [docs/address-maps.md](docs/address-maps.md). Put it in a `maps` folder next to the program to use it by name.
+- **List them:** `pandacapture maps`.
 
 On the page:
 - **Normal:** each value updates 10 times a second.
