@@ -149,6 +149,12 @@ the harness box (see Option 3's notes). Confirm ground and +12 V before applying
 unpowered, measure CAN0 high to low. About 120 Ω means the box terminates the bus, which suits a
 bench ECU but adds a third terminator to a car's bus.
 
+The oneclone mini blackpanda measured about 32 kΩ: only the transceivers' input resistance, no
+termination.
+- **Car bus:** it can tap one directly.
+- **Bench ECU on its own:** needs a 120 Ω resistor across CAN-H and CAN-L, unless the ECU
+  terminates internally (unpowered, about 120 Ω between its CAN-H and CAN-L).
+
 ### comma power (RJ45)
 
 comma power plugs into the harness with an RJ45 jack. It brings the OBD-II port's CAN in as
