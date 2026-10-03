@@ -250,7 +250,7 @@ def capture(open_source, opts: CaptureOptions, console: Console = None, keys: Ke
                     err_at = time.monotonic() - t0
                     w.write(f"# adapter error: {e} ({t0_unix + err_at:.6f}); last frame ({t0_unix + last_frame:.6f})\n")
                     w.flush()
-                    console.line(f"  Panda error: {e}")
+                    console.line(f"  {getattr(source, 'kind', 'Panda')} error: {e}")
                     if not opts.reconnect:
                         raise
                     source.close()

@@ -25,6 +25,9 @@ them live as gauges, numbers and status lights.
   [docs/protocol.md](docs/protocol.md).
 - **Transmitting is gated.** You type `TRANSMIT` after a warning. Only PandaCapture's firmware can
   transmit at all, and it stops by itself within about 2 seconds if this program goes away.
+- **Other adapters too (Windows):** RP1210 and J2534 tools such as a NEXIQ USB-Link 2, a Tactrix
+  OpenPort or a Mongoose can record and drive the dashboard instead of a panda. See
+  [Other adapters](#other-adapters-rp1210-and-j2534).
 - **One file, nothing to install.** The program carries the firmware for both panda families, the
   dashboard and the built-in maps.
 
@@ -45,6 +48,47 @@ them live as gauges, numbers and status lights.
 | Grey Panda (STM32F4), and boards that detect as one, such as oneclone's mini blackpanda | yes (tested on a oneclone board) | yes, same F4 build (flashed and gate-tested on a oneclone board) |
 | White Panda (STM32F4) | yes | the F4 build supports it; untried, needs `flash --force` |
 | Panda inside a comma three / 3X | not supported | refused |
+
+### Other adapters (RP1210 and J2534)
+
+On Windows, PandaCapture also records through the vendor driver of an RP1210 adapter (NEXIQ
+USB-Link 2, Noregon DLA+, DG DPA and other truck tools) or a J2534 pass-thru (Tactrix OpenPort,
+Drew Tech Mongoose, VCX Nano and most dealer and tuning tools). Install the adapter's driver, then:
+
+```bash
+pandacapture list
+```
+
+It lists every installed driver with CAN, whether or not the adapter is plugged in:
+
+```
+  --adapter "rp1210:NULN2R32:1"
+      NEXIQ Technologies USB-Link 2: USB-Link 2,USB
+```
+
+```bash
+pandacapture --adapter "USB-Link 2,USB"
+```
+
+```bash
+pandacapture dashboard --map kia-stinger-33t-pcan --adapter "USB-Link 2,USB"
+```
+
+`--adapter` takes the name in quotes, or any part of it that matches only one adapter. Recording,
+markers, rolling files, reconnecting and the dashboard all work as with a panda. The differences:
+
+- **Not listen-only:** these adapters acknowledge frames like any CAN node. That's harmless on a car
+  at the bus's real bit rate. Nothing is ever transmitted.
+- **One bus**, recorded as `can0`.
+- **Bit rate:** an RP1210 adapter can find it (`Baud=Auto`, the default). A J2534 one can't try rates
+  on a live bus, so it needs `--bitrate 500` (the dashboard uses the map's bit rate).
+- **32-bit drivers** work too. Most vendors ship only 32-bit ones, so PandaCapture loads the driver in
+  a small helper program of the driver's bitness (`pandacapture-adapter-x86.exe` or `-x64.exe`,
+  carried inside the program).
+- **A driver that can't be used as installed:** `pandacapture list` says why. NEXIQ's J2534
+  registration for the USB connection, for example, names no DLL. Use its RP1210 entry instead,
+  or name the DLL: `--adapter j2534:C:\Windows\SysWOW64\NULU2J32.DLL`.
+- **Close the vendor's own software first:** an adapter takes one program at a time.
 
 ## 1. Install
 
@@ -335,6 +379,7 @@ pandacapture [options]          record
   --no-reconnect                stop on a panda error
   --reconnect-seconds N         how long to keep trying (default 60)
   --serial S                    which panda (see: pandacapture list)
+  --adapter NAME                an RP1210 or J2534 adapter instead (see: pandacapture list)
   --simulate                    fake traffic, no panda needed
   --simulate-dropout N          fake traffic that drops out after N seconds
 
@@ -342,6 +387,7 @@ pandacapture dashboard [options]      live gauges in the browser
   --map NAME|FILE               address map (see: pandacapture maps)
   --replay LOG [--speed X] [--no-loop]   play back a capture instead of the panda
   --simulate                    fake traffic
+  --adapter NAME                an RP1210 or J2534 adapter instead of the panda
   --record [--out DIR]          start recording straight away
   --split-mb N                  new recording file every N MB (default 100; 0 = one file)
   --bitrate RATE                default: the map's bit rate

@@ -26,3 +26,6 @@ dist/
 
 # Whole-flash panda backups (firmware and provisioning of your panda)
 backups/
+
+# RP1210/J2534 bridge build output (adapter/build.py)
+pandacapture/adapter_bin/

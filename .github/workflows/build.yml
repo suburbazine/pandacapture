@@ -37,6 +37,9 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -e ".[dev]"
+      - name: RP1210/J2534 bridge (Windows)
+        if: runner.os == 'Windows'
+        run: python adapter/build.py
       - run: python -m pytest -q
       - run: python -m pandacapture selftest
 
@@ -66,6 +69,9 @@ jobs:
           name: firmware
           path: pandacapture/firmware_bin
       - run: pip install ".[package]"
+      - name: RP1210/J2534 bridge (Windows)
+        if: runner.os == 'Windows'
+        run: python adapter/build.py
       - run: python packaging/build_exe.py
       - name: Smoke test
         shell: bash

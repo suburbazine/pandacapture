@@ -42,6 +42,11 @@
   - Stopping the heartbeats, after a refused request to disable heartbeat checks, disarmed it after 1.6 s.
 
 ## Not yet tested on hardware
+- RP1210 and J2534 adapters (2026-10-03). Tested against a fake driver DLL (tests/fake_driver.c),
+  64-bit, for both APIs: frames, transmit echoes skipped, lost-adapter errors, refused bit rates.
+  NEXIQ's real 32-bit RP1210 and J2534 drivers load in the 32-bit bridge and report
+  ERR_OPENING_PORT with the adapter unplugged. Not yet tried with an adapter on a bus. The RP1210
+  frame decoding is FrostCapture's, which recorded the Stinger's P-CAN through a USB-Link 2.
 - No Red Panda has been flashed or captured from yet. The protocol follows comma's library for the
   pinned firmware, but these are unconfirmed:
   - auto bit rate detection on a real bus

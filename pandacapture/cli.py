@@ -47,11 +47,36 @@ def add_common(ap):
     ap.add_argument("--serial", help="which panda, when several are connected (see: pandacapture list)")
 
 
+def add_adapter(ap):
+    ap.add_argument("--adapter", metavar="NAME", help=(
+        "record through an RP1210 or J2534 adapter instead of a panda (Windows), e.g. --adapter \"USB-Link 2,USB\". "
+        "pandacapture list shows the installed ones. They acknowledge frames; J2534 ones need --bitrate"))
+
+
+def adapter_rate(rates):
+    """An adapter has one bus: --bitrate 500, or bus 0's rate."""
+    return rates.get(0) or (next(iter(rates.values())) if rates else None)
+
+
+def adapter_opener(spec, rates):
+    """open_source for --adapter, or an error message."""
+    from .adapters import AdapterSource, bridge_args, find_adapter
+    try:
+        adapter = find_adapter(spec)
+        bridge_args(adapter, adapter_rate(rates))   # a J2534 adapter without a bit rate fails here, not later
+    except SourceError as e:
+        return None, str(e)
+    if adapter.problem:
+        return None, f"{adapter.label()}: {adapter.problem}"
+    return (lambda: AdapterSource(adapter, adapter_rate(rates))), None
+
+
 def capture_parser():
     ap = argparse.ArgumentParser(prog="pandacapture", description=(
         "Records a car's CAN buses through a comma Red Panda into a candump log, listen-only by default. "
         "Other commands: list, info, flash, send, replay, selftest (pandacapture COMMAND --help)."))
     add_common(ap)
+    add_adapter(ap)
     ap.add_argument("--bitrate", action="append", metavar="RATE",
                     help="auto (default), or kbit/s for every bus (500), or per bus (0=500); repeatable")
     ap.add_argument("--data-bitrate", type=int, default=2000, metavar="KBPS",
@@ -98,7 +123,12 @@ def cmd_capture(argv) -> int:
 
     opts = CaptureOptions(out_dir=args.out, seconds=args.seconds, reconnect=not args.no_reconnect,
                           reconnect_seconds=args.reconnect_seconds, buses=tuple(args.bus or ()), split_mb=args.split_mb)
-    if args.simulate or args.simulate_dropout:
+    if args.adapter and not (args.simulate or args.simulate_dropout):
+        open_source, error = adapter_opener(args.adapter, rates)
+        if error:
+            print(f"ERROR: {error}")
+            return 2
+    elif args.simulate or args.simulate_dropout:
         opened = []
 
         def open_source():
@@ -119,19 +149,29 @@ def cmd_capture(argv) -> int:
 
 
 def cmd_list(argv) -> int:
-    argparse.ArgumentParser(prog="pandacapture list", description="Connected pandas and STM32 bootloaders.").parse_args(argv)
+    argparse.ArgumentParser(prog="pandacapture list", description=(
+        "Connected pandas and STM32 bootloaders, and installed RP1210 and J2534 adapters.")).parse_args(argv)
+    from .adapters import list_adapters
+    status = 0
     try:
         devices = list_pandas() + list_dfu()
     except Exception as e:  # noqa: BLE001 - libusb missing etc.
         print(f"ERROR: can't list USB devices: {e}")
-        return 1
-    if not devices:
+        devices, status = [], 1
+    if not devices and not status:
         print("No panda found. Connect it by USB (and see the README's driver notes).")
     for d in devices:
         kind = {"panda": "panda (firmware running)", "bootstub": "panda bootstub (flasher)",
                 "dfu": "STM32 bootloader (DFU)"}[d.kind]
         print(f"  --serial {d.serial:<26} {kind}" + (f"\n      {d.note}" if d.note else ""))
-    return 0
+    adapters = list_adapters()
+    if adapters:
+        # Drivers are listed whether or not their adapter is plugged in
+        print("\nRP1210 and J2534 adapter drivers with CAN (use with --adapter):")
+        for a in adapters:
+            print(f"  --adapter \"{a.key}\"\n      {a.label()}"
+                  + (f"\n      can't be used: {a.problem}" if a.problem else ""))
+    return status
 
 
 def cmd_info(argv) -> int:
@@ -455,6 +495,9 @@ def cmd_dashboard(argv) -> int:
     src = ap.add_mutually_exclusive_group()
     src.add_argument("--simulate", action="store_true", help="fake traffic, no panda needed")
     src.add_argument("--replay", metavar="LOG", help="play back a candump log instead of reading the panda")
+    src.add_argument("--adapter", metavar="NAME", help=(
+        "read an RP1210 or J2534 adapter instead of a panda (Windows; see: pandacapture list). It acknowledges "
+        "frames like any CAN node"))
     ap.add_argument("--speed", type=float, default=1.0, help="replay speed (default 1.0)")
     ap.add_argument("--no-loop", action="store_true", help="stop the replay at the end instead of looping")
     ap.add_argument("--bitrate", action="append", metavar="RATE",
@@ -497,6 +540,11 @@ def cmd_dashboard(argv) -> int:
     elif args.replay:
         def open_source():
             return ReplaySource(args.replay, speed=args.speed, loop=not args.no_loop)
+    elif args.adapter:
+        open_source, error = adapter_opener(args.adapter, rates)
+        if error:
+            print(f"ERROR: {error}")
+            return 2
     else:
         setup = BusSetup(mode="silent", rates=rates)
         serial = [args.serial]
@@ -517,7 +565,8 @@ def cmd_dashboard(argv) -> int:
     print(f"Dashboard for {address_map.name}: {dash.url}")
     if args.lan:
         print("  Serving to this network too: open http://<this computer's address>:%d/ on the other device." % args.port)
-    print("  Listen-only. Press Q or Ctrl+C to stop.")
+    print("  The adapter acknowledges frames; nothing is sent. Press Q or Ctrl+C to stop." if args.adapter
+          else "  Listen-only. Press Q or Ctrl+C to stop.")
     if not args.no_browser:
         url = dash.url + (f"?mode={args.mode}" if args.mode else "")
         if not (args.app and open_app_window(url)):

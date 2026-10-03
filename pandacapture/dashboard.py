@@ -292,7 +292,7 @@ class Reader(threading.Thread):
                 frames = source.read()
             except SourceError as e:
                 lost_at = time.monotonic()
-                self.log(f"[{_clock()}] Panda error: {e}. Reconnecting every {RECONNECT_EVERY:g} s...")
+                self.log(f"[{_clock()}] {getattr(source, 'kind', 'Panda')} error: {e}. Reconnecting every {RECONNECT_EVERY:g} s...")
                 self._note(f"adapter error: {e} ({time.time():.6f})")
                 source.close()
                 source = None
