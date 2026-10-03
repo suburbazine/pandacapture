@@ -4,6 +4,7 @@ import math
 import random
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from . import protocol as p
 from .firmware import expected_packet_versions
@@ -181,6 +182,42 @@ class PandaSource:
                 pass
             panda.close()
             self.panda = None
+
+
+class ReplaySource:
+    """Frames from a candump log, at their recorded pace (times speed), looping at the end."""
+
+    def __init__(self, path, speed=1.0, loop=True):
+        from .transmit import read_replay
+        self.frames = read_replay(path)
+        if not self.frames:
+            raise SourceError(f"No frames in {path}")
+        self.speed = speed
+        self.loop = loop
+        self.index = 0
+        self.start = time.monotonic()
+        self.unpacker = p.CanUnpacker()
+        self.description = f"replay of {Path(path).name} ({len(self.frames)} frames, x{speed:g})"
+        self.header = [f"replaying {path}"]
+        self.serial = "replay"
+        self.rates = {}
+
+    def read(self) -> list:
+        now = (time.monotonic() - self.start) * self.speed
+        out = []
+        while self.index < len(self.frames) and self.frames[self.index][0] <= now:
+            out.append(self.frames[self.index][1])
+            self.index += 1
+        if self.index >= len(self.frames) and self.loop:
+            self.index = 0
+            self.start = time.monotonic()
+        return out
+
+    def health(self):
+        return None
+
+    def close(self):
+        pass
 
 
 class SimulatedSource:

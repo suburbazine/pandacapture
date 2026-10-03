@@ -1,4 +1,4 @@
-"""Command line: pandacapture [capture options] | list | info | flash | send | replay | selftest"""
+"""Command line: pandacapture [capture options] | list | info | dashboard | maps | flash | backup | restore | send | replay | selftest"""
 
 import argparse
 import sys
@@ -12,11 +12,12 @@ from .firmware import Firmware, FirmwareError, bundled_versions
 from .backup import default_dir as default_backup_dir
 from .flasher import FlashError, flash, make_backup, restore
 from .panda import Panda, list_pandas
+from .keys import KeyReader
 from .sources import BusSetup, PandaSource, SimulatedSource, SourceError, detect_rates
 from .transmit import ArmedPanda, TransmitRefused, TxLog, acknowledge, read_replay
 from .usbdev import UsbError
 
-COMMANDS = ("capture", "list", "info", "flash", "backup", "restore", "send", "replay", "selftest")
+COMMANDS = ("capture", "list", "info", "dashboard", "maps", "flash", "backup", "restore", "send", "replay", "selftest")
 
 
 def parse_rates(values) -> dict:
@@ -395,6 +396,110 @@ def run_tx(args, buses, body, details) -> int:
     return 0
 
 
+def cmd_maps(argv) -> int:
+    argparse.ArgumentParser(prog="pandacapture maps", description="Built-in address maps.").parse_args(argv)
+    from .signals import MapError, builtin_maps, load_map
+    maps = builtin_maps()
+    if not maps:
+        print("No built-in address maps.")
+    for name in maps:
+        try:
+            m = load_map(name)
+            print(f"  {name:<28} {m.name}: {len(m.signals)} signals" + (f", {m.bitrate} kbit/s" if m.bitrate else ""))
+        except MapError as e:
+            print(f"  {name:<28} ERROR: {e}")
+    print("Use one with: pandacapture dashboard --map NAME, or pass your own .json (see docs/address-maps.md).")
+    return 0
+
+
+def cmd_dashboard(argv) -> int:
+    from .dashboard import Dashboard
+    from .signals import MapError, builtin_maps, load_map
+    from .sources import ReplaySource
+
+    ap = argparse.ArgumentParser(prog="pandacapture dashboard", description=(
+        "Live gauges, numbers and status lights in your browser, decoded from the panda's traffic (listen-only) "
+        "with an address map. Normal mode updates 10 times a second; high resolution streams every sample."))
+    add_common(ap)
+    ap.add_argument("--map", help="built-in map name (see: pandacapture maps) or a .json file")
+    src = ap.add_mutually_exclusive_group()
+    src.add_argument("--simulate", action="store_true", help="fake traffic, no panda needed")
+    src.add_argument("--replay", metavar="LOG", help="play back a candump log instead of reading the panda")
+    ap.add_argument("--speed", type=float, default=1.0, help="replay speed (default 1.0)")
+    ap.add_argument("--no-loop", action="store_true", help="stop the replay at the end instead of looping")
+    ap.add_argument("--bitrate", action="append", metavar="RATE",
+                    help="kbit/s for every bus or per bus (0=500); default: the map's bit rate, else detected")
+    ap.add_argument("--record", action="store_true", help="also record every frame to a candump log")
+    ap.add_argument("--out", help="folder for --record (default: captures next to the program)")
+    ap.add_argument("--port", type=int, default=8765, help="web server port (default 8765)")
+    ap.add_argument("--lan", action="store_true",
+                    help="serve to other devices on this network too (e.g. a phone), not only this computer")
+    ap.add_argument("--no-browser", action="store_true", help="don't open the browser")
+    args = ap.parse_args(argv)
+
+    maps = builtin_maps()
+    name = args.map or (next(iter(maps)) if len(maps) == 1 else None)
+    if name is None:
+        print("ERROR: choose an address map with --map (see: pandacapture maps)")
+        return 2
+    try:
+        address_map = load_map(name)
+    except MapError as e:
+        print(f"ERROR: {e}")
+        return 2
+    try:
+        rates = parse_rates(args.bitrate)
+    except (argparse.ArgumentTypeError, ValueError) as e:
+        print(f"ERROR: {e}")
+        return 2
+    if not rates and address_map.bitrate:
+        rates = {b: address_map.bitrate for b in range(p.CAN_BUSES)}
+
+    if args.simulate:
+        def open_source():
+            return SimulatedSource()
+    elif args.replay:
+        def open_source():
+            return ReplaySource(args.replay, speed=args.speed, loop=not args.no_loop)
+    else:
+        setup = BusSetup(mode="silent", rates=rates)
+        serial = [args.serial]
+
+        def open_source():
+            src = PandaSource(serial[0], setup, log=lambda s: None)
+            serial[0] = src.serial
+            setup.rates = dict(src.rates)
+            return src
+
+    try:
+        dash = Dashboard(open_source, address_map, host="0.0.0.0" if args.lan else "127.0.0.1", port=args.port,
+                         record=args.record, record_dir=args.out)
+    except OSError as e:
+        print(f"ERROR: can't serve on port {args.port}: {e}. Try --port with another number.")
+        return 1
+    dash.start()
+    print(f"Dashboard for {address_map.name}: {dash.url}")
+    if args.lan:
+        print("  Serving to this network too: open http://<this computer's address>:%d/ on the other device." % args.port)
+    print("  Listen-only. Press Q or Ctrl+C to stop.")
+    if not args.no_browser:
+        import webbrowser
+        webbrowser.open(dash.url)
+    try:
+        with KeyReader() as keys:
+            while True:
+                if any(k.lower() == "q" or k == "\x1b" for k in keys.poll()):
+                    break
+                time.sleep(0.2)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        dash.stop()
+        rec = dash.state.recording
+        print("\nStopped." + (f" Recorded to {rec}" if rec else ""))
+    return 0
+
+
 def cmd_selftest(argv) -> int:
     from .selftest import run
     return run()
@@ -406,7 +511,7 @@ def main(argv=None) -> int:
         sys.stdout.reconfigure(errors="replace")
     command = argv.pop(0) if argv and argv[0] in COMMANDS else "capture"
     try:
-        return {"capture": cmd_capture, "list": cmd_list, "info": cmd_info, "flash": cmd_flash, "backup": cmd_backup, "restore": cmd_restore,
+        return {"capture": cmd_capture, "list": cmd_list, "info": cmd_info, "dashboard": cmd_dashboard, "maps": cmd_maps, "flash": cmd_flash, "backup": cmd_backup, "restore": cmd_restore,
                 "send": cmd_send, "replay": cmd_replay, "selftest": cmd_selftest}[command](argv)
     except KeyboardInterrupt:
         print("\nStopped.")

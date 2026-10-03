@@ -27,7 +27,7 @@ packages = ["pandacapture"]
 version = {attr = "pandacapture.__version__"}
 
 [tool.setuptools.package-data]
-pandacapture = ["firmware_bin/*"]
+pandacapture = ["firmware_bin/*", "firmware_bin/*/*", "maps/*.json", "web/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

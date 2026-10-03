@@ -27,6 +27,8 @@ PyInstaller.__main__.run([
     "--clean",
     "--paths", str(ROOT),
     "--add-data", f"{FW}{sep}pandacapture/firmware_bin",
+    "--add-data", f"{ROOT / 'pandacapture' / 'maps'}{sep}pandacapture/maps",
+    "--add-data", f"{ROOT / 'pandacapture' / 'web'}{sep}pandacapture/web",
     "--collect-binaries", "libusb_package",
     "--distpath", str(ROOT / "dist"),
     "--workpath", str(ROOT / "build" / "pyinstaller"),

@@ -157,6 +157,27 @@ acknowledge them. It still never transmits a frame:
 pandacapture --ack --bitrate 500
 ```
 
+## Live dashboard
+
+```bash
+pandacapture dashboard --map kia-stinger-33t-pcan
+```
+
+This opens gauges, numbers and status lights in your browser, decoded from the panda's traffic while it listens silently. An **address map** says which CAN IDs and bits mean what for your vehicle:
+- **Built-in:** see `pandacapture maps`.
+- **Your own:** write a JSON file; see [docs/address-maps.md](docs/address-maps.md).
+
+On the page:
+- **Normal:** each value updates 10 times a second.
+- **High resolution:** streams every sample as fast as the bus sends it, with a 10-second trace on each tile.
+
+| Option | Does |
+|---|---|
+| `--record` | also saves a candump capture while you watch |
+| `--replay LOG` | plays back a capture instead of reading the panda, e.g. for building a map at your desk |
+| `--simulate` | fake traffic |
+| `--lan` | serves the page to other devices on your network, such as a phone on the dash. Only this computer can open it otherwise |
+
 ## Transmitting
 
 ```bash
@@ -197,7 +218,7 @@ pandacapture [options]          record
   --simulate                    fake traffic, no panda needed
   --simulate-dropout N          fake traffic that drops out after N seconds
 
-pandacapture list | info | flash | backup | restore | send | replay | selftest      (each has --help)
+pandacapture list | info | dashboard | maps | flash | backup | restore | send | replay | selftest      (each has --help)
 ```
 
 ## Privacy

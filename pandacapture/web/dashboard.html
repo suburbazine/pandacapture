@@ -1,0 +1,464 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>PandaCapture Dashboard</title>
+<style>
+  :root {
+    --bg: #0b0e13;
+    --panel: #141922;
+    --panel-2: #1b2230;
+    --line: #2a3344;
+    --text: #e8edf5;
+    --muted: #8b97ab;
+    --faint: #556074;
+    --accent: #4fb3ff;
+    --ok: #4fb3ff;
+    --warn: #ffb020;
+    --alert: #ff4d4f;
+    --green: #35d07f;
+    --blue: #4fb3ff;
+    --amber: #ffb020;
+    --red: #ff4d4f;
+    --radius: 14px;
+    color-scheme: dark;
+  }
+  :root[data-theme="light"] {
+    --bg: #f3f5f9;
+    --panel: #ffffff;
+    --panel-2: #e9edf3;
+    --line: #d8dee8;
+    --text: #141a24;
+    --muted: #5c6779;
+    --faint: #9aa3b2;
+    --accent: #0b74d1;
+    --ok: #0b74d1;
+    --warn: #c77700;
+    --alert: #d92d2f;
+    --green: #148a4b;
+    --blue: #0b74d1;
+    --amber: #c77700;
+    --red: #d92d2f;
+    color-scheme: light;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.35 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  header {
+    position: sticky; top: 0; z-index: 2;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px;
+    padding: 12px 16px;
+    background: color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--line);
+  }
+  .title { display: flex; flex-direction: column; min-width: 0; flex: 1 1 220px; }
+  .title strong { font-size: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .title span { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .strip { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 10px; border-radius: 999px;
+    background: var(--panel-2); color: var(--muted);
+    font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap;
+  }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); }
+  .pill.live .dot { background: var(--green); box-shadow: 0 0 8px var(--green); }
+  .pill.down { color: var(--alert); }
+  .pill.down .dot { background: var(--alert); }
+  .pill.rec .dot { background: var(--red); animation: blink 1.2s steps(2, start) infinite; }
+  @keyframes blink { to { visibility: hidden; } }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .seg button {
+    border: 0; background: var(--panel); color: var(--muted); font: inherit; font-size: 12px;
+    padding: 5px 10px; cursor: pointer;
+  }
+  .seg button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+  button.icon {
+    border: 1px solid var(--line); background: var(--panel); color: var(--text);
+    border-radius: 8px; padding: 5px 10px; font: inherit; font-size: 12px; cursor: pointer;
+  }
+  button.icon:hover, .seg button:hover { border-color: var(--accent); }
+  .banner {
+    margin: 12px 16px 0; padding: 10px 14px; border-radius: 10px;
+    background: color-mix(in srgb, var(--alert) 15%, var(--panel)); color: var(--text);
+    border: 1px solid color-mix(in srgb, var(--alert) 45%, transparent);
+    display: none;
+  }
+  .banner.show { display: block; }
+  main { padding: 4px 16px 32px; max-width: 1400px; margin: 0 auto; }
+  section h2 {
+    margin: 22px 0 10px; font-size: 12px; font-weight: 600; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--muted);
+  }
+  .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
+  .grid.gauges { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+  .grid.lights { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+  .tile {
+    position: relative; background: var(--panel); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 12px 14px; min-width: 0;
+    transition: opacity .3s;
+  }
+  .tile.stale { opacity: .45; }
+  .tile .label { color: var(--muted); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 44px; }
+  .tile .src {
+    position: absolute; top: 10px; right: 12px; font-size: 10px; letter-spacing: .04em;
+    color: var(--faint); text-transform: uppercase; text-align: right;
+  }
+  .tile .hz { display: none; font-variant-numeric: tabular-nums; text-transform: none; letter-spacing: 0; }
+  body.high .tile .hz { display: block; }
+  .num { display: flex; align-items: baseline; gap: 6px; margin-top: 6px; }
+  .num .v { font-size: 30px; font-weight: 650; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+  .num .u { color: var(--muted); font-size: 13px; }
+  .lvl-warn .v, .lvl-warn .gv { color: var(--warn); fill: var(--warn); }
+  .lvl-alert .v, .lvl-alert .gv { color: var(--alert); fill: var(--alert); }
+  .lvl-alert { border-color: color-mix(in srgb, var(--alert) 55%, var(--line)); }
+  .gauge svg { display: block; width: 100%; height: auto; margin-top: 2px; }
+  .gauge .track { stroke: var(--panel-2); }
+  .gauge .val { stroke: var(--ok); }
+  .gauge.nodata .val { visibility: hidden; }
+  .gauge.lvl-warn .val { stroke: var(--warn); }
+  .gauge.lvl-alert .val { stroke: var(--alert); }
+  .gauge .zone-warn { stroke: var(--warn); opacity: .6; }
+  .gauge .zone-alert { stroke: var(--alert); opacity: .7; }
+  .gv { fill: var(--text); font-size: 30px; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .gu { fill: var(--muted); font-size: 12px; }
+  .gm { fill: var(--faint); font-size: 10px; font-variant-numeric: tabular-nums; }
+  canvas.trace { display: none; width: 100%; height: 34px; margin-top: 6px; }
+  body.high canvas.trace { display: block; }
+  .light { display: flex; align-items: center; gap: 12px; padding: 14px; }
+  .lamp {
+    flex: none; width: 26px; height: 26px; border-radius: 50%;
+    background: var(--panel-2); border: 1px solid var(--line);
+    transition: background .15s, box-shadow .15s;
+  }
+  .light.on .lamp { border-color: transparent; }
+  .light.on.c-red .lamp { background: var(--red); box-shadow: 0 0 16px var(--red); }
+  .light.on.c-amber .lamp { background: var(--amber); box-shadow: 0 0 16px var(--amber); }
+  .light.on.c-green .lamp { background: var(--green); box-shadow: 0 0 16px var(--green); }
+  .light.on.c-blue .lamp { background: var(--blue); box-shadow: 0 0 16px var(--blue); }
+  .light .label { color: var(--text); white-space: normal; padding-right: 0; }
+  .light .sub { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+  footer { color: var(--faint); font-size: 12px; padding: 0 16px 24px; max-width: 1400px; margin: 0 auto; }
+  @media (max-width: 480px) {
+    .num .v { font-size: 26px; }
+    .grid, .grid.gauges { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="title"><strong id="mapName">PandaCapture</strong><span id="vehicle">Loading address map…</span></div>
+  <div class="strip">
+    <span class="pill" id="status"><span class="dot"></span><span id="statusText">connecting</span></span>
+    <span class="pill" id="rate">0 frames/s</span>
+    <span class="pill" id="sps" hidden>0 samples/s</span>
+    <span class="pill rec" id="rec" hidden><span class="dot"></span>recording</span>
+    <span class="seg" role="group" aria-label="Update rate">
+      <button type="button" id="modeNormal" aria-pressed="true" title="Latest values, 10 times a second">Normal</button>
+      <button type="button" id="modeHigh" aria-pressed="false" title="Every sample, as fast as it's received">High resolution</button>
+    </span>
+    <button class="icon" id="theme" type="button" title="Switch light/dark">Theme</button>
+    <button class="icon" id="full" type="button" title="Full screen">Full screen</button>
+  </div>
+</header>
+<div class="banner" id="banner"></div>
+<main id="main"></main>
+<footer id="foot"></footer>
+
+<script>
+(() => {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+  const STALE_MS = 1500, TRACE_MS = 10000;
+  const tiles = {};
+  const live = {};          // key -> {v, seen (ms), hist: [[ms, v]], count, hz}
+  let signals = [], byKey = {}, source = null, mode = "normal", lastStatus = {}, dirty = true;
+
+  // Theme and mode are remembered per browser where possible; dark by default (made for the car)
+  const root = document.documentElement;
+  const remember = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
+  const recall = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+  if (recall("pc-theme")) root.dataset.theme = recall("pc-theme");
+  $("theme").onclick = () => {
+    root.dataset.theme = root.dataset.theme === "light" ? "dark" : "light";
+    remember("pc-theme", root.dataset.theme);
+    dirty = true;
+  };
+  $("full").onclick = () => {
+    if (document.fullscreenElement) document.exitFullscreen();
+    else document.documentElement.requestFullscreen?.();
+  };
+
+  const fmt = (v, d) => (v === null || v === undefined) ? "--" :
+    Number(v).toLocaleString(undefined, { minimumFractionDigits: d, maximumFractionDigits: d });
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+  const describe = (s) => `${s.label} (${s.key})\nID ${s.id}, byte ${s.byte}` + (s.bit ? `, bit ${s.bit}` : "") +
+    `, ${s.bits || 8} bits, ${s.order || "little"}-endian\nx${s.scale ?? 1}` + (s.offset ? ` ${s.offset > 0 ? "+" : ""}${s.offset}` : "") +
+    (s.unit ? ` ${s.unit}` : "") + `\nSource: ${s.source}` + (s.note ? `\n${s.note}` : "");
+
+  // Same rules as the server's Signal.level() and light_on()
+  const level = (s, v) => {
+    if ((s.alert_above != null && v > s.alert_above) || (s.alert_below != null && v < s.alert_below)) return "alert";
+    if ((s.warn_above != null && v > s.warn_above) || (s.warn_below != null && v < s.warn_below)) return "warn";
+    return "ok";
+  };
+  const lightOn = (s, v) => (s.on_above != null || s.on_below != null)
+    ? ((s.on_above != null && v > s.on_above) || (s.on_below != null && v < s.on_below)) : v !== 0;
+
+  // Gauge: a 270-degree arc around (100, 90). pathLength=100 makes dash lengths percentages.
+  const arc = (r) => {
+    const a = (deg) => [100 + r * Math.cos(deg * Math.PI / 180), 90 + r * Math.sin(deg * Math.PI / 180)];
+    const [x0, y0] = a(135), [x1, y1] = a(45);
+    return `M ${x0.toFixed(2)} ${y0.toFixed(2)} A ${r} ${r} 0 1 1 ${x1.toFixed(2)} ${y1.toFixed(2)}`;
+  };
+  const ARC = arc(66), ZONE = arc(80);
+  const pct = (s, v) => Math.max(0, Math.min(100, (v - s.min) / (s.max - s.min) * 100));
+
+  function zones(s) {
+    let out = "";
+    const z = (cls, a, b) => {
+      if (b > a) out += `<path class="${cls}" d="${ZONE}" pathLength="100" fill="none" stroke-width="5" stroke-dasharray="0 ${a} ${b - a} 200" />`;
+    };
+    if (s.warn_above != null) z("zone-warn", pct(s, s.warn_above), s.alert_above != null ? pct(s, s.alert_above) : 100);
+    if (s.alert_above != null) z("zone-alert", pct(s, s.alert_above), 100);
+    if (s.warn_below != null) z("zone-warn", s.alert_below != null ? pct(s, s.alert_below) : 0, pct(s, s.warn_below));
+    if (s.alert_below != null) z("zone-alert", 0, pct(s, s.alert_below));
+    return out;
+  }
+
+  const head = (s) => `<div class="label">${esc(s.label)}</div><div class="src">${esc(s.source)}<div class="hz">–</div></div>`;
+
+  function gaugeTile(s) {
+    const el = document.createElement("div");
+    el.className = "tile gauge stale nodata";
+    el.title = describe(s);
+    el.innerHTML = head(s) + `
+      <svg viewBox="0 0 200 172" role="img" aria-label="${esc(s.label)}">
+        <path class="track" d="${ARC}" pathLength="100" fill="none" stroke-width="13" stroke-linecap="round" />
+        ${zones(s)}
+        <path class="val" d="${ARC}" pathLength="100" fill="none" stroke-width="13" stroke-linecap="round" stroke-dasharray="0 200" />
+        <text class="gv" x="100" y="98" text-anchor="middle">--</text>
+        <text class="gu" x="100" y="118" text-anchor="middle">${esc(s.unit || "")}</text>
+        <text class="gm" x="44" y="168" text-anchor="middle">${fmt(s.min, 0)}</text>
+        <text class="gm" x="156" y="168" text-anchor="middle">${fmt(s.max, 0)}</text>
+      </svg><canvas class="trace"></canvas>`;
+    const val = el.querySelector(".val"), text = el.querySelector(".gv");
+    return { el, s, hz: el.querySelector(".hz"), canvas: el.querySelector("canvas"), show(v) {
+      text.textContent = fmt(v, s.decimals);
+      val.setAttribute("stroke-dasharray", `${pct(s, v)} 200`);
+      el.classList.remove("nodata");
+    }};
+  }
+
+  function numberTile(s) {
+    const el = document.createElement("div");
+    el.className = "tile stale";
+    el.title = describe(s);
+    el.innerHTML = head(s) + `<div class="num"><span class="v">--</span><span class="u">${esc(s.unit || "")}</span></div>
+      <canvas class="trace"></canvas>`;
+    const v = el.querySelector(".v");
+    return { el, s, hz: el.querySelector(".hz"), canvas: el.querySelector("canvas"), show(x) { v.textContent = fmt(x, s.decimals); } };
+  }
+
+  function lightTile(s) {
+    const el = document.createElement("div");
+    el.className = `tile light c-${s.color || "red"} stale`;
+    el.title = describe(s);
+    const cond = s.on_above != null ? `on above ${s.on_above}${s.unit ? " " + s.unit : ""}` :
+                 s.on_below != null ? `on below ${s.on_below}${s.unit ? " " + s.unit : ""}` : "";
+    el.innerHTML = `<div class="lamp"></div><div><div class="label">${esc(s.label)}</div><div class="sub">${esc(cond) || "&nbsp;"}</div></div>`;
+    const sub = el.querySelector(".sub");
+    return { el, s, show(v) {
+      el.classList.toggle("on", lightOn(s, v));
+      if (cond) sub.textContent = `${fmt(v, s.decimals)} ${s.unit || ""} · ${cond}`;
+    }};
+  }
+
+  function build(map) {
+    $("mapName").textContent = map.name;
+    $("vehicle").textContent = [map.vehicle, map.bitrate ? `${map.bitrate} kbit/s` : ""].filter(Boolean).join(" · ");
+    document.title = `${map.name} · PandaCapture`;
+    $("foot").textContent = map.notes || "";
+    signals = map.signals;
+    byKey = Object.fromEntries(signals.map((s) => [s.key, s]));
+    const groups = new Map();
+    for (const s of signals) {
+      const g = s.group || "Signals";
+      if (!groups.has(g)) groups.set(g, []);
+      groups.get(g).push(s);
+    }
+    const main = $("main");
+    main.innerHTML = "";
+    for (const [name, list] of groups) {
+      const sec = document.createElement("section");
+      sec.innerHTML = `<h2>${esc(name)}</h2>`;
+      for (const kind of ["gauge", "number", "light"]) {
+        const items = list.filter((s) => s.display === kind);
+        if (!items.length) continue;
+        const grid = document.createElement("div");
+        grid.className = "grid " + (kind === "gauge" ? "gauges" : kind === "light" ? "lights" : "");
+        for (const s of items) {
+          const t = kind === "gauge" ? gaugeTile(s) : kind === "light" ? lightTile(s) : numberTile(s);
+          tiles[s.key] = t;
+          live[s.key] = { v: null, seen: 0, hist: [], count: 0, hz: 0 };
+          grid.appendChild(t.el);
+        }
+        sec.appendChild(grid);
+      }
+      main.appendChild(sec);
+    }
+  }
+
+  // ---- incoming data ----
+  function status(st) {
+    lastStatus = st;
+    const ok = st.status === "live";
+    $("status").className = "pill " + (ok ? "live" : st.status === "disconnected" ? "down" : "");
+    $("statusText").textContent = ok ? "live" : st.status;
+    $("status").title = st.source || "";
+    $("rate").textContent = `${(st.fps || 0).toLocaleString()} frames/s`;
+    $("rec").hidden = !st.recording;
+    $("rec").title = st.recording || "";
+    const banner = $("banner");
+    banner.textContent = st.error || "";
+    banner.classList.toggle("show", !!st.error);
+  }
+
+  function snapshot(st) {
+    status(st);
+    const now = performance.now();
+    for (const [k, d] of Object.entries(st.values || {})) {
+      const l = live[k];
+      if (!l) continue;
+      l.v = d.v;
+      l.seen = now - d.age * 1000;
+      if (mode === "high") l.hist.push([now, d.v]);
+    }
+    dirty = true;
+  }
+
+  let sampleCount = 0;
+  function samples(batch) {
+    const now = performance.now();
+    for (const [k, v] of batch.s) {
+      const l = live[k];
+      if (!l) continue;
+      l.v = v;
+      l.seen = now;
+      l.hist.push([now, v]);
+      l.count++;
+    }
+    sampleCount += batch.s.length;
+    if (batch.lost) {
+      $("banner").textContent = `This page fell behind and skipped ${batch.lost.toLocaleString()} samples.`;
+      $("banner").classList.add("show");
+    }
+    dirty = true;
+  }
+
+  // ---- drawing, once per screen refresh ----
+  function css(name) { return getComputedStyle(root).getPropertyValue(name).trim(); }
+
+  function drawTrace(t, l, now) {
+    const c = t.canvas;
+    if (!c) return;
+    const w = c.clientWidth, h = c.clientHeight, dpr = window.devicePixelRatio || 1;
+    if (!w) return;
+    if (c.width !== Math.round(w * dpr)) { c.width = Math.round(w * dpr); c.height = Math.round(h * dpr); }
+    const g = c.getContext("2d");
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, w, h);
+    const pts = l.hist;
+    if (pts.length < 2) return;
+    const s = t.s;
+    let lo = s.min, hi = s.max;
+    if (lo == null || hi == null) {
+      lo = Infinity; hi = -Infinity;
+      for (const [, v] of pts) { if (v < lo) lo = v; if (v > hi) hi = v; }
+      if (hi - lo < 1e-9) { lo -= 1; hi += 1; }
+    }
+    g.strokeStyle = css(l.level === "alert" ? "--alert" : l.level === "warn" ? "--warn" : "--ok");
+    g.lineWidth = 1.5;
+    g.beginPath();
+    pts.forEach(([ms, v], i) => {
+      const x = w - (now - ms) / TRACE_MS * w;
+      const y = h - 2 - (Math.max(lo, Math.min(hi, v)) - lo) / (hi - lo) * (h - 4);
+      i ? g.lineTo(x, y) : g.moveTo(x, y);
+    });
+    g.stroke();
+  }
+
+  let rateMark = performance.now();
+  function frame() {
+    const now = performance.now();
+    if (now - rateMark >= 1000) {
+      const secs = (now - rateMark) / 1000;
+      for (const l of Object.values(live)) { l.hz = l.count / secs; l.count = 0; }
+      $("sps").textContent = `${Math.round(sampleCount / secs).toLocaleString()} samples/s`;
+      sampleCount = 0;
+      rateMark = now;
+      dirty = true;
+    }
+    for (const s of signals) {
+      const t = tiles[s.key], l = live[s.key];
+      if (!t || !l) continue;
+      while (l.hist.length && now - l.hist[0][0] > TRACE_MS) l.hist.shift();
+      const stale = l.v === null || now - l.seen > STALE_MS;
+      t.el.classList.toggle("stale", stale);
+      if (l.v === null) continue;
+      if (dirty) {
+        t.show(l.v);
+        l.level = s.display === "light" ? null : level(s, l.v);
+        t.el.classList.remove("lvl-warn", "lvl-alert");
+        if (l.level && l.level !== "ok" && !stale) t.el.classList.add("lvl-" + l.level);
+        if (t.s.display === "light" && stale) t.el.classList.remove("on");
+        if (t.hz) t.hz.textContent = mode === "high" ? `${Math.round(l.hz)}/s` : "";
+      }
+      if (mode === "high") drawTrace(t, l, now);
+    }
+    dirty = false;
+    requestAnimationFrame(frame);
+  }
+
+  // ---- connection ----
+  function connect(newMode) {
+    mode = newMode;
+    remember("pc-mode", mode);
+    document.body.classList.toggle("high", mode === "high");
+    $("modeNormal").setAttribute("aria-pressed", String(mode === "normal"));
+    $("modeHigh").setAttribute("aria-pressed", String(mode === "high"));
+    $("sps").hidden = mode !== "high";
+    for (const l of Object.values(live)) l.hist = [];
+    if (source) source.close();
+    source = new EventSource(mode === "high" ? "/events?mode=high" : "/events");
+    source.addEventListener("snapshot", (e) => snapshot(JSON.parse(e.data)));
+    source.addEventListener("samples", (e) => samples(JSON.parse(e.data)));
+    source.addEventListener("status", (e) => status(JSON.parse(e.data)));
+    source.onerror = () => {
+      $("status").className = "pill down";
+      $("statusText").textContent = "reconnecting to PandaCapture";
+    };
+  }
+  $("modeNormal").onclick = () => mode !== "normal" && connect("normal");
+  $("modeHigh").onclick = () => mode !== "high" && connect("high");
+
+  fetch("/map").then((r) => r.json()).then((map) => {
+    build(map);
+    const wanted = new URLSearchParams(location.search).get("mode") || recall("pc-mode") || "normal";
+    connect(wanted === "high" ? "high" : "normal");
+    requestAnimationFrame(frame);
+  }).catch(() => {
+    $("vehicle").textContent = "Couldn't load the address map from PandaCapture.";
+  });
+})();
+</script>
+</body>
+</html>
