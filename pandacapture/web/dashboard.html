@@ -200,9 +200,11 @@
   const fmt = (v, d) => (v === null || v === undefined) ? "--" :
     Number(v).toLocaleString(undefined, { minimumFractionDigits: d, maximumFractionDigits: d });
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
-  const describe = (s) => `${s.label} (${s.key})\nID ${s.id}, byte ${s.byte}` + (s.bit ? `, bit ${s.bit}` : "") +
-    `, ${s.bits || 8} bits, ${s.order || "little"}-endian\nx${s.scale ?? 1}` + (s.offset ? ` ${s.offset > 0 ? "+" : ""}${s.offset}` : "") +
+  const describe = (s) => `${s.label} (${s.key})\n` + (s.expr ? `= ${s.expr}` :
+    `ID ${s.id}, byte ${s.byte}` + (s.bit ? `, bit ${s.bit}` : "") +
+    `, ${s.bits || 8} bits, ${s.order || "little"}-endian\nx${s.scale ?? 1}` + (s.offset ? ` ${s.offset > 0 ? "+" : ""}${s.offset}` : "")) +
     (s.unit ? ` ${s.unit}` : "") + `\nSource: ${s.source}` + (s.note ? `\n${s.note}` : "");
+  const labelFor = (s, v) => (s.labels && Number.isInteger(v)) ? s.labels[String(v)] : undefined;
 
   // Same rules as the server's Signal.level() and light_on()
   const level = (s, v) => {
@@ -264,8 +266,12 @@
     el.title = describe(s);
     el.innerHTML = head(s) + `<div class="num"><span class="v">--</span><span class="u">${esc(s.unit || "")}</span></div>
       <canvas class="trace"></canvas>`;
-    const v = el.querySelector(".v");
-    return { el, s, hz: el.querySelector(".hz"), canvas: el.querySelector("canvas"), show(x) { v.textContent = fmt(x, s.decimals); } };
+    const v = el.querySelector(".v"), u = el.querySelector(".u");
+    return { el, s, hz: el.querySelector(".hz"), canvas: el.querySelector("canvas"), show(x) {
+      const label = labelFor(s, x);
+      v.textContent = label ?? fmt(x, s.decimals);
+      u.hidden = label !== undefined;
+    }};
   }
 
   function lightTile(s) {

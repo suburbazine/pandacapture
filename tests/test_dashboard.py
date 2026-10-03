@@ -68,7 +68,10 @@ def test_builtin_maps_load():
     assert builtin_maps()
     for name in builtin_maps():
         m = load_map(name)
-        assert m.signals and all(s.to_json()["id"].startswith("0x") for s in m.signals)
+        assert m.signals
+        for s in m.signals:
+            j = s.to_json()
+            assert ("expr" in j) != ("id" in j) and ("id" not in j or j["id"].startswith("0x"))
 
 
 def test_stinger_rpm_and_mil():
@@ -130,3 +133,75 @@ def test_replay_source(tmp_path):
     time.sleep(0.02)
     frames = src.read()
     assert [f.addr for f in frames] == [0x316, 0x316]
+
+
+def test_raw_sentinels_and_labels():
+    s = sig(byte=0, raw_max=127)
+    assert s.decode(bytes([127])) == 127 and s.decode(bytes([128])) is None
+    t = sig(byte=0, scale=-1, offset=195, raw_invalid=[128])
+    assert t.decode(bytes([183])) == 12 and t.decode(bytes([128])) is None
+    g = sig(byte=0, bits=4, labels={"0": "P", "14": "R"})
+    assert g.text(0) == "P" and g.text(3) is None
+
+
+def derived_map(*exprs):
+    return parse_map({"signals": [{"key": "a", "id": "0x100", "byte": 0}, {"key": "b", "id": "0x100", "byte": 1}] +
+                     [{"key": f"d{i}", "expr": e} for i, e in enumerate(exprs)]})
+
+
+def test_expressions():
+    m = derived_map("(a - b) * 5", "a > b", "abs(b - a)", "max(a, b, 3)", "-a / 2")
+    state = LiveState(m)
+    state.feed([p.Frame(0, 0x100, bytes([10, 4]))], time.monotonic())
+    v = {k: e["v"] for k, e in state.snapshot()["values"].items()}
+    assert (v["d0"], v["d1"], v["d2"], v["d3"], v["d4"]) == (30, 1, 6, 10, -5)
+
+
+def test_windowed_expressions():
+    m = derived_map("p2p(a, 5)", "lo(a, 5)", "hi(a, 1)")
+    state = LiveState(m)
+    for t, a in ((0.0, 50), (2.0, 80), (4.0, 60), (6.5, 70)):
+        state.feed([p.Frame(0, 0x100, bytes([a, 0]))], t)
+    v = {k: e["v"] for k, e in state.snapshot()["values"].items()}
+    # at t=6.5 the 5 s window holds 80, 60, 70 (the 50 at t=0 has aged out); the 1 s window only 70
+    assert (v["d0"], v["d1"], v["d2"]) == (20, 60, 70)
+
+
+def test_derived_samples_stream_at_input_rate():
+    m = derived_map("a * 2")
+    state = LiveState(m)
+    for i in range(5):
+        state.feed([p.Frame(0, 0x100, bytes([i, 0]))], time.monotonic())
+    samples, _, _ = state.samples_after(0, 0)
+    assert [v for k, v, _ in samples if k == "d0"] == [0, 2, 4, 6, 8]
+
+
+@pytest.mark.parametrize("expr, msg", [
+    ("__import__('os')", "can only use"),
+    ("a.real", "can only use"),
+    ("open('x')", "can only use"),
+    ("c + 1", "isn't a signal defined above"),
+    ("p2p(a, 600)", "window"),
+    ("1 + 2", "uses no signals"),
+    ("a +", "valid expression"),
+    ("[a]", "can only use"),
+])
+def test_expression_rejects(expr, msg):
+    with pytest.raises(MapError, match=msg):
+        derived_map(expr)
+
+
+def test_derived_cannot_also_decode():
+    with pytest.raises(MapError, match="can't also have"):
+        parse_map({"signals": [{"key": "a", "id": 1, "byte": 0}, {"key": "b", "expr": "a", "byte": 0}]})
+
+
+def test_stinger_map_cam_conventions():
+    m = load_map("kia-stinger-33t-pcan")
+    by = {s.key: s for s in m.signals}
+    # intake (cam B) at its 195 lock = 0 advance; exhaust (cam A) at its 71 lock = 0 retard
+    assert by["intake_b1_actual"].decode(bytes([0, 0, 0, 0, 0, 195, 0, 0])) == 0
+    assert by["exhaust_b1_actual"].decode(bytes([0, 0, 0, 0, 71, 0, 0, 0])) == 0
+    assert by["intake_b1_target"].decode(bytes([0x80, 0x80, 0x80, 0x80, 0x82, 0x82, 0x70, 0])) is None
+    assert by["exhaust_b1_target"].decode(bytes([0x80, 0x80, 0x80, 0x80, 0x82, 0x82, 0x70, 0])) is None
+    assert by["gear"].text(0) == "P" and by["drive_mode"].text(1) == "Sport"

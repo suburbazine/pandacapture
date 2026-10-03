@@ -46,6 +46,10 @@ how to show each one: as a gauge, a number or a status light. Maps are JSON file
 | `order` | `little` | `little` (Intel: low byte first) or `big` (Motorola: high byte first, from `byte`) |
 | `signed` | false | Two's complement |
 | `scale`, `offset` | 1, 0 | Value = raw × scale + offset |
+| `raw_max` | | Raw values above this mean "no data", e.g. `254` when 255 is a sensor fault |
+| `raw_invalid` | | Raw values that mean "no data", e.g. `[128]` when 0x80 is "no target" |
+| `labels` | | Text for values, e.g. `{"0": "P", "14": "R"}`. Unlisted values show as numbers |
+| `expr` | | A derived signal: computed from signals defined above it, instead of decoded (see below) |
 | `unit` | | Shown after the value |
 | `decimals` | from the scale | Digits after the point |
 | `display` | `number` | `gauge`, `number` or `light` |
@@ -65,6 +69,29 @@ how to show each one: as a gauge, a number or a status light. Maps are JSON file
   "order": "big"`.
 - **A derived reading:** the same bits can appear in several signals. 0x492 byte 3 is boost in
   kPa absolute (× 2.11). As psi above atmospheric it's `"scale": 0.30603, "offset": -14.696`.
+
+## Derived signals
+
+A signal with `expr` is computed from other signals instead of decoded from a frame, so it has no
+`id`, `byte` or other frame fields. It's recomputed whenever one of its inputs updates. In high
+resolution it streams at its inputs' rate.
+
+```json
+{"key": "torque_nm", "label": "Net torque", "expr": "(tqi_acor - tqfr) * 5", "unit": "Nm"},
+{"key": "rpm_p2p", "label": "RPM swing (5 s)", "expr": "p2p(rpm, 5)", "unit": "rpm"},
+{"key": "spark_at_min", "label": "Spark on its minimum", "expr": "tqi_ems16 <= tqi_min", "display": "light"}
+```
+
+| You can use | Meaning |
+|---|---|
+| numbers, keys of signals defined above | `rpm`, `0.25` |
+| `+ - * /`, brackets, unary minus | |
+| `< <= > >= == !=` | 1 when true, 0 when false: handy for lights |
+| `abs(x)`, `min(a, b, ...)`, `max(a, b, ...)` | |
+| `p2p(key, seconds)`, `lo(key, seconds)`, `hi(key, seconds)` | peak-to-peak, lowest and highest of a signal over the last 1-60 s |
+
+Nothing else is accepted. Expressions are checked when the map loads, and evaluated without running
+any code from the file. A derived signal has no value until all its inputs have one.
 
 ## Finding signals
 

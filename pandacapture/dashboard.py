@@ -21,6 +21,7 @@ from pathlib import Path
 
 from .capture import candump_line, default_out_dir
 from .firmware import bundled_dir
+from .signals import Evaluator
 from .sources import SourceError
 
 STALE_SECONDS = 1.5
@@ -41,6 +42,8 @@ class LiveState:
         self.map = address_map
         self.lock = threading.Lock()
         self.values = {}       # key -> (value, monotonic time)
+        self.current = {}      # key -> value, for derived signals
+        self.evaluator = Evaluator(address_map)
         self.samples = collections.deque(maxlen=SAMPLE_BUFFER)  # (sequence, key, value, unix time)
         self.seq = 0
         self.new_samples = threading.Condition(self.lock)
@@ -62,17 +65,26 @@ class LiveState:
                     continue
                 self.frames += 1
                 self.bus_frames[f.bus] = self.bus_frames.get(f.bus, 0) + 1
+                changed = set()
                 for s in self.map.by_id.get(f.addr, ()):
                     if s.bus is not None and s.bus != f.bus:
                         continue
                     v = s.decode(f.data)
                     if v is not None:
-                        self.values[s.key] = (v, now)
-                        self.seq += 1
-                        self.samples.append((self.seq, s.key, v, unix))
-                        added = True
+                        self._sample(s.key, v, now, unix)
+                        self.current[s.key] = v
+                        changed.add(s.key)
+                if changed and self.map.derived:
+                    for key, v in self.evaluator.update(self.current, changed, now).items():
+                        self._sample(key, v, now, unix)
+                added = added or bool(changed)
             if added:
                 self.new_samples.notify_all()
+
+    def _sample(self, key, v, now, unix):
+        self.values[key] = (v, now)
+        self.seq += 1
+        self.samples.append((self.seq, key, v, unix))
 
     def samples_after(self, seq, timeout):
         """Samples newer than [seq], waiting up to [timeout] for some. Returns (samples, last seq,
@@ -112,6 +124,9 @@ class LiveState:
                     entry["on"] = s.light_on(v)
                 else:
                     entry["level"] = s.level(v)
+                text = s.text(v)
+                if text is not None:
+                    entry["text"] = text
                 out[s.key] = entry
             return dict(status, values=out)
 
