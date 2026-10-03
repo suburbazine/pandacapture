@@ -215,6 +215,35 @@ To look at a recorded drive at your desk:
 pandacapture dashboard --map kia-stinger-33t-pcan --replay captures/capture-20261003-080200.log
 ```
 
+## 6. Find unknown signals
+
+Record a capture while another tool logs the same drive, then let PandaCapture work out which CAN
+fields carry which values:
+
+```bash
+pandacapture match captures/capture-20261003-035135.log jb4-log.csv --map kia-stinger-33t-pcan
+```
+
+1. **Lines the logs up:** it fits the other log's clock to the capture's by RPM. Any CSV with a
+   time column and an RPM column works; a JB4 log's settings rows are skipped.
+2. **Tests every field:** each 8-, 12- and 16-bit field of every broadcast ID, against each column
+   that changes.
+3. **Ranks the results:** each field gets a correlation and a fitted scale and offset, plus two
+   checks against coincidences. **changes** catches two values that merely drift together.
+   **RPM held** catches two that both just follow engine speed.
+
+**The capture can calibrate itself:** if a JB4 or scan tool polls the ECU over OBD on the same bus,
+its requests and the ECU's answers are in the capture. `--obd` uses those answers as the reference,
+with no second log:
+
+```bash
+pandacapture match captures/capture-20261003-035135.log --obd
+```
+
+That's how the Stinger map's lambda, fuel trims, OBD throttle and fuel rail pressure were confirmed
+against the ECU's own answers. A match is evidence, not proof: add it to a map as `observed` until
+it's checked.
+
 ## Transmitting
 
 ```bash
@@ -265,7 +294,13 @@ pandacapture dashboard [options]      live gauges in the browser
   --lan                         serve to other devices on the network too
   --no-browser                  don't open the browser
 
-pandacapture list | info | dashboard | maps | flash | backup | restore | send | replay | selftest      (each has --help)
+pandacapture match CAPTURE [REFERENCE.csv | --obd] [options]     find which fields carry which values
+  --map NAME|FILE               map with the RPM signal used to line the logs up
+  --ref-rpm COLUMN              the reference's RPM column (default RPM)
+  --column NAME                 match only this column (repeatable)
+  --top N, --min-r R            how many matches to show, and the weakest to show
+
+pandacapture list | info | dashboard | maps | match | flash | backup | restore | send | replay | selftest      (each has --help)
 ```
 
 ## Documentation

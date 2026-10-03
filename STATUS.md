@@ -54,6 +54,18 @@
   - Bit rate auto-detected on bus 0 (980 frames during detection), recorded silent / listen-only.
   - For comparison, the NEXIQ USB-Link 2 FrostCapture managed about 1,870 frames/s, with an
     adapter dropout and a 10.3 s stall.
+- Signal matching (2026-10-03): a panda capture and a JB4 log of the same short drive (no boost).
+  - The logs lined up at RPM r = 0.9998, which shows the JB4's timestamp counts tenths of a second.
+  - The JB4 had been polling the ECU over OBD, and the ECU's answers in the capture confirmed these
+    against the ECU's own values:
+    - lambda per bank (0x5CF b0/b2, 0.5 + raw/128)
+    - short-term trims (0x557 b0/b2, OBD encoding)
+    - OBD throttle (0x556 b5)
+    - fuel rail pressure (0x557 b5-6, gauge bar)
+    - coolant (0x556 b1, OBD encoding)
+  - Long-term trims (0x557 b1/b3) are likely but rest on only 12 samples.
+  - Load, boost, wastegate, and per-cylinder ignition didn't match: they were constant in this log,
+    or aren't broadcast.
 - Restore hasn't been run on hardware yet. The backup of the board's original firmware is kept
   locally.
 - Transmitting frames on a real bus: the transmit gate is verified, but no frame has been sent yet.

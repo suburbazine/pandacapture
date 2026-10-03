@@ -1,4 +1,5 @@
-"""Command line: pandacapture [capture options] | list | info | dashboard | maps | flash | backup | restore | send | replay | selftest"""
+"""Command line: pandacapture [capture options] | list | info | dashboard | maps | match | flash | backup | restore | send |
+replay | selftest"""
 
 import argparse
 import sys
@@ -17,7 +18,8 @@ from .sources import BusSetup, PandaSource, SimulatedSource, SourceError, detect
 from .transmit import ArmedPanda, TransmitRefused, TxLog, acknowledge, read_replay
 from .usbdev import UsbError
 
-COMMANDS = ("capture", "list", "info", "dashboard", "maps", "flash", "backup", "restore", "send", "replay", "selftest")
+COMMANDS = ("capture", "list", "info", "dashboard", "maps", "match", "flash", "backup", "restore", "send", "replay",
+            "selftest")
 
 
 def parse_rates(values) -> dict:
@@ -502,6 +504,49 @@ def cmd_dashboard(argv) -> int:
     return 0
 
 
+def cmd_match(argv) -> int:
+    from . import match
+    from .signals import MapError, builtin_maps, load_map
+
+    ap = argparse.ArgumentParser(prog="pandacapture match", description=(
+        "Finds which CAN fields carry which values: lines a capture up with a reference recorded at the same "
+        "time and ranks every candidate field against each reference column. The reference is a CSV from "
+        "another tool (e.g. a JB4 log), or with --obd, the ECU's OBD answers inside the capture (when a JB4 or "
+        "scan tool was polling during the capture)."))
+    ap.add_argument("capture", help="the PandaCapture candump log")
+    ap.add_argument("reference", nargs="?", help="CSV recorded at the same time (e.g. a JB4 log)")
+    ap.add_argument("--obd", action="store_true", help="use the OBD answers in the capture as the reference")
+    ap.add_argument("--map", help="address map with an RPM signal for lining the logs up, and to label known fields")
+    ap.add_argument("--rpm-key", default="rpm", help="the map's RPM signal (default rpm)")
+    ap.add_argument("--ref-rpm", default="RPM", help="the reference's RPM column (default RPM)")
+    ap.add_argument("--column", action="append", help="match only this reference column (repeatable)")
+    ap.add_argument("--top", type=int, default=3, help="fields to show per column (default 3)")
+    ap.add_argument("--min-r", type=float, default=0.9, help="weakest correlation to show (default 0.9)")
+    ap.add_argument("--bus", type=int, default=0, choices=range(p.CAN_BUSES), help="bus to search (default 0)")
+    args = ap.parse_args(argv)
+    if bool(args.reference) == args.obd:
+        print("ERROR: give a reference CSV, or --obd to use the capture's own OBD answers")
+        return 2
+    maps = builtin_maps()
+    name = args.map or (next(iter(maps)) if len(maps) == 1 else None)
+    if name is None:
+        print("ERROR: choose an address map with --map (it supplies the RPM signal for lining the logs up)")
+        return 2
+    try:
+        address_map = load_map(name)
+        results, _ = match.run(args.capture, None if args.obd else args.reference, address_map,
+                               ref_rpm=args.ref_rpm, rpm_key=args.rpm_key, columns=args.column, top=args.top,
+                               bus=args.bus, min_r=args.min_r)
+    except (MapError, match.MatchError, OSError) as e:
+        print(f"ERROR: {e}")
+        return 1
+    match.report(results)
+    print("\nr: correlation with the reference column. changes: correlation of row-to-row changes (low = maybe "
+          "just a shared drift). RPM held: partial correlation with RPM fixed (low = maybe both just follow RPM). "
+          "A match is evidence, not proof: add it to a map as \"observed\" until checked.")
+    return 0
+
+
 def cmd_selftest(argv) -> int:
     from .selftest import run
     return run()
@@ -513,7 +558,7 @@ def main(argv=None) -> int:
         sys.stdout.reconfigure(errors="replace")
     command = argv.pop(0) if argv and argv[0] in COMMANDS else "capture"
     try:
-        return {"capture": cmd_capture, "list": cmd_list, "info": cmd_info, "dashboard": cmd_dashboard, "maps": cmd_maps, "flash": cmd_flash, "backup": cmd_backup, "restore": cmd_restore,
+        return {"capture": cmd_capture, "list": cmd_list, "info": cmd_info, "dashboard": cmd_dashboard, "maps": cmd_maps, "match": cmd_match, "flash": cmd_flash, "backup": cmd_backup, "restore": cmd_restore,
                 "send": cmd_send, "replay": cmd_replay, "selftest": cmd_selftest}[command](argv)
     except KeyboardInterrupt:
         print("\nStopped.")
