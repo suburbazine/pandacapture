@@ -1,0 +1,77 @@
+diff --git a/board/main.c b/board/main.c
+index da7e8e3f..1d5d9870 100644
+--- a/board/main.c
++++ b/board/main.c
+@@ -27,10 +27,29 @@
+ 
+ // ****************************** safety mode ******************************
+ 
++// FrostCapture transmit gate. This firmware only runs three modes:
++//   SILENT    bus monitoring: no ACKs, no transmit (the default at boot)
++//   NOOUTPUT  ACKs frames like any node, never transmits a frame
++//   ALLOUTPUT transmits, and only with this arm code, which the FrostCapture host sends after the
++//             user acknowledges the transmit warning
++// Any other request, including openpilot's car safety modes, lands in SILENT.
++#define FROSTCAPTURE_TX_ARM 0x4654U
++
++static bool frostcapture_mode_allowed(uint16_t mode, uint16_t param) {
++  return (mode == SAFETY_SILENT) || (mode == SAFETY_NOOUTPUT) ||
++         ((mode == SAFETY_ALLOUTPUT) && (param == FROSTCAPTURE_TX_ARM));
++}
++
+ // this is the only way to leave silent mode
+ void set_safety_mode(uint16_t mode, uint16_t param) {
+   uint16_t mode_copy = mode;
+-  int err = set_safety_hooks(mode_copy, param);
++  uint16_t param_copy = param;
++  if (!frostcapture_mode_allowed(mode_copy, param_copy)) {
++    print("FrostCapture: safety mode refused, staying SILENT\n");
++    mode_copy = SAFETY_SILENT;
++    param_copy = 0U;
++  }
++  int err = set_safety_hooks(mode_copy, param_copy);
+   if (err == -1) {
+     print("Error: safety set mode failed. Falling back to SILENT\n");
+     mode_copy = SAFETY_SILENT;
+@@ -52,6 +71,16 @@ void set_safety_mode(uint16_t mode, uint16_t param) {
+       current_board->set_can_mode(CAN_MODE_NORMAL);
+       can_silent = false;
+       break;
++    case SAFETY_ALLOUTPUT:
++      // FrostCapture: never drive the harness relay, and require the host's heartbeat, so
++      // transmitting stops within seconds if the host goes away
++      set_intercept_relay(false, false);
++      current_board->set_can_mode(CAN_MODE_NORMAL);
++      heartbeat_counter = 0U;
++      heartbeat_lost = false;
++      heartbeat_disabled = false;
++      can_silent = false;
++      break;
+     case SAFETY_ELM327:
+       set_intercept_relay(false, false);
+       heartbeat_counter = 0U;
+@@ -161,8 +190,8 @@ static void tick_handler(void) {
+         heartbeat_counter += 1U;
+       }
+ 
+-      // disabling heartbeat not allowed while in safety mode
+-      if (is_car_safety_mode(current_safety_mode)) {
++      // disabling heartbeat not allowed while in safety mode, or while FrostCapture transmit is armed
++      if (is_car_safety_mode(current_safety_mode) || (current_safety_mode == SAFETY_ALLOUTPUT)) {
+         heartbeat_disabled = false;
+       }
+ 
+diff --git a/board/main_comms.h b/board/main_comms.h
+index 8c75ed47..23e87f16 100644
+--- a/board/main_comms.h
++++ b/board/main_comms.h
+@@ -289,7 +289,8 @@ int comms_control_handler(ControlPacket_t *req, uint8_t *resp) {
+       break;
+     // **** 0xf8: disable heartbeat checks
+     case 0xf8:
+-      if (!is_car_safety_mode(current_safety_mode)) {
++      // FrostCapture: not while transmit is armed either
++      if (!is_car_safety_mode(current_safety_mode) && (current_safety_mode != SAFETY_ALLOUTPUT)) {
+         heartbeat_disabled = true;
+       }
+       break;

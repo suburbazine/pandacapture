@@ -1,0 +1,96 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  firmware:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install scons comma-deps-gcc-arm-none-eabi
+      - run: python firmware/build.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware
+          path: frostcapture/firmware_bin/
+
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-24.04, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]"
+      - run: python -m pytest -q
+      - run: python -m frostcapture selftest
+
+  package:
+    needs: [firmware, test]
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            asset: frostcapture-windows-x64.exe
+            exe: dist/frostcapture.exe
+          - os: ubuntu-22.04  # older glibc, so the program runs on more distributions
+            asset: frostcapture-linux-x64
+            exe: dist/frostcapture
+          # macOS comes later:
+          # - os: macos-14
+          #   asset: frostcapture-macos-arm64
+          #   exe: dist/frostcapture
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          name: firmware
+          path: frostcapture/firmware_bin
+      - run: pip install ".[package]"
+      - run: python packaging/build_exe.py
+      - name: Smoke test
+        shell: bash
+        run: |
+          ${{ matrix.exe }} selftest
+          ${{ matrix.exe }} info || true
+      - shell: bash
+        run: mv ${{ matrix.exe }} dist/${{ matrix.asset }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: dist/${{ matrix.asset }}
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: package
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          merge-multiple: true
+      - run: cd out && sha256sum * > SHA256SUMS.txt
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${{ github.ref_name }}" out/* --repo "${{ github.repository }}" --generate-notes

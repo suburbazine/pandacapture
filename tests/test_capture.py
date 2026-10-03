@@ -1,0 +1,91 @@
+import re
+
+from frostcapture import protocol as p
+from frostcapture.capture import CaptureOptions, Console, capture
+from frostcapture.sources import SimulatedSource, SourceError
+
+# The FrostBYTE Android signal finder's patterns (canlog/LogParsers.kt)
+ANDROID_CANDUMP = re.compile(r"\(\s*([0-9.]+)\)\s+\S+\s+([0-9A-Fa-f]{3,8})#(R?[0-9A-Fa-f]*)")
+ANDROID_MARKER = re.compile(r"^#\s*marker\s+(\S+)\s+\(\s*([0-9.]+)\)")
+
+
+class Quiet:
+    def __init__(self):
+        self.text = ""
+
+    def write(self, s):
+        self.text += s
+
+    def flush(self):
+        pass
+
+    def isatty(self):
+        return False
+
+
+class ScriptedKeys:
+    """Presses keys on the given polls."""
+
+    def __init__(self, script):
+        self.script = dict(script)
+        self.polls = 0
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        pass
+
+    def poll(self):
+        self.polls += 1
+        return list(self.script.pop(self.polls, ""))
+
+
+def run(tmp_path, source_factory, keys=None, **opts):
+    out = Quiet()
+    rc = capture(source_factory, CaptureOptions(out_dir=tmp_path, stamp="t", **opts), Console(out),
+                 keys or ScriptedKeys({}))
+    return rc, (tmp_path / "capture-t.log").read_text(encoding="utf-8"), out.text
+
+
+def test_log_readable_by_android_finder(tmp_path):
+    rc, log, _ = run(tmp_path, SimulatedSource, keys=ScriptedKeys({50: "m", 300: "3", 2000: "q"}), seconds=5)
+    assert rc == 0
+    lines = log.splitlines()
+    frames = [line for line in lines if line.startswith("(")]
+    assert frames and all(ANDROID_CANDUMP.search(line) for line in frames)
+    markers = [ANDROID_MARKER.match(line) for line in lines if line.startswith("# marker")]
+    assert [m[1] for m in markers] == ["1", "3"]
+    assert lines[0] == "# FrostCapture candump log"
+    assert any(line.startswith("# 0x316 (engine RPM) present") for line in lines)
+
+
+def test_bus_filter(tmp_path):
+    _, log, _ = run(tmp_path, SimulatedSource, seconds=0.5, buses=(1,))
+    frames = [line for line in log.splitlines() if line.startswith("(")]
+    assert frames and all(" can1 " in line for line in frames)
+
+
+def test_returned_frames_not_recorded(tmp_path):
+    class Echoes(SimulatedSource):
+        def read(self):
+            return [p.Frame(0, 0x123, b"\x01", returned=True)] + super().read()
+
+    _, log, _ = run(tmp_path, Echoes, seconds=0.3)
+    assert " 123#" not in log
+
+
+def test_open_failure_reported(tmp_path):
+    def fail():
+        raise SourceError("No panda found.")
+
+    out = Quiet()
+    assert capture(fail, CaptureOptions(out_dir=tmp_path), Console(out), ScriptedKeys({})) == 1
+    assert "No panda found" in out.text
+
+
+def test_error_without_reconnect_is_logged(tmp_path):
+    _, log, _ = run(tmp_path, lambda: SimulatedSource(dropout_at=0.3), seconds=10, reconnect=False)
+    assert "# stall: no frames since" in log
+    assert "# adapter error: simulated dropout" in log
+    assert "# stopped with error" in log

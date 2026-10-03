@@ -1,0 +1,8 @@
+[submodule "firmware/panda"]
+	path = firmware/panda
+	url = https://github.com/commaai/panda.git
+	shallow = true
+[submodule "firmware/opendbc"]
+	path = firmware/opendbc
+	url = https://github.com/commaai/opendbc.git
+	shallow = true

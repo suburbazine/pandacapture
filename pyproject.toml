@@ -1,0 +1,33 @@
+[project]
+name = "frostcapture-panda"
+dynamic = ["version"]
+description = "CAN capture for the FrostBYTE signal finder, on a comma Red Panda"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "libusb1>=3.1",
+  "libusb-package>=1.0.26",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "scons"]
+package = ["pyinstaller>=6.10"]
+
+[project.scripts]
+frostcapture = "frostcapture.cli:main"
+
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["frostcapture"]
+
+[tool.setuptools.dynamic]
+version = {attr = "frostcapture.__version__"}
+
+[tool.setuptools.package-data]
+frostcapture = ["firmware_bin/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,22 @@
+# CAN captures and transmit logs can contain the VIN
+captures/
+*.log
+
+# Firmware build output (firmware/build.py); releases ship it inside the exe
+firmware/build/
+frostcapture/firmware_bin/*
+!frostcapture/firmware_bin/README.txt
+
+# Local Arm toolchain (firmware/build.py --toolchain .toolchain/...)
+.toolchain/
+
+# Python
+.venv/
+__pycache__/
+*.egg-info/
+.pytest_cache/
+
+# PyInstaller
+build/
+dist/
+*.spec
