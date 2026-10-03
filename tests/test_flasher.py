@@ -299,3 +299,10 @@ def test_backup_command_writes_nothing(world, tmp_path):
     path = flasher.make_backup(tmp_path, log=lambda s: None)
     assert path.exists() and world.state == "app" and world.version == "v1.2.3-RELEASE"
     assert not any(e.startswith(("dfu-erase", "dfu-program", "erase", "write")) for e in world.events)
+
+
+def test_backup_resumes_from_dfu(world, tmp_path):
+    world.hw, world.state = p.HW_GREY_PANDA, "dfu"
+    path = flasher.make_backup(tmp_path, log=lambda s: None)
+    assert path.exists() and world.state == "app"
+    assert not any(e.startswith(("dfu-erase", "dfu-program")) for e in world.events)

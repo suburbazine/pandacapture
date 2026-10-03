@@ -273,7 +273,20 @@ def make_backup(folder, serial=None, log=print) -> Path:
     """Saves the whole flash through the STM32 bootloader, then restarts the panda. Writes nothing."""
     pandas = [d for d in list_pandas() if serial is None or d.serial == serial]
     if not pandas:
-        raise FlashError("No panda found. Connect it by USB.")
+        dfus = list_dfu()
+        if len(dfus) != 1:
+            raise FlashError("No panda found. Connect it by USB.")
+        if dfus[0].note:
+            raise FlashError(dfus[0].note)
+        # e.g. the last try stopped here for want of a Windows driver
+        log("A panda is waiting in the STM32 bootloader (DFU): backing it up from there.")
+        try:
+            path = backup_flash(dfus[0].serial, folder, None, "unknown (found in DFU)", log)
+        finally:
+            with StDfu.open(dfus[0].serial) as dfu:
+                log("Restarting the panda")
+                dfu.jump(p.FLASH_BASE)
+        return path
     if len(pandas) > 1:
         raise FlashError("Several pandas connected; choose one with --serial.")
     serial = pandas[0].serial
