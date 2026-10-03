@@ -432,14 +432,25 @@
       if (!l) continue;
       l.v = d.v;
       l.seen = now - d.age * 1000;
-      if (mode === "high") l.hist.push([now, d.v]);
+      if (mode === "high") { l.hist.push([now, d.v]); trim(l, now); }
     }
     dirty = true;
   }
 
   let sampleCount = 0;
+  // Trace history is trimmed as samples arrive, not only when drawing: browsers stop drawing in
+  // hidden tabs, and a trace trimmed only there would grow without limit.
+  const MAX_POINTS = 2000;   // per signal: a 100 Hz signal fills 1,000 in the 10 s window
+  function trim(l, now) {
+    let drop = 0;
+    while (drop < l.hist.length && now - l.hist[drop][0] > TRACE_MS) drop++;
+    drop = Math.max(drop, l.hist.length - MAX_POINTS);
+    if (drop > 0) l.hist.splice(0, drop);
+  }
+
   function samples(batch) {
     const now = performance.now();
+    const touched = new Set();
     for (const [k, v] of batch.s) {
       const l = live[k];
       if (!l) continue;
@@ -447,7 +458,9 @@
       l.seen = now;
       l.hist.push([now, v]);
       l.count++;
+      touched.add(l);
     }
+    for (const l of touched) trim(l, now);
     sampleCount += batch.s.length;
     if (batch.lost) {
       $("banner").textContent = `This page fell behind and skipped ${batch.lost.toLocaleString()} samples.`;
@@ -502,7 +515,7 @@
     for (const s of signals) {
       const t = tiles[s.key], l = live[s.key];
       if (!t || !l) continue;
-      while (l.hist.length && now - l.hist[0][0] > TRACE_MS) l.hist.shift();
+      trim(l, now);
       const stale = l.v === null || now - l.seen > STALE_MS;
       t.el.classList.toggle("stale", stale);
       if (l.v === null) continue;
@@ -539,6 +552,15 @@
       $("statusText").textContent = "reconnecting to PandaCapture";
     };
   }
+  // A hidden tab doesn't need the live stream: pause it, and pick it up again with fresh values when
+  // the tab comes back. Recording carries on regardless: PandaCapture records, not the page.
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      if (source) { source.close(); source = null; }
+    } else if (!source && signals.length) {
+      connect(mode);
+    }
+  });
   $("modeNormal").onclick = () => mode !== "normal" && connect("normal");
   $("modeHigh").onclick = () => mode !== "high" && connect("high");
 
