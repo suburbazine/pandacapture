@@ -82,19 +82,21 @@ The STM32 bootloader (USB `0483:DF11`) doesn't install a driver by itself. If `f
 Record the bus your FrostBYTE is (or will be) wired to. On many modern cars, the OBD-II port sits
 behind a gateway and only carries diagnostic traffic, so tap the powertrain CAN wires directly.
 
-**[docs/wiring.md](docs/wiring.md) has the panda's OBD-C pinout** and three ways to connect:
+**[docs/wiring.md](docs/wiring.md)** has the pinouts and three ways to connect:
 - a DIY breakout tapping one bus
 - the car's OBD-II port
 - a comma car harness
 
-The short version for a breakout:
+With a comma car harness, the bus to record goes on the harness's 26-pin connector (Molex
+501646-2600), which the harness box passes to the panda's OBD-C port:
 
-| Signal | OBD-C pin |
-|---|---|
-| CAN-H / CAN-L of the bus to record | A2 / A3 (CAN0, bus 0) |
-| +12 V | A4 and A9 |
-| Ground | A1 and A12 |
-| 100 Ω to ground (orientation sense) | A8 (SBU1) |
+| Signal | 26-pin | Bus |
+|---|---|---|
+| CAN-H / CAN-L, car side | 4 / 6 | bus 0 |
+| CAN-H / CAN-L, radar | 8 / 10 (and 18 / 20) | bus 1 |
+| CAN-H / CAN-L, camera side | 22 / 24 | bus 2 |
+| +12 V | 12, 14 | |
+| Ground | 1, 26 | |
 
 The OBD-C port isn't USB: never connect it to a computer or a charger.
 

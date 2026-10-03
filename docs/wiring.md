@@ -1,9 +1,13 @@
 # Wiring
 
-The Red Panda and the Black Panda both connect to the car through an **OBD-C** port: a USB-C socket
-that carries CAN buses, power and two sense lines instead of USB. The pin assignment below is
-comma's, from [OBD-C.sch.pdf](https://github.com/commaai/hardware/blob/master/harness/OBD-C.sch.pdf)
-in comma's hardware repository.
+Two connectors matter:
+- **The panda's OBD-C port:** a USB-C socket that carries CAN buses, power and two sense lines
+  instead of USB. The Red Panda and the Black Panda both have one.
+- **A comma car harness's 26-pin connector:** most installs go through one (Option 3).
+
+The pin assignments are comma's, from its [hardware repository](https://github.com/commaai/hardware):
+[OBD-C.sch.pdf](https://github.com/commaai/hardware/blob/master/harness/OBD-C.sch.pdf) and
+[open_pinout.sch.pdf](https://github.com/commaai/hardware/blob/master/harness/v1/open_pinout.sch.pdf).
 
 > **Not USB.** Never plug the panda's OBD-C port into a computer, a phone or a charger, and never
 > plug a USB device into an OBD-C breakout. The panda's USB connection to your computer is its
@@ -73,19 +77,70 @@ behind a gateway; PandaCapture tells you when that's all it hears.
 
 Plus 100 Ω from A8 (SBU1) to GND, as above.
 
-## Option 3: a comma car harness
+## Option 3: a comma car harness (26-pin connector)
 
-A comma car harness and harness box sit between a car's ADAS camera and the rest of the car:
+Most pandas meet the car through a comma car harness. The harness plugs in between the car and its
+ADAS camera, and joins a harness box at a **26-pin Molex connector** (part 501646-2600, crimp pins
+501647-1000). The box then goes to the panda's OBD-C port. The table is comma's
+[open pinout](https://github.com/commaai/hardware/blob/master/harness/v1/open_pinout.sch.pdf),
+looking at the wire side of the cable connector. Pins 1 and 2 are at the car end of the connector,
+pins 25 and 26 at the camera end.
 
-- **CAN0** (bus 0) is the car side.
-- **CAN2** (bus 2) is the camera side.
-- **CAN1** (bus 1) is an extra bus, usually the radar.
+| Pin | Signal | Wire | Pin | Signal | Wire |
+|---|---|---|---|---|---|
+| 1 | GND | black | 2 | IGN (ignition) | brown |
+| 3 | optional resistor loopback | | 4 | **CAN0_H** (car) | orange |
+| 5 | optional resistor loopback | | 6 | **CAN0_L** (car) | green |
+| 7 | PT4 | purple | 8 | **CAN1_H** (radar) | pink |
+| 9 | PT3 | yellow | 10 | **CAN1_L** (radar) | blue |
+| 11 | PT2 | white | 12 | 12 V in | red |
+| 13 | PT1 | grey | 14 | 12 V in | red |
+| 15 | PT1 | grey | 16 | IGN | brown |
+| 17 | PT2 | white | 18 | **CAN1_H** (radar) | pink |
+| 19 | PT3 | yellow | 20 | **CAN1_L** (radar) | blue |
+| 21 | PT4 | purple | 22 | **CAN2_H** (camera) | orange |
+| 23 | optional resistor loopback | | 24 | **CAN2_L** (camera) | green |
+| 25 | optional resistor loopback | | 26 | GND | black |
 
-With the relay closed, which is always the case under PandaCapture, CAN0 and CAN2 are one bus,
-so buses 0 and 2 show the same traffic. CAN3 is the multiplexed bus, which openpilot uses for
-OBD-II diagnostics: record it as bus 1 with `--obd`.
+- **PT1–PT4** are pass-throughs: the camera's other wires, joined end to end through the box.
+- **Buses:** CAN0 is the car side and arrives at the panda as bus 0 (`can0`). CAN1 is usually the
+  radar: bus 1. CAN2 is the camera side: bus 2.
+- **The relay:** the box's relay joins CAN0 and CAN2 unless the panda opens it. PandaCapture never
+  opens it, so buses 0 and 2 show the same traffic and the camera keeps working.
+- **Termination:** a jumper from pin 3 to pin 5 adds 120 Ω to bus 0. A jumper from pin 23 to pin
+  25 takes bus 2 from 120 Ω to 60 Ω. Leave both out when tapping a car's bus, which already has
+  its terminators.
+- **Other drawings:** some third-party drawings number the buses 1–3. Their "1H/1L" is CAN0 on
+  pins 4/6, and "3H/3L" is CAN2 on pins 22/24.
+
+### Tapping a bus through the 26-pin connector
+
+To record a bus the harness doesn't reach, such as a powertrain bus, wire it into a spare 26-pin
+plug. comma sells a pre-crimped development harness, which saves buying Molex's crimp tool.
+
+| Wire to | 26-pin |
+|---|---|
+| CAN-H / CAN-L of the bus to record | 4 / 6 (CAN0, bus 0) |
+| A second bus, if wanted | 8 / 10 (CAN1, bus 1) |
+| +12 V | 12 and 14 |
+| Ground | 1 and 26 |
+| Ignition (optional; PandaCapture doesn't need it) | 2 |
+
+Then plug it into the harness box, and the box into the panda with the OBD-C cable.
+
+### comma power (RJ45)
+
+comma power plugs into the harness with an RJ45 jack. It brings the OBD-II port's CAN in as
+**CAN3**: record it as bus 1 with `--obd`.
+
+| RJ45 pin | Signal |
+|---|---|
+| 1, 5 | GND |
+| 2 / 4 | CAN3_L / CAN3_H (OBD-II) |
+| 3 / 6 | CAN0_L / CAN0_H |
+| 7, 8 | VIN |
 
 ## Black Panda
 
-The Black Panda's OBD-C port has the same pinout, and the same three buses plus the multiplexed
-one. It doesn't support CAN FD.
+The Black Panda's OBD-C port has the same pinout, the same three buses plus the multiplexed one,
+and goes to the same harness box and 26-pin harness. It doesn't support CAN FD.
