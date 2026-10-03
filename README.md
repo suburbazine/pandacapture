@@ -3,6 +3,8 @@
 Records a car's CAN buses through a [comma](https://comma.ai) Red Panda or Black Panda, and shows
 them live as gauges, numbers and status lights.
 
+![The live dashboard replaying a Kia Stinger 3.3T's powertrain bus](docs/images/dashboard.png)
+
 - **Captures** are candump logs, for finding the signals a FrostBYTE water/methanol controller
   should read (RPM, MAP/boost, intake temperature). The FrostBYTE Android app's signal finder,
   SavvyCAN and can-utils all read them.
@@ -29,7 +31,7 @@ them live as gauges, numbers and status lights.
 > **Status:** tested on a oneclone mini blackpanda (STM32F4):
 > - flash backup, flashing and updating, and the transmit gate
 > - capture from a Kia Stinger's P-CAN: about 2,430 frames/s for 165 s, with no dropouts
-> - the dashboard: replaying real Stinger captures at full rate, with all 67 map signals decoding
+> - the dashboard: replaying real Stinger captures at full rate, with all 76 map signals decoding
 >
 > Not yet tested: a Red Panda, transmitting on a real bus, and the dashboard live in the car.
 > See [STATUS.md](STATUS.md).
@@ -204,8 +206,22 @@ pandacapture dashboard --map kia-stinger-33t-pcan
 Your browser opens on gauges, numbers and status lights, decoded from the panda's traffic while it
 listens silently. Press `Q` in the console to stop.
 
+- **Gauges** come first, as the view to drive with.
+- **Every other group** (engine, fuel, cam phasers…) folds away. A folded group's badge still
+  says when a lamp is lit or a value is in its warning zone.
+- **A strip above the gauges** lists every lit warning lamp and every value in a warn or alert
+  zone.
+
+High resolution mode adds a 10-second trace and the update rate to each tile:
+
+![High resolution mode: every sample, with a trace on each tile](docs/images/dashboard-high-resolution.png)
+
+On a phone (with `--lan`), the controls fold into two rows:
+
+<img src="docs/images/dashboard-phone.png" alt="The dashboard on a phone" width="300">
+
 An **address map** says which CAN IDs and bits mean what for your vehicle:
-- **Built in:** `kia-stinger-33t-pcan`, 67 signals from comma's DBC, tracing of the ECU's CAN code, and captures of the car. It covers:
+- **Built in:** `kia-stinger-33t-pcan`, 76 signals from comma's DBC, tracing of the ECU's CAN code, and captures of the car. It covers:
   - engine and boost; torque and spark
   - an idle and lope panel: idle target, 5 s RPM swing and low, alternator duty
   - cam phasers in degrees, with overlap and off-target lamps
@@ -264,6 +280,10 @@ pandacapture match captures/capture-20261003-035135.log jb4-log.csv --map kia-st
 3. **Ranks the results:** each field gets a correlation and a fitted scale and offset, plus two
    checks against coincidences. **changes** catches two values that merely drift together.
    **RPM held** catches two that both just follow engine speed.
+
+The dashboard's **Find signals** button runs the same match on a capture it recorded:
+
+![Find signals ranking CAN fields against the ECU's own OBD answers](docs/images/find-signals.png)
 
 **The capture can calibrate itself:** if a JB4 or scan tool polls the ECU over OBD on the same bus,
 its requests and the ECU's answers are in the capture. `--obd` uses those answers as the reference,
