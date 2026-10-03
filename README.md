@@ -26,7 +26,8 @@ acknowledge a warning.
 | Panda | Capture | PandaCapture firmware, transmit |
 |---|---|---|
 | Red Panda (STM32H7) | yes | yes |
-| Black Panda (STM32F4) | yes | yes: built from comma's last F4-capable panda firmware |
+| Black Panda (STM32F4) | yes | yes: built from comma's last panda firmware with every F4 board |
+| Grey Panda (STM32F4), and boards that detect as one, such as oneclone's mini blackpanda | yes (tested on a oneclone board) | yes, same F4 build |
 | White Panda (STM32F4) | yes | the F4 build supports it; untried, needs `flash --force` |
 | Panda inside a comma three / 3X | not supported | refused |
 
@@ -65,6 +66,12 @@ pandacapture flash
 - **The first time**, comma's bootstub only starts comma-signed firmware. PandaCapture puts the
   panda into the STM32's ROM bootloader (DFU), writes its own bootstub, then the firmware.
 - **Later updates** only rewrite the firmware.
+- **A backup comes first:** before replacing the bootstub, `flash` reads the panda's whole flash
+  (bootstub, firmware, settings) back through the STM32 bootloader and saves it in a `backups`
+  folder next to the program. If the chip won't read back, nothing is erased.
+- **Back to what it ran before:** `pandacapture restore backups/panda-….bin` writes a backup back,
+  which also covers firmware PandaCapture can't rebuild, such as a clone maker's or a fork's.
+  `pandacapture backup` makes a backup on its own, without writing anything to the panda.
 - **Back to openpilot:** a comma device flashes its own firmware onto a panda it's connected to.
   PandaCapture's bootstub starts comma-signed firmware too.
 
@@ -186,7 +193,7 @@ pandacapture [options]          record
   --simulate                    fake traffic, no panda needed
   --simulate-dropout N          fake traffic that drops out after N seconds
 
-pandacapture list | info | flash | send | replay | selftest      (each has --help)
+pandacapture list | info | flash | backup | restore | send | replay | selftest      (each has --help)
 ```
 
 ## Privacy
@@ -211,6 +218,6 @@ git clone --recurse-submodules https://github.com/suburbazine/pandacapture
 The firmware is comma's panda firmware at pinned commits, plus the patches in
 [firmware/patches](firmware/patches), signed with the panda project's public development key:
 - **Red Panda:** a recent commit.
-- **Black Panda:** comma's last commit before it removed STM32F4 support (`f849893b`, July 2025),
-  with the opendbc commit it pinned. comma no longer maintains that firmware.
+- **Black, Grey and White Panda:** comma's last commit before it started removing F4 boards
+  (`e462c34d`, June 2025), with the opendbc commit it pinned. comma no longer maintains that firmware.
 PandaCapture isn't made or endorsed by comma.ai. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

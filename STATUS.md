@@ -12,10 +12,19 @@
 - Both firmware builds compile natively on Windows with Arm GNU Toolchain 13.2.rel1, the GCC
   version comma uses, with comma's `-Werror`:
   - Red Panda (STM32H7)
-  - Black Panda (STM32F4), from comma's pin `f849893b`
+  - Black/Grey/White Panda (STM32F4), from comma's pin `e462c34d`
   - The signed app verifies against the development key the bootstub checks.
   - The version reads `PANDACAPTURE-…`, and the transmit-gate code is in the binary.
 - The one-file Windows program runs `selftest` and finds its bundled firmware.
+
+## Tested on hardware (2026-10-02, oneclone mini blackpanda)
+- The board reports hardware type 2 (Grey Panda) and runs a community fork's firmware,
+  `DEV-192f74aa-DEBUG`, which reports packet versions 16/4/5.
+- `list` and `info` work, and Windows binds WinUSB to it by itself.
+- A listen-only capture works: setup, silent mode (confirmed in its health packet), bit rate
+  detection on all three buses, recording and closing.
+  - USB power only, no bus connected, so no frames yet.
+- Two fixes came from this run: CAN health bit rates (10x too low) and the FD display on F4 boards.
 
 ## Not yet tested on hardware
 - No Red Panda has been flashed or captured from yet. The protocol follows comma's library for the
@@ -24,7 +33,7 @@
   - DFU on Windows with Zadig's WinUSB driver
   - the green LED while armed
   - the heartbeat timeout
-- No Black Panda has been flashed yet. Its flash layout, DFU block size, DFU serial formula and
+- No F4 panda has been flashed, backed up or restored yet. Its flash layout, DFU block size, DFU serial formula and
   health layout come from comma's last F4-capable library and firmware, with tests against those
   pinned sources.
 - A Black Panda on old stock firmware: capture needs CAN packet format 4 (2023 or later).
