@@ -17,7 +17,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install scons comma-deps-gcc-arm-none-eabi
+      - run: pip install scons pycryptodome comma-deps-gcc-arm-none-eabi
       - run: python firmware/build.py
       - uses: actions/upload-artifact@v4
         with:

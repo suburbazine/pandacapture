@@ -1,6 +1,6 @@
 # PandaCapture for comma pandas
 
-Records a car's CAN buses through a [comma](https://comma.ai) Red Panda into a candump log. The log is
+Records a car's CAN buses through a [comma](https://comma.ai) Red Panda or Black Panda into a candump log. The log is
 for finding the signals a FrostBYTE water/methanol controller should read (RPM, MAP/boost, intake
 temperature), and the FrostBYTE Android app's signal finder, SavvyCAN and can-utils all read it.
 PandaCapture also flashes its own firmware onto the panda, and can transmit frames once you
@@ -11,7 +11,8 @@ acknowledge a warning.
 - **Bit rates are found automatically**, by listening at each rate. A wrong rate can't disturb
   the bus while the panda is silent.
 - **All three buses at once.** The log names them `can0`, `can1` and `can2`, and the status line
-  shows which ones carry traffic.
+  shows which ones carry traffic. The Red Panda also receives CAN FD; the Black Panda is classic
+  CAN only.
 - **Windows and Linux** now. macOS and the FrostBYTE Android app over USB OTG are planned; see
   [docs/protocol.md](docs/protocol.md).
 - **Transmitting is gated.** You type `TRANSMIT` after a warning. Only PandaCapture's firmware can
@@ -25,7 +26,8 @@ acknowledge a warning.
 | Panda | Capture | PandaCapture firmware, transmit |
 |---|---|---|
 | Red Panda (STM32H7) | yes | yes |
-| Black Panda (STM32F4) | yes, on its current firmware | in progress: a second firmware target from comma's last F4 release |
+| Black Panda (STM32F4) | yes | yes: built from comma's last F4-capable panda firmware |
+| White Panda (STM32F4) | yes | the F4 build supports it; untried, needs `flash --force` |
 | Panda inside a comma three / 3X | not supported | refused |
 
 ## 1. Install
@@ -199,12 +201,16 @@ git clone --recurse-submodules https://github.com/suburbazine/pandacapture
 ```
 
 - **Tests:** `pip install -e ".[dev]"`, then `python -m pytest`.
-- **Firmware:** `python firmware/build.py`. See the top of [firmware/build.py](firmware/build.py)
-  for the Arm toolchain. It builds on Windows, Linux or in Docker (`--docker`).
+- **Firmware:** `python firmware/build.py` builds both targets: `h7` (Red Panda) and `f4` (Black
+  Panda). See the top of [firmware/build.py](firmware/build.py) for the Arm toolchain and
+  pycryptodome. It builds on Windows, Linux or in Docker (`--docker`).
 - **One-file program:** `pip install ".[package]"`, then `python packaging/build_exe.py`.
 - **CI:** [GitHub Actions](.github/workflows/build.yml) builds the firmware and the Windows and
   Linux programs on every push, and publishes a release for every `v*` tag.
 
-The firmware is comma's panda firmware at a pinned commit, plus the patches in
-[firmware/patches](firmware/patches), signed with the panda project's public development key.
+The firmware is comma's panda firmware at pinned commits, plus the patches in
+[firmware/patches](firmware/patches), signed with the panda project's public development key:
+- **Red Panda:** a recent commit.
+- **Black Panda:** comma's last commit before it removed STM32F4 support (`f849893b`, July 2025),
+  with the opendbc commit it pinned. comma no longer maintains that firmware.
 PandaCapture isn't made or endorsed by comma.ai. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

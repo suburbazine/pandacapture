@@ -26,6 +26,14 @@ class BusSetup:
     detect_seconds: float = 0.4
 
 
+def bus_errors(panda, bus) -> int:
+    """The bus's error count, or 0 on firmware whose CAN health PandaCapture can't read."""
+    try:
+        return panda.can_health(bus)["total_errors"]
+    except UsbError:
+        return 0
+
+
 def detect_rates(panda, buses, dwell, log, candidates=AUTO_RATES) -> dict:
     """Finds each bus's bit rate by listening (the panda must be silent, so a wrong rate can't
     disturb the bus): the first rate that brings frames without errors. Returns bus -> (rate or None,
@@ -42,7 +50,7 @@ def detect_rates(panda, buses, dwell, log, candidates=AUTO_RATES) -> dict:
         panda.reset_comms()
         panda.clear_rx()
         unpacker.reset()
-        errors_before = {b: panda.can_health(b)["total_errors"] for b in pending}
+        errors_before = {b: bus_errors(panda, b) for b in pending}
         frames = {b: 0 for b in pending}
         end = time.monotonic() + dwell
         while time.monotonic() < end:
@@ -53,7 +61,7 @@ def detect_rates(panda, buses, dwell, log, candidates=AUTO_RATES) -> dict:
             if not got:
                 time.sleep(0.002)
         for b in list(pending):
-            errors = panda.can_health(b)["total_errors"] - errors_before[b]
+            errors = bus_errors(panda, b) - errors_before[b]
             if frames[b] >= 3 and errors <= frames[b] // 20:
                 result[b] = (rate, frames[b], errors)
                 pending.remove(b)
@@ -89,10 +97,15 @@ class PandaSource:
         version = pd.version()
         hw_name = p.HW_NAMES.get(hw, f"panda type 0x{hw:02X}")
         self.serial = pd.serial
-        if hw != p.HW_RED_PANDA:
-            self.header.append(f"note: this is a {hw_name}; PandaCapture is designed for the Red Panda")
-        expected = expected_packet_versions()
-        if expected and pd.packet_versions()[1] != expected[1]:
+        mcu = p.MCU_BY_HW.get(hw)
+        if mcu is None:
+            self.header.append(f"note: this is a {hw_name}; PandaCapture is made for the Red and Black Panda")
+        can_version = pd.packet_versions()[1]
+        if can_version < p.CAN_PACKET_V4:
+            raise SourceError(f"this panda's firmware ({version}) sends CAN in an older format (version "
+                              f"{can_version}) than PandaCapture reads. Flash it with: pandacapture flash")
+        expected = expected_packet_versions(mcu) if mcu else None
+        if expected and can_version != expected[1]:
             self.header.append("note: the panda's CAN packet layout differs from this PandaCapture's firmware; "
                                "run pandacapture flash if frames look wrong")
         if not p.is_pandacapture_version(version):
@@ -122,8 +135,9 @@ class PandaSource:
                 rates[b] = 500
                 note = "no traffic during detection, left at 500"
             pd.set_can_speed(b, rates[b])
-            # A data rate at or above the nominal rate turns CAN FD reception on; classic frames still come in
-            pd.set_data_speed(b, max(self.setup.data_rate, rates[b]))
+            if mcu is None or mcu.fd:
+                # A data rate at or above the nominal rate turns CAN FD reception on; classic frames still come in
+                pd.set_data_speed(b, max(self.setup.data_rate, rates[b]))
             self.header.append(f"bus {b} (can{b}): {rates[b]} kbit/s, {note}")
         self.rates = rates
 
@@ -131,8 +145,13 @@ class PandaSource:
             pd.set_safety(p.SAFETY_NOOUTPUT)
         if self.setup.obd:
             pd.set_obd(True)
-        mode = pd.health()["safety_mode"]
         want = p.SAFETY_NOOUTPUT if self.setup.mode == "ack" else p.SAFETY_SILENT
+        try:
+            mode = pd.health()["safety_mode"]
+        except UsbError:
+            # Older firmware: its health packet isn't one PandaCapture reads, so trust the request
+            mode = want
+            self.header.append("note: can't read this firmware's health packet to confirm the safety mode")
         if mode != want:
             raise SourceError(f"the panda is in safety mode {mode}, not {want}; refusing to record")
         pd.reset_comms()

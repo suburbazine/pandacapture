@@ -29,8 +29,8 @@ All vendor requests to the device: `bmRequestType` `0xC0` to read, `0x40` to wri
 |---|---|---|---|---|
 | `0xC1` | in, 1 byte | | | hardware type: `7` = Red Panda |
 | `0xD6` | in, ≤64 bytes | | | firmware version string. PandaCapture's starts `PANDACAPTURE-` |
-| `0xDD` | in, 8 bytes | | | health and CAN packet layout hashes (two little-endian u32) |
-| `0xD2` | in | | | health packet (`health_t` in `board/health.h`) |
+| `0xDD` | in, 8 bytes | | | health and CAN packet layout hashes (two little-endian u32). Older firmware, including the Black Panda's F4 build, answers 3 bytes: health, CAN and CAN-health versions (16, 4, 5) |
+| `0xD2` | in | | | health packet (`health_t` in `board/health.h`; the F4 build's layout differs, see `LEGACY_HEALTH_V16`) |
 | `0xC2` | in | bus | | CAN health of one bus (`can_health_t`): error counters, bit rates |
 | `0xF8` | out | | | turn off openpilot's heartbeat check |
 | `0xE7` | out | 0 | | power saving off. Power saving switches transceivers off |

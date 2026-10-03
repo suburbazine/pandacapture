@@ -1,0 +1,79 @@
+diff --git a/board/main.c b/board/main.c
+index 458db967..93f9a212 100644
+--- a/board/main.c
++++ b/board/main.c
+@@ -60,10 +60,29 @@ void debug_ring_callback(uart_ring *ring) {
+ 
+ // ****************************** safety mode ******************************
+ 
++// PandaCapture transmit gate. This firmware only runs three modes:
++//   SILENT    bus monitoring: no ACKs, no transmit (the default at boot)
++//   NOOUTPUT  ACKs frames like any node, never transmits a frame
++//   ALLOUTPUT transmits, and only with this arm code, which the PandaCapture host sends after the
++//             user acknowledges the transmit warning
++// Any other request, including openpilot's car safety modes, lands in SILENT.
++#define PANDACAPTURE_TX_ARM 0x4654U
++
++static bool pandacapture_mode_allowed(uint16_t mode, uint16_t param) {
++  return (mode == SAFETY_SILENT) || (mode == SAFETY_NOOUTPUT) ||
++         ((mode == SAFETY_ALLOUTPUT) && (param == PANDACAPTURE_TX_ARM));
++}
++
+ // this is the only way to leave silent mode
+ void set_safety_mode(uint16_t mode, uint16_t param) {
+   uint16_t mode_copy = mode;
+-  int err = set_safety_hooks(mode_copy, param);
++  uint16_t param_copy = param;
++  if (!pandacapture_mode_allowed(mode_copy, param_copy)) {
++    print("PandaCapture: safety mode refused, staying SILENT\n");
++    mode_copy = SAFETY_SILENT;
++    param_copy = 0U;
++  }
++  int err = set_safety_hooks(mode_copy, param_copy);
+   if (err == -1) {
+     print("Error: safety set mode failed. Falling back to SILENT\n");
+     mode_copy = SAFETY_SILENT;
+@@ -89,6 +108,18 @@ void set_safety_mode(uint16_t mode, uint16_t param) {
+       }
+       can_silent = ALL_CAN_LIVE;
+       break;
++    case SAFETY_ALLOUTPUT:
++      // PandaCapture: never drive the harness relay, and require the host's heartbeat, so
++      // transmitting stops within seconds if the host goes away
++      set_intercept_relay(false, false);
++      heartbeat_counter = 0U;
++      heartbeat_lost = false;
++      heartbeat_disabled = false;
++      if (current_board->harness_config->has_harness) {
++        current_board->set_can_mode(CAN_MODE_NORMAL);
++      }
++      can_silent = ALL_CAN_LIVE;
++      break;
+     case SAFETY_ELM327:
+       set_intercept_relay(false, false);
+       heartbeat_counter = 0U;
+@@ -206,8 +237,8 @@ static void tick_handler(void) {
+         heartbeat_counter += 1U;
+       }
+ 
+-      // disabling heartbeat not allowed while in safety mode
+-      if (is_car_safety_mode(current_safety_mode)) {
++      // disabling heartbeat not allowed while in safety mode, or while PandaCapture transmit is armed
++      if (is_car_safety_mode(current_safety_mode) || (current_safety_mode == SAFETY_ALLOUTPUT)) {
+         heartbeat_disabled = false;
+       }
+ 
+diff --git a/board/main_comms.h b/board/main_comms.h
+index 643be954..8dcaae58 100644
+--- a/board/main_comms.h
++++ b/board/main_comms.h
+@@ -362,7 +362,8 @@ int comms_control_handler(ControlPacket_t *req, uint8_t *resp) {
+       break;
+     // **** 0xf8: disable heartbeat checks
+     case 0xf8:
+-      if (!is_car_safety_mode(current_safety_mode)) {
++      // PandaCapture: not while transmit is armed either
++      if (!is_car_safety_mode(current_safety_mode) && (current_safety_mode != SAFETY_ALLOUTPUT)) {
+         heartbeat_disabled = true;
+       }
+       break;

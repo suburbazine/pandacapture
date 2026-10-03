@@ -1,4 +1,4 @@
-"""The STM32H7's ROM bootloader over USB DFU (ST's DfuSe commands).
+"""The STM32 ROM bootloader over USB DFU (ST's DfuSe commands), on an STM32H7 or STM32F4 panda.
 
 Only used to write the bootstub, the one part of a panda's flash the panda can't rewrite itself.
 Follows comma's panda library (python/usb.py, python/dfu.py; MIT licence).
@@ -114,7 +114,7 @@ class StDfu:
         self.close()
 
     def _check_mcu(self):
-        # e.g. "@Internal Flash   /0x08000000/8*128Kg": 8 sectors means an STM32H7 like the Red Panda's
+        # e.g. "@Internal Flash   /0x08000000/8*128Kg"
         for i in range(20):
             try:
                 desc = self._h.getStringDescriptor(i, 0)
@@ -122,9 +122,10 @@ class StDfu:
                 continue
             if desc and desc.startswith("@Internal Flash"):
                 sectors = sum(int(s.split("*")[0]) for s in desc.split("/")[-1].split(","))
-                if sectors != p.SECTOR_COUNT:
-                    raise UsbError(f"This bootloader's flash has {sectors} sectors, not the STM32H7's "
-                                   f"{p.SECTOR_COUNT}: it isn't a Red Panda.")
+                # 8 sectors: STM32H7 (Red Panda). 16: STM32F4 (Black Panda)
+                self.mcu = p.MCU_BY_DFU_SECTORS.get(sectors)
+                if self.mcu is None:
+                    raise UsbError(f"This bootloader's flash has {sectors} sectors: not a chip PandaCapture knows.")
                 return
         raise UsbError("Couldn't identify the chip behind this STM32 bootloader.")
 
@@ -162,16 +163,17 @@ class StDfu:
             self._wait()
 
     def erase_sector(self, sector):
-        self._dnload(0, b"\x41" + struct.pack("<I", p.FLASH_BASE + sector * p.SECTOR_SIZE))
+        self._dnload(0, b"\x41" + struct.pack("<I", self.mcu.sector_address(sector)))
         self._wait(timeout=30)
 
     def program(self, address, data: bytes, progress=None):
         self._dnload(0, b"\x21" + struct.pack("<I", address))
         self._wait()
-        data = bytes(data) + b"\xFF" * (-len(data) % p.DFU_BLOCK)
-        blocks = len(data) // p.DFU_BLOCK
+        size = self.mcu.dfu_block
+        data = bytes(data) + b"\xFF" * (-len(data) % size)
+        blocks = len(data) // size
         for i in range(blocks):
-            self._dnload(2 + i, data[i * p.DFU_BLOCK:(i + 1) * p.DFU_BLOCK])
+            self._dnload(2 + i, data[i * size:(i + 1) * size])
             self._wait()
             if progress:
                 progress(i + 1, blocks)

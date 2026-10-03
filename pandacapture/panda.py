@@ -41,6 +41,7 @@ class Panda:
         self._h = handle
         self.serial = serial
         self.bootstub = bootstub
+        self._health_parser = None
 
     @classmethod
     def open(cls, serial=None, bootstub_ok=True) -> "Panda":
@@ -145,14 +146,41 @@ class Panda:
         return d[0] if d else 0
 
     def packet_versions(self):
+        """(health, CAN) packet layout versions. Recent firmware sends two 32-bit hashes; firmware
+        from before that (like the F4 build) sends small numbers, one byte each."""
         d = self.control_read(p.REQ_PACKET_VERSIONS, length=8)
-        return tuple(int.from_bytes(d[i:i + 4], "little") for i in (0, 4)) if len(d) == 8 else (0, 0)
+        if len(d) == 8:
+            return tuple(int.from_bytes(d[i:i + 4], "little") for i in (0, 4))
+        if len(d) >= 2:
+            return d[0], d[1]
+        return 0, 0
 
     def health(self) -> dict:
-        return p.parse_health(self.control_read(p.REQ_HEALTH, length=p.HEALTH_STRUCT.size))
+        """The health packet, for the layouts PandaCapture knows; UsbError for others."""
+        if self._health_parser is None:
+            health_version = self.packet_versions()[0]
+            if health_version == 16:
+                self._health_parser = (p.parse_legacy_health_v16, p.LEGACY_HEALTH_V16.size)
+            elif health_version > 0xFF:
+                self._health_parser = (p.parse_health, p.HEALTH_STRUCT.size)
+            else:
+                raise UsbError(f"this firmware's health packet (version {health_version}) isn't one PandaCapture reads")
+        parse, size = self._health_parser
+        d = self.control_read(p.REQ_HEALTH, length=size)
+        if len(d) < size:
+            raise UsbError(f"short health packet ({len(d)} of {size} bytes)")
+        return parse(d)
+
+    @property
+    def mcu(self):
+        """The panda's flash layout and firmware target, or None for hardware PandaCapture can't flash."""
+        return p.MCU_BY_HW.get(self.hw_type())
 
     def can_health(self, bus) -> dict:
-        return p.parse_can_health(self.control_read(p.REQ_CAN_HEALTH, bus, length=p.CAN_HEALTH_STRUCT.size))
+        d = self.control_read(p.REQ_CAN_HEALTH, bus, length=p.CAN_HEALTH_STRUCT.size)
+        if len(d) < p.CAN_HEALTH_STRUCT.size:
+            raise UsbError(f"short CAN health packet ({len(d)} bytes): older firmware")
+        return p.parse_can_health(d)
 
     def signature(self) -> bytes:
         return self.control_read(p.REQ_SIGNATURE_1, length=64) + self.control_read(p.REQ_SIGNATURE_2, length=64)
@@ -211,13 +239,13 @@ class Panda:
         self.control_write(p.REQ_FLASH_UNLOCK)
 
     def flash_erase(self, sector):
-        if sector not in p.APP_SECTORS:
+        if not 1 <= sector <= 6:
             raise ValueError(f"sector {sector} isn't an app sector")
         self.control_write(p.REQ_FLASH_ERASE, sector)
 
-    def flash_write(self, data: bytes):
+    def flash_write(self, data: bytes, chunk: int):
         try:
-            for i in range(0, len(data), p.FLASH_CHUNK):
-                self._h.bulkWrite(p.EP_FLASH_OUT, data[i:i + p.FLASH_CHUNK], TIMEOUT_MS)
+            for i in range(0, len(data), chunk):
+                self._h.bulkWrite(p.EP_FLASH_OUT, data[i:i + chunk], TIMEOUT_MS)
         except usb1.USBError as e:
             raise explain(e, "writing firmware to the bootstub") from None

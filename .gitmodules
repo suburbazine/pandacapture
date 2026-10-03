@@ -6,3 +6,11 @@
 	path = firmware/opendbc
 	url = https://github.com/commaai/opendbc.git
 	shallow = true
+[submodule "firmware/panda-f4"]
+	path = firmware/panda-f4
+	url = https://github.com/commaai/panda.git
+	shallow = true
+[submodule "firmware/opendbc-f4"]
+	path = firmware/opendbc-f4
+	url = https://github.com/commaai/opendbc.git
+	shallow = true

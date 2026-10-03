@@ -1,14 +1,18 @@
 #!/usr/bin/env python3
-"""Builds the PandaCapture firmware for the Red Panda.
+"""Builds the PandaCapture firmware: one build per panda family.
 
-comma's panda firmware (firmware/panda, pinned) with firmware/patches applied, built with comma's
-own SCons build against the pinned opendbc (firmware/opendbc). The app is signed with the panda
-project's public development key, like any panda firmware built from source.
+  h7  Red Panda (STM32H7): comma's panda firmware at a recent commit (firmware/panda, firmware/opendbc)
+  f4  Black Panda (STM32F4): comma's last panda commit that still built for the F4
+      (firmware/panda-f4, firmware/opendbc-f4)
 
-Output (default pandacapture/firmware_bin/): panda_h7.bin.signed, bootstub.panda_h7.bin and
+Each is comma's source with firmware/patches/<target> applied, built with comma's own SCons build,
+and signed with the panda project's public development key like any panda firmware built from source.
+
+Output (default pandacapture/firmware_bin/<target>/): the signed app, the bootstub and
 manifest.json, which `pandacapture flash` uses and release builds carry inside the program.
 
-Needs: Python 3.10+ with scons (pip install scons), git, and the arm-none-eabi GCC toolchain:
+Needs: Python 3.10+ with scons and pycryptodome (pip install scons pycryptodome), git, and the
+arm-none-eabi GCC toolchain:
   Linux / macOS: pip install comma-deps-gcc-arm-none-eabi  (comma's build of it), or your package manager
   Windows:       the Arm GNU Toolchain (arm-none-eabi), with --toolchain pointing at its bin folder
   Anywhere with Docker: python firmware/build.py --docker
@@ -21,23 +25,57 @@ import hashlib
 import io
 import json
 import os
+import re
 import shutil
 import site
 import subprocess
 import sys
 import sysconfig
 import tarfile
+from dataclasses import dataclass
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
-PANDA = HERE / "panda"
-OPENDBC = HERE / "opendbc"
-PATCHES = sorted((HERE / "patches").glob("*.patch"))
 BUILD = HERE / "build"
-TREE = BUILD / "panda"
-TARGETS = ("board/obj/panda_h7.bin.signed", "board/obj/bootstub.panda_h7.bin")
 DOCKER_IMAGE = "pandacapture-firmware"
+
+
+@dataclass
+class Target:
+    name: str
+    mcu: str
+    boards: tuple     # hardware types it's for
+    panda: Path
+    opendbc: Path
+    app: str          # build outputs, relative to the panda tree
+    bootstub: str
+    scons_args: tuple = ()
+
+    @property
+    def patches(self):
+        return sorted((HERE / "patches" / self.name).glob("*.patch"))
+
+    @property
+    def tree(self):
+        return BUILD / self.name
+
+    def packet_versions(self):
+        """(health, CAN) packet versions the firmware reports, as pandacapture checks them."""
+        if self.mcu == "H7":  # hashes of the struct headers
+            return (version_hash(self.tree / "board" / "health.h"),
+                    version_hash(self.opendbc / "opendbc" / "safety" / "can.h"))
+        health = re.search(r"#define HEALTH_PACKET_VERSION (\d+)", (self.tree / "board" / "health.h").read_text())
+        can = re.search(r"#define CAN_PACKET_VERSION (\d+)", (self.tree / "board" / "can_declarations.h").read_text())
+        return int(health[1]), int(can[1])
+
+
+TARGETS = {
+    "h7": Target("h7", "H7", (7,), HERE / "panda", HERE / "opendbc",
+                 "board/obj/panda_h7.bin.signed", "board/obj/bootstub.panda_h7.bin"),
+    "f4": Target("f4", "F4", (3, 1), HERE / "panda-f4", HERE / "opendbc-f4",
+                 "board/obj/panda.bin.signed", "board/obj/bootstub.panda.bin", ("--minimal",)),
+}
 
 
 def fail(msg):
@@ -68,26 +106,26 @@ def find_gcc(toolchain):
     return None
 
 
-def export_tree():
-    """A clean copy of the pinned panda source with the PandaCapture patches applied."""
-    if not (PANDA / "board").is_dir() or not (OPENDBC / "opendbc").is_dir():
-        fail("firmware/panda or firmware/opendbc is empty. Run: git submodule update --init")
-    if TREE.exists():
-        shutil.rmtree(TREE)
-    TREE.mkdir(parents=True)
-    with tarfile.open(fileobj=io.BytesIO(git("archive", "--format=tar", "HEAD", cwd=PANDA, binary=True))) as tar:
+def export_tree(t: Target):
+    """A clean copy of the pinned panda source with the target's patches applied."""
+    if not (t.panda / "board").is_dir() or not (t.opendbc / "opendbc").is_dir():
+        fail(f"{t.panda.name} or {t.opendbc.name} is empty. Run: git submodule update --init")
+    if t.tree.exists():
+        shutil.rmtree(t.tree)
+    t.tree.mkdir(parents=True)
+    with tarfile.open(fileobj=io.BytesIO(git("archive", "--format=tar", "HEAD", cwd=t.panda, binary=True))) as tar:
         if sys.version_info >= (3, 12):
-            tar.extractall(TREE, filter="data")
+            tar.extractall(t.tree, filter="data")
         else:
-            tar.extractall(TREE)
+            tar.extractall(t.tree)
     # The tree sits inside this repository: stop git from finding it, or `git apply` would take the
     # patch paths from the repository root and silently skip them
-    env = dict(os.environ, GIT_CEILING_DIRECTORIES=str(TREE.parent))
-    for patch in PATCHES:
-        print(f"Applying {patch.name}")
-        subprocess.run(["git", "apply", "--verbose", str(patch)], cwd=TREE, check=True, env=env)
-    if 'BUILDER = "PANDACAPTURE"' not in (TREE / "SConscript").read_text():
-        fail("the PandaCapture patches didn't apply")
+    env = dict(os.environ, GIT_CEILING_DIRECTORIES=str(t.tree.parent))
+    for patch in t.patches:
+        print(f"Applying {t.name}/{patch.name}")
+        subprocess.run(["git", "apply", "--verbose", str(patch)], cwd=t.tree, check=True, env=env)
+    if 'BUILDER = "PANDACAPTURE"' not in (t.tree / "SConscript").read_text():
+        fail(f"the {t.name} patches didn't apply")
 
 
 def version_hash(path):
@@ -98,56 +136,66 @@ def sha256(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
+def build_target(t: Target, gcc_dir: Path, out_root: Path, ours: str):
+    print(f"\n== {t.name} ({t.mcu}) ==")
+    export_tree(t)
+    panda_commit = git("rev-parse", "HEAD", cwd=t.panda)
+    env = dict(os.environ)
+    env["PATH"] = str(gcc_dir) + os.pathsep + env.get("PATH", "")
+    env["PYTHONPATH"] = str(t.opendbc) + os.pathsep + env.get("PYTHONPATH", "")
+    env["PANDACAPTURE_GIT"] = f"{ours}-{panda_commit[:8]}"
+    jobs = str(max(1, (os.cpu_count() or 2) - 1))
+    subprocess.run([sys.executable, "-m", "SCons", "-C", str(t.tree), "-j", jobs, *t.scons_args, t.app, t.bootstub],
+                   env=env, check=True)
+
+    out = out_root / t.name
+    out.mkdir(parents=True, exist_ok=True)
+    files = {}
+    for kind, rel in (("app", t.app), ("bootstub", t.bootstub)):
+        src = t.tree / rel
+        shutil.copyfile(src, out / src.name)
+        files[kind] = {"file": src.name, "sha256": sha256(src)}
+    health, can = t.packet_versions()
+    manifest = {
+        "version": (t.tree / "board" / "obj" / "version").read_text().strip(),
+        "target": t.name,
+        "mcu": t.mcu,
+        "hw_types": list(t.boards),
+        "built_utc": dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat(),
+        "pandacapture_commit": ours,
+        "panda_commit": panda_commit,
+        "opendbc_commit": git("rev-parse", "HEAD", cwd=t.opendbc),
+        "patches": {p.name: sha256(p) for p in t.patches},
+        "health_packet_version": health,
+        "can_packet_version": can,
+        "files": files,
+    }
+    (out / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    print(f"Built {manifest['version']} for {t.mcu}")
+    for f in files.values():
+        print(f"  {out / f['file']}  sha256 {f['sha256']}")
+
+
 def build(args):
-    try:
-        import SCons  # noqa: F401
-    except ImportError:
-        fail("SCons isn't installed for this Python: pip install scons")
+    for module, pip_name in (("SCons", "scons"), ("Crypto", "pycryptodome")):
+        try:
+            __import__(module)
+        except ImportError:
+            fail(f"{pip_name} isn't installed for this Python: pip install {pip_name}")
     gcc_dir = find_gcc(args.toolchain)
     if gcc_dir is None:
         fail("arm-none-eabi-gcc not found. Install the Arm GNU Toolchain (see the top of firmware/build.py) "
              "and pass --toolchain, or build with --docker.")
     print(f"Toolchain: {gcc_dir}")
-
-    export_tree()
     try:
         ours = git("rev-parse", "--short=7", "HEAD")
         if git("status", "--porcelain", "--untracked-files=no"):
             ours += "+"
     except subprocess.CalledProcessError:
         ours = "nogit"
-    panda_commit = git("rev-parse", "HEAD", cwd=PANDA)
-    opendbc_commit = git("rev-parse", "HEAD", cwd=OPENDBC)
-
-    env = dict(os.environ)
-    env["PATH"] = str(gcc_dir) + os.pathsep + env.get("PATH", "")
-    env["PYTHONPATH"] = str(OPENDBC) + os.pathsep + env.get("PYTHONPATH", "")
-    env["PANDACAPTURE_GIT"] = f"{ours}-{panda_commit[:8]}"
-    jobs = str(max(1, (os.cpu_count() or 2) - 1))
-    subprocess.run([sys.executable, "-m", "SCons", "-C", str(TREE), "-j", jobs, *TARGETS], env=env, check=True)
-
-    out = Path(args.out) if args.out else ROOT / "pandacapture" / "firmware_bin"
-    out.mkdir(parents=True, exist_ok=True)
-    files = {}
-    for target in TARGETS:
-        src = TREE / target
-        shutil.copyfile(src, out / src.name)
-        files[src.name] = sha256(src)
-    manifest = {
-        "version": (TREE / "board" / "obj" / "version").read_text().strip(),
-        "built_utc": dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat(),
-        "pandacapture_commit": ours,
-        "panda_commit": panda_commit,
-        "opendbc_commit": opendbc_commit,
-        "patches": {p.name: sha256(p) for p in PATCHES},
-        "health_packet_version": version_hash(TREE / "board" / "health.h"),
-        "can_packet_version": version_hash(OPENDBC / "opendbc" / "safety" / "can.h"),
-        "sha256": files,
-    }
-    (out / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
-    print(f"\nBuilt {manifest['version']}")
-    for name, digest in files.items():
-        print(f"  {out / name}  sha256 {digest}")
+    out_root = Path(args.out) if args.out else ROOT / "pandacapture" / "firmware_bin"
+    for name in (TARGETS if args.target == "all" else [args.target]):
+        build_target(TARGETS[name], gcc_dir, out_root, ours)
 
 
 def docker_build(args):
@@ -160,13 +208,14 @@ def docker_build(args):
     except ValueError:
         fail("with --docker, --out must be inside the repository")
     subprocess.run(["docker", "run", "--rm", "-v", f"{ROOT}:/src", "-w", "/src", DOCKER_IMAGE,
-                    "python3", "firmware/build.py", "--out", rel_out], check=True)
+                    "python3", "firmware/build.py", "--out", rel_out, "--target", args.target], check=True)
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Build the PandaCapture Red Panda firmware.")
+    ap = argparse.ArgumentParser(description="Build the PandaCapture firmware.")
+    ap.add_argument("--target", choices=["all", *TARGETS], default="all", help="h7 (Red Panda), f4 (Black Panda), or all")
     ap.add_argument("--toolchain", help="folder holding arm-none-eabi-gcc (or its parent)")
-    ap.add_argument("--out", help="output folder (default pandacapture/firmware_bin)")
+    ap.add_argument("--out", help="output folder (default pandacapture/firmware_bin); each target gets a subfolder")
     ap.add_argument("--docker", action="store_true", help="build inside Docker (firmware/Dockerfile)")
     args = ap.parse_args()
     try:

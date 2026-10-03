@@ -8,7 +8,7 @@ from . import __version__
 from . import protocol as p
 from .capture import CaptureOptions, Console, capture
 from .dfu import list_dfu
-from .firmware import Firmware, FirmwareError
+from .firmware import Firmware, FirmwareError, bundled_versions
 from .flasher import FlashError, flash
 from .panda import Panda, list_pandas
 from .sources import BusSetup, PandaSource, SimulatedSource, SourceError, detect_rates
@@ -132,12 +132,9 @@ def cmd_info(argv) -> int:
     ap = argparse.ArgumentParser(prog="pandacapture info", description="Firmware, health and bus settings of a panda.")
     add_common(ap)
     args = ap.parse_args(argv)
-    try:
-        bundled = Firmware.load()
-        print(f"Bundled firmware: {bundled.version}")
-    except FirmwareError:
-        bundled = None
-        print("Bundled firmware: none (build it with firmware/build.py)")
+    builds = bundled_versions()
+    print("Bundled firmware: " + (", ".join(f"{t} {v}" for t, v in builds.items()) if builds
+                                  else "none (build it with firmware/build.py)"))
     try:
         with Panda.open(args.serial) as pd:
             hw = pd.hw_type()
@@ -148,15 +145,21 @@ def cmd_info(argv) -> int:
             version = pd.version()
             ours = p.is_pandacapture_version(version)
             print(f"  Firmware: {version}" + ("" if ours else "  (not PandaCapture: capture only, no transmit)"))
-            if bundled and ours and version != bundled.version:
+            mcu = p.MCU_BY_HW.get(hw)
+            if mcu and ours and builds.get(mcu.target) not in (None, version):
                 print("  A different PandaCapture build than the bundled one: pandacapture flash updates it.")
-            h = pd.health()
-            print(f"  Supply {h['voltage_mv'] / 1000:.2f} V, {h['temperature_c']:.0f} C, up {h['uptime_s']} s, "
-                  f"mode {p.SAFETY_NAMES.get(h['safety_mode'], h['safety_mode'])}")
-            for b in range(p.CAN_BUSES):
-                c = pd.can_health(b)
-                print(f"  bus {b}: {c['speed_kbps']:g} kbit/s (FD data {c['data_speed_kbps']:g}), "
-                      f"{c['total_rx']} received, {c['total_errors']} errors, last error {c['last_stored_error']}")
+            try:
+                h = pd.health()
+                temp = f", {h['temperature_c']:.0f} C" if h["temperature_c"] is not None else ""
+                print(f"  Supply {h['voltage_mv'] / 1000:.2f} V{temp}, up {h['uptime_s']} s, "
+                      f"mode {p.SAFETY_NAMES.get(h['safety_mode'], h['safety_mode'])}")
+                for b in range(p.CAN_BUSES):
+                    c = pd.can_health(b)
+                    fd = f" (FD data {c['data_speed_kbps']:g})" if mcu is None or mcu.fd else ""
+                    print(f"  bus {b}: {c['speed_kbps']:g} kbit/s{fd}, {c['total_rx']} received, "
+                          f"{c['total_errors']} errors, last error {c['last_stored_error']}")
+            except UsbError as e:
+                print(f"  Health: {e}")
     except UsbError as e:
         print(f"ERROR: {e}")
         return 1
@@ -175,11 +178,11 @@ def cmd_flash(argv) -> int:
     ap.add_argument("--force", action="store_true", help="flash a panda that doesn't report itself as a Red Panda")
     ap.add_argument("--yes", "-y", action="store_true", help="don't ask for confirmation")
     args = ap.parse_args(argv)
-    try:
-        fw = Firmware.load(args.firmware)
-    except FirmwareError as e:
-        print(f"ERROR: {e}")
-        return 1
+    def load_firmware(mcu):
+        try:
+            return Firmware.load(mcu, args.firmware)
+        except FirmwareError as e:
+            raise FlashError(str(e)) from None
 
     def confirm():
         if args.yes:
@@ -191,7 +194,7 @@ def cmd_flash(argv) -> int:
 
     recover = True if args.recover else False if args.no_recover else None
     try:
-        version = flash(fw, serial=args.serial, recover=recover, force=args.force, confirm=confirm,
+        version = flash(load_firmware, serial=args.serial, recover=recover, force=args.force, confirm=confirm,
                         log=lambda s: print("  " + s))
     except (FlashError, UsbError) as e:
         print(f"ERROR: {e}")

@@ -2,9 +2,9 @@
 
 ## comma.ai panda and opendbc
 
-The firmware PandaCapture builds is comma.ai's panda firmware (`firmware/panda`, a git submodule)
-with PandaCapture's patches (`firmware/patches`), built against comma.ai's opendbc
-(`firmware/opendbc`). The flashing and USB protocol code in `pandacapture/` (`protocol.py`,
+The firmware PandaCapture builds is comma.ai's panda firmware (`firmware/panda` and, for the
+STM32F4 Black Panda, `firmware/panda-f4`: git submodules) with PandaCapture's patches
+(`firmware/patches`), built against comma.ai's opendbc (`firmware/opendbc`, `firmware/opendbc-f4`). The flashing and USB protocol code in `pandacapture/` (`protocol.py`,
 `panda.py`, `dfu.py`, `flasher.py`) follows comma.ai's panda Python library. Both are under the
 MIT licence:
 

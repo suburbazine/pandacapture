@@ -75,18 +75,55 @@ HW_NAMES = {HW_WHITE_PANDA: "White Panda", HW_GREY_PANDA: "Grey Panda", HW_BLACK
             HW_UNO: "uno (comma two)", HW_DOS: "dos (comma two)", HW_RED_PANDA: "Red Panda", HW_TRES: "tres (comma three)", HW_CUATRO: "cuatro (comma 3X)", HW_BODY: "comma body"}
 CAN_BUSES = 3
 
-# STM32H7 flash: 8 sectors of 128 KiB. 0 = bootstub, 1-6 = app, 7 = provisioning (never touched)
 FLASH_BASE = 0x08000000
-SECTOR_SIZE = 0x20000
-SECTOR_COUNT = 8
-APP_SECTORS = range(1, 7)
-FLASH_CHUNK = 0x200
-DFU_BLOCK = 0x400
 SIGNATURE_LEN = 128
+
+
+@dataclass(frozen=True)
+class Mcu:
+    """A panda family's flash layout and firmware build, as comma's library describes it."""
+    name: str
+    target: str               # firmware build (firmware/build.py --target, firmware_bin/<target>)
+    sector_sizes: tuple       # sector 0 is the bootstub
+    dfu_block: int            # STM32 bootloader download block
+    flash_chunk: int          # bulk write size to the bootstub
+    dfu_recover_erase: tuple  # sectors erased before writing the bootstub
+    dfu_serial_offset: int    # comma's DFU serial formula adds this to its middle term
+    fd: bool                  # CAN FD
+
+    @property
+    def app_sectors(self):
+        # Sectors 1-6: comma's library never writes past 6 (H7: 7 is the provisioning sector)
+        return range(1, 7)
+
+    def sector_address(self, sector):
+        return FLASH_BASE + sum(self.sector_sizes[:sector])
+
+    def sectors_for(self, size):
+        """App sectors from 1 that hold [size] bytes."""
+        total = 0
+        for s in self.app_sectors:
+            total += self.sector_sizes[s]
+            if total >= size:
+                return range(1, s + 1)
+        raise ValueError(f"{size} bytes doesn't fit the {self.name}'s app sectors")
+
+
+# STM32H7 (Red Panda): 8 sectors of 128 KiB
+MCU_H7 = Mcu("STM32H7", "h7", (0x20000,) * 8, 0x400, 0x200, (0, 1), 0, True)
+# STM32F413 (Black and White Panda): 4 x 16 KiB, 64 KiB, 11 x 128 KiB. From comma's last F4-capable
+# library (firmware/panda-f4): it erased every sector to recover and flashed in 16-byte writes.
+MCU_F4 = Mcu("STM32F4", "f4", (0x4000,) * 4 + (0x10000,) + (0x20000,) * 11, 0x800, 0x10, tuple(range(16)), 0xA, False)
+MCU_BY_HW = {HW_RED_PANDA: MCU_H7, HW_BLACK_PANDA: MCU_F4, HW_WHITE_PANDA: MCU_F4}
+MCU_BY_DFU_SECTORS = {len(MCU_H7.sector_sizes): MCU_H7, len(MCU_F4.sector_sizes): MCU_F4}
 
 # Bit rates the firmware accepts, kbit/s
 CAN_SPEEDS = (10, 20, 50, 100, 125, 250, 500, 1000)
 DATA_SPEEDS = (10, 20, 50, 100, 125, 250, 500, 1000, 2000, 5000)
+
+# CAN packet format 4 (6-byte header with checksum) is what PandaCapture reads. Recent firmware
+# reports a hash instead of a number, always far above 4.
+CAN_PACKET_V4 = 4
 
 DLC_TO_LEN = (0, 1, 2, 3, 4, 5, 6, 7, 8, 12, 16, 20, 24, 32, 48, 64)
 LEN_TO_DLC = {n: dlc for dlc, n in enumerate(DLC_TO_LEN)}
@@ -95,6 +132,9 @@ HEADER_LEN = 6
 # board/health.h health_t and can_health_t, little endian, packed
 HEALTH_STRUCT = struct.Struct("<IHHIIIIIHBBHBHBBHHHHB")
 CAN_HEALTH_STRUCT = struct.Struct("<BIBBBBBBBBIIIIIIIHHBBBIIII")
+# Firmware before comma hashed the layouts reports small version numbers (3 bytes from 0xDD).
+# Health version 16 is the F4 build's (firmware/panda-f4 board/health.h).
+LEGACY_HEALTH_V16 = struct.Struct("<IIIIIIIIBBBBBHBBBHfBBHBHHB")
 
 HEALTH_FLAG_IGNITION_LINE = 1 << 0
 HEALTH_FLAG_IGNITION_CAN = 1 << 1
@@ -197,6 +237,28 @@ class CanUnpacker:
         return frames
 
 
+def parse_legacy_health_v16(dat: bytes) -> dict:
+    a = LEGACY_HEALTH_V16.unpack(bytes(dat[:LEGACY_HEALTH_V16.size]))
+    return {
+        "uptime_s": a[0],
+        "voltage_mv": a[1],
+        "current_ma": a[2],
+        "tx_blocked": a[3],
+        "tx_buffer_overflow": a[5],
+        "rx_buffer_overflow": a[6],
+        "faults": a[7],
+        "ignition": bool(a[8] or a[9]),
+        "controls_allowed": bool(a[10]),
+        "power_save": bool(a[15]),
+        "heartbeat_lost": bool(a[16]),
+        "harness_status": a[11],
+        "safety_mode": a[12],
+        "safety_param": a[13],
+        "fault_status": a[14],
+        "temperature_c": None,
+    }
+
+
 def parse_health(dat: bytes) -> dict:
     a = HEALTH_STRUCT.unpack(bytes(dat[:HEALTH_STRUCT.size]))
     flags = a[8]
@@ -248,12 +310,12 @@ def version_hash(header_text: bytes) -> int:
     return int.from_bytes(hashlib.sha256(header_text.replace(b"\r", b"")).digest()[:4], "little")
 
 
-def dfu_serial(usb_serial: str):
-    """The serial the STM32H7 ROM bootloader reports for a panda with this USB serial (its MCU UID),
+def dfu_serial(usb_serial: str, mcu: Mcu = MCU_H7):
+    """The serial the STM32 ROM bootloader reports for a panda with this USB serial (its MCU UID),
     as comma's library works it out. None when it can't: then any single DFU device is taken."""
     try:
         uid = struct.unpack("<6H", bytes.fromhex(usb_serial))
-        return struct.pack("!HHH", uid[1] + uid[5], uid[0] + uid[4], uid[3]).hex().upper()
+        return struct.pack("!HHH", uid[1] + uid[5], uid[0] + uid[4] + mcu.dfu_serial_offset, uid[3]).hex().upper()
     except (ValueError, TypeError, struct.error):
         return None
 

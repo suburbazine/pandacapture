@@ -131,3 +131,39 @@ def test_firmware_constants_match_pinned_sources():
     for req in (p.REQ_HEALTH, p.REQ_CAN_HEALTH, p.REQ_SET_SAFETY, p.REQ_SET_CAN_SPEED, p.REQ_SET_DATA_SPEED,
                 p.REQ_HEARTBEAT, p.REQ_DISABLE_HEARTBEAT, p.REQ_VERSION, p.REQ_ENTER_BOOTLOADER, p.REQ_RESET):
         assert f"case 0x{req:02x}:" in comms
+
+
+PANDA_F4 = ROOT / "firmware" / "panda-f4"
+
+
+@pytest.mark.skipif(not (PANDA_F4 / "board" / "health.h").exists(), reason="firmware/panda-f4 submodule not checked out")
+def test_f4_health_matches_pinned_firmware():
+    text = (PANDA_F4 / "board" / "health.h").read_text()
+    assert "#define HEALTH_PACKET_VERSION 16" in text
+    assert c_struct(text, "struct __attribute__((packed)) health_t {", "};") == p.LEGACY_HEALTH_V16.format
+    assert c_struct(text, "typedef struct __attribute__((packed)) {", "} can_health_t;") == p.CAN_HEALTH_STRUCT.format
+    assert re.search(r"#define CAN_PACKET_VERSION (\d+)", (PANDA_F4 / "board" / "can_declarations.h").read_text())[1] \
+        == str(p.CAN_PACKET_V4)
+
+
+@pytest.mark.skipif(not (PANDA_F4 / "python" / "constants.py").exists(), reason="firmware/panda-f4 submodule not checked out")
+def test_mcu_layouts_match_comma_library():
+    text = (PANDA_F4 / "python" / "constants.py").read_text()
+    assert "[0x4000 for _ in range(4)] + [0x10000] + [0x20000 for _ in range(11)]" in text
+    assert p.MCU_F4.sector_sizes == (0x4000,) * 4 + (0x10000,) + (0x20000,) * 11
+    assert p.MCU_F4.sector_address(1) == 0x8004000 and p.MCU_H7.sector_address(1) == 0x8020000
+    assert "0x800,\n  0x1FFF79C0" in text and p.MCU_F4.dfu_block == 0x800
+
+
+def test_dfu_serial_f4_formula():
+    st = "1d0032000f51333231373438"
+    uid = struct.unpack("H" * 6, bytes.fromhex(st))
+    want = struct.pack("!HHH", uid[1] + uid[5], uid[0] + uid[4] + 0xA, uid[3]).hex().upper()
+    assert p.dfu_serial(st, p.MCU_F4) == want
+
+
+def test_legacy_health_parse():
+    raw = p.LEGACY_HEALTH_V16.pack(100, 12000, 0, 0, 0, 0, 7, 0, 1, 0, 1, 1, p.SAFETY_SILENT, 0, 0, 0, 0, 0, 0.1,
+                                   0, 0, 0, 0, 0, 0, 0)
+    h = p.parse_legacy_health_v16(raw)
+    assert h["safety_mode"] == p.SAFETY_SILENT and h["rx_buffer_overflow"] == 7 and h["temperature_c"] is None

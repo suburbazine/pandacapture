@@ -13,8 +13,9 @@ import PyInstaller.__main__
 ROOT = Path(__file__).resolve().parent.parent
 FW = ROOT / "pandacapture" / "firmware_bin"
 
-if not (FW / "manifest.json").exists():
-    sys.exit("No firmware in pandacapture/firmware_bin: run firmware/build.py first.")
+missing = [t for t in ("h7", "f4") if not (FW / t / "manifest.json").exists()]
+if missing:
+    sys.exit(f"No {' or '.join(missing)} firmware in pandacapture/firmware_bin: run firmware/build.py first.")
 
 sep = ";" if sys.platform == "win32" else ":"
 PyInstaller.__main__.run([

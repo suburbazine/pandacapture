@@ -48,20 +48,22 @@ def _dfu_device(dfu_serial):
     return devices[0] if len(devices) == 1 else None
 
 
-def check_hardware(panda: Panda, force: bool):
+def check_hardware(panda: Panda, force: bool) -> p.Mcu:
+    """Which firmware build the panda takes: H7 for the Red Panda, F4 for the Black Panda."""
     hw = panda.hw_type()
-    if hw == p.HW_RED_PANDA:
-        return
     name = p.HW_NAMES.get(hw, f"unknown hardware 0x{hw:02X}")
-    if hw in p.HW_F4:
-        raise FlashError(f"This is a {name}, which has an STM32F4. PandaCapture firmware is built for the "
-                         "Red Panda's STM32H7 and can't run on it (comma's firmware no longer supports the F4). "
-                         "It can still capture with its current firmware.")
-    if hw in (p.HW_TRES, p.HW_CUATRO, p.HW_BODY):
-        raise FlashError(f"This is a {name}, not a Red Panda. PandaCapture firmware is only for the Red Panda.")
-    if not force:
-        raise FlashError(f"This panda reports {name}. PandaCapture firmware is built for the Red Panda "
-                         "(STM32H7); use --force only if you know it's the same hardware.")
+    if hw in (p.HW_RED_PANDA, p.HW_BLACK_PANDA):
+        return p.MCU_BY_HW[hw]
+    if hw == p.HW_WHITE_PANDA:
+        if not force:
+            raise FlashError("This is a White Panda. The F4 firmware supports it, but PandaCapture hasn't been "
+                             "tried on one: use --force to flash it anyway.")
+        return p.MCU_F4
+    if hw in (p.HW_TRES, p.HW_CUATRO, p.HW_BODY, p.HW_UNO, p.HW_DOS):
+        raise FlashError(f"This is a {name}: the panda inside a comma device. PandaCapture firmware is for the "
+                         "Red Panda and the Black Panda.")
+    raise FlashError(f"This panda reports {name}, which none of PandaCapture's firmware builds supports. "
+                     "It can still capture with its current firmware.")
 
 
 def flash_app_via_bootstub(serial, fw: Firmware, log):
@@ -76,7 +78,7 @@ def flash_app_via_bootstub(serial, fw: Firmware, log):
         for s in sectors:
             bs.flash_erase(s)
         log(f"Writing firmware ({len(fw.app) // 1024} KiB)")
-        bs.flash_write(fw.app)
+        bs.flash_write(fw.app, fw.mcu.flash_chunk)
         log("Restarting")
         bs.reset("firmware")
     finally:
@@ -87,9 +89,9 @@ def flash_app_via_bootstub(serial, fw: Firmware, log):
         time.sleep(0.1)
 
 
-def enter_dfu(serial, log):
+def enter_dfu(serial, mcu, log):
     """From the bootstub into the STM32 ROM bootloader. Returns the bootloader's serial (or None)."""
-    dfu_serial = p.dfu_serial(serial)
+    dfu_serial = p.dfu_serial(serial, mcu)
     bs = Panda.open(serial)
     log("Entering the STM32 bootloader (DFU)")
     bs.reset("bootloader")
@@ -101,10 +103,13 @@ def write_bootstub(dfu_serial, fw: Firmware, log, serial=None) -> str:
     """In DFU: write PandaCapture's bootstub and start it. Returns the panda's USB serial."""
     before = {d.serial for d in list_pandas()}
     with StDfu.open(dfu_serial) as dfu:
+        if dfu.mcu != fw.mcu:
+            raise FlashError(f"The bootloader is an {dfu.mcu.name}, but the firmware is for the {fw.mcu.name}.")
         dfu.clear_status()
-        log("Erasing the bootstub and the first app sector")
-        dfu.erase_sector(0)
-        dfu.erase_sector(1)
+        erase = fw.mcu.dfu_recover_erase
+        log(f"Erasing flash sectors {erase[0]}-{erase[-1]}")
+        for sector in erase:
+            dfu.erase_sector(sector)
         log(f"Writing PandaCapture's bootstub ({len(fw.bootstub) // 1024} KiB)")
         dfu.program(p.FLASH_BASE, fw.bootstub)
         log("Starting the bootstub")
@@ -118,9 +123,10 @@ def write_bootstub(dfu_serial, fw: Firmware, log, serial=None) -> str:
     return wait_for(find, "the panda's bootstub", 20, log).serial
 
 
-def flash(fw: Firmware, serial=None, recover=None, force=False, confirm=None, log=print) -> str:
-    """Flashes [fw]. recover: True = always rewrite the bootstub through DFU, False = never,
-    None = only when the panda isn't already running PandaCapture firmware. Returns the new version."""
+def flash(load_firmware, serial=None, recover=None, force=False, confirm=None, log=print) -> str:
+    """Flashes the firmware load_firmware(mcu) returns for the panda's chip. recover: True = always
+    rewrite the bootstub through DFU, False = never, None = only when the panda isn't already running
+    PandaCapture firmware. Returns the new version."""
     pandas = list_pandas()
     dfus = list_dfu()
     if serial:
@@ -130,7 +136,10 @@ def flash(fw: Firmware, serial=None, recover=None, force=False, confirm=None, lo
             if dfus[0].note:
                 raise FlashError(dfus[0].note)
             # e.g. the last flash stopped here for want of a Windows driver
-            log("A panda is waiting in the STM32 bootloader (DFU): flashing it from there.")
+            with StDfu.open(dfus[0].serial) as dfu:
+                mcu = dfu.mcu
+            fw = load_firmware(mcu)
+            log(f"A panda ({mcu.name}) is waiting in the STM32 bootloader (DFU): flashing it from there.")
             log(f"Firmware to flash: {fw.version}")
             if confirm and not confirm():
                 raise FlashError("Cancelled; nothing was changed.")
@@ -138,19 +147,20 @@ def flash(fw: Firmware, serial=None, recover=None, force=False, confirm=None, lo
             return finish(serial, fw, True, log)
         if dfus:
             raise FlashError("Several STM32 bootloaders connected: connect one panda at a time.")
-        raise FlashError("No panda found. Connect the Red Panda by USB.")
+        raise FlashError("No panda found. Connect it by USB.")
     if len(pandas) > 1:
         raise FlashError("Several pandas connected; choose one with --serial:\n    " +
                          "\n    ".join(f"{d.serial} ({d.kind})" for d in pandas))
     serial = pandas[0].serial
 
     with Panda.open(serial) as panda:
-        check_hardware(panda, force)
+        mcu = check_hardware(panda, force)
         current = "bootstub (no firmware running)" if panda.bootstub else panda.version()
+    fw = load_firmware(mcu)
     ours = p.is_pandacapture_version(current)
     via_dfu = recover if recover is not None else not ours
 
-    log(f"Panda {serial}: {current}")
+    log(f"Panda {serial} ({mcu.name}): {current}")
     log(f"Firmware to flash: {fw.version}")
     if via_dfu:
         log("This replaces the panda's bootstub through the STM32 bootloader, then its firmware.")
@@ -163,7 +173,7 @@ def flash(fw: Firmware, serial=None, recover=None, force=False, confirm=None, lo
                 log("Entering the bootstub")
                 panda.reset("bootstub")
             wait_for(lambda: _panda_with(serial, "bootstub"), "the panda's bootstub", 15, log)
-        write_bootstub(enter_dfu(serial, log), fw, log, serial)
+        write_bootstub(enter_dfu(serial, mcu, log), fw, log, serial)
     elif pandas[0].kind != "bootstub":
         with Panda.open(serial) as panda:
             log("Entering the bootstub")

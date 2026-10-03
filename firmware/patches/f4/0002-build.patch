@@ -1,0 +1,78 @@
+diff --git a/SConscript b/SConscript
+index 1a4c875b..78dd85c7 100644
+--- a/SConscript
++++ b/SConscript
+@@ -1,9 +1,10 @@
+ import os
++import sys
+ import opendbc
+ import subprocess
+ 
+ PREFIX = "arm-none-eabi-"
+-BUILDER = "DEV"
++BUILDER = "PANDACAPTURE"
+ 
+ common_flags = []
+ 
+@@ -26,6 +27,9 @@ def objcopy(source, target, env, for_signature):
+     return '$OBJCOPY -O binary %s %s' % (source[0], target[0])
+ 
+ def get_version(builder, build_type):
++  # PandaCapture builds from an exported tree; build.py passes the source commits in
++  if os.getenv("PANDACAPTURE_GIT"):
++    return f"{builder}-{os.getenv('PANDACAPTURE_GIT')}-{build_type}"
+   try:
+     git = subprocess.check_output(["git", "rev-parse", "--short=8", "HEAD"], encoding='utf8').strip()
+   except subprocess.CalledProcessError:
+@@ -87,6 +91,7 @@ def build_project(project_name, project, extra_flags):
+     opendbc.INCLUDE_PATH,
+   ]
+ 
++  # gcc-style tools everywhere, so the build also runs on Windows (SCons picks MSVC there by default)
+   env = Environment(
+     ENV=os.environ,
+     CC=PREFIX + 'gcc',
+@@ -101,7 +106,7 @@ def build_project(project_name, project, extra_flags):
+     BUILDERS={
+       'Objcopy': Builder(generator=objcopy, suffix='.bin', src_suffix='.elf')
+     },
+-    tools=["default", "compilation_db"],
++    tools=["gcc", "gnulink", "as", "compilation_db"],
+   )
+ 
+   startup = env.Object(f"obj/startup_{project_name}", project["STARTUP_FILE"])
+@@ -124,7 +129,9 @@ def build_project(project_name, project, extra_flags):
+ 
+   # Sign main
+   sign_py = File(f"{panda_root}/crypto/sign.py").srcnode().relpath
+-  env.Command(f"obj/{project_name}.bin.signed", main_bin, f"SETLEN=1 {sign_py} $SOURCE $TARGET {cert_fn}")
++  sign_env = env.Clone()
++  sign_env["ENV"] = dict(os.environ, SETLEN="1")
++  sign_env.Command(f"obj/{project_name}.bin.signed", main_bin, f'"{sys.executable}" {sign_py} $SOURCE $TARGET {cert_fn}')
+ 
+ 
+ base_project_f4 = {
+@@ -183,9 +190,4 @@ with open("board/obj/cert.h", "w") as f:
+ # panda fw
+ SConscript('board/SConscript')
+ 
+-# panda jungle fw
+-SConscript('board/jungle/SConscript')
+-
+-# test files
+-if GetOption('extras'):
+-  SConscript('tests/libpanda/SConscript')
++# PandaCapture: no jungle firmware, no host-side test library (it needs a native C compiler)
+diff --git a/SConstruct b/SConstruct
+index 2d263ccc..00d8fe23 100644
+--- a/SConstruct
++++ b/SConstruct
+@@ -10,7 +10,7 @@ AddOption('--ubsan',
+ 
+ env = Environment(
+   COMPILATIONDB_USE_ABSPATH=True,
+-  tools=["default", "compilation_db"],
++  tools=["compilation_db"],
+ )
+ 
+ env.CompilationDatabase("compile_commands.json")

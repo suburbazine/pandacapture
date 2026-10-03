@@ -13,9 +13,13 @@ SERIAL = "1d0032000f51333231373438"
 OURS = "PANDACAPTURE-abc-def-DEBUG"
 
 
-def firmware():
-    app = bytes(range(256)) * 600 + b"S" * p.SIGNATURE_LEN  # 150 KiB: two app sectors
-    return Firmware(app=app, bootstub=b"B" * 4096, manifest={"version": OURS}, folder=Path("."))
+def firmware(mcu=p.MCU_H7):
+    app = bytes(range(256)) * 600 + b"S" * p.SIGNATURE_LEN  # 150 KiB: two H7 sectors, five F4 ones
+    return Firmware(app=app, bootstub=b"B" * 4096, manifest={"version": OURS}, folder=Path("."), mcu=mcu)
+
+
+def load(mcu):
+    return firmware(mcu)
 
 
 class World:
@@ -29,6 +33,11 @@ class World:
         self.hw = hw
         self.events = []
         self.flashed = None
+        self.chunk = None
+
+    @property
+    def mcu(self):
+        return p.MCU_F4 if self.hw in p.HW_F4 else p.MCU_H7
 
     def boot(self):
         """What a reset into the firmware does: the bootstub checks the app it holds."""
@@ -90,7 +99,8 @@ class FakePanda:
     def flash_erase(self, sector):
         self.world.events.append(f"erase:{sector}")
 
-    def flash_write(self, data):
+    def flash_write(self, data, chunk):
+        self.world.chunk = chunk
         self.world.events.append("write")
         self.world.flashed = data
 
@@ -101,8 +111,12 @@ class FakeDfu:
     @classmethod
     def open(cls, serial=None):
         assert cls.world.state == "dfu"
-        assert serial == p.dfu_serial(SERIAL)
+        assert serial == p.dfu_serial(SERIAL, cls.world.mcu)
         return cls()
+
+    @property
+    def mcu(self):
+        return self.world.mcu
 
     def __enter__(self):
         return self
@@ -148,12 +162,12 @@ def world(monkeypatch):
     monkeypatch.setattr(flasher, "time", Clock())
     monkeypatch.setattr(flasher, "list_pandas", lambda: [] if w.state == "dfu" else
                         [DeviceEntry("bootstub" if w.state == "bootstub" else "panda", SERIAL)])
-    monkeypatch.setattr(flasher, "list_dfu", lambda: [DeviceEntry("dfu", p.dfu_serial(SERIAL))] if w.state == "dfu" else [])
+    monkeypatch.setattr(flasher, "list_dfu", lambda: [DeviceEntry("dfu", p.dfu_serial(SERIAL, w.mcu))] if w.state == "dfu" else [])
     return w
 
 
 def test_first_install_goes_through_dfu(world):
-    version = flasher.flash(firmware(), log=lambda s: None)
+    version = flasher.flash(load, log=lambda s: None)
     assert version == OURS
     assert world.events == ["reset:bootstub", "reset:bootloader", "dfu-erase:0", "dfu-erase:1", "dfu-program",
                             "dfu-jump", "unlock", "erase:1", "erase:2", "write", "reset:firmware"]
@@ -161,43 +175,59 @@ def test_first_install_goes_through_dfu(world):
 
 def test_update_uses_bootstub_only(world):
     world.version, world.bootstub_kind = "PANDACAPTURE-old-DEBUG", "ours"
-    assert flasher.flash(firmware(), log=lambda s: None) == OURS
+    assert flasher.flash(load, log=lambda s: None) == OURS
     assert not any(e.startswith("dfu") for e in world.events)
 
 
 def test_comma_bootstub_refuses_without_recover(world):
     with pytest.raises(flasher.FlashError, match="--recover"):
-        flasher.flash(firmware(), recover=False, log=lambda s: None)
+        flasher.flash(load, recover=False, log=lambda s: None)
 
 
 def test_panda_left_in_bootstub_is_recovered(world):
     world.state = "bootstub"
-    assert flasher.flash(firmware(), log=lambda s: None) == OURS
+    assert flasher.flash(load, log=lambda s: None) == OURS
     assert "dfu-program" in world.events
 
 
 def test_refuses_comma_device_panda(world):
     world.hw = p.HW_TRES
-    with pytest.raises(flasher.FlashError, match="not a Red Panda"):
-        flasher.flash(firmware(), log=lambda s: None)
+    with pytest.raises(flasher.FlashError, match="inside a comma device"):
+        flasher.flash(load, log=lambda s: None)
     assert world.events == []
 
 
 def test_cancel_changes_nothing(world):
     with pytest.raises(flasher.FlashError, match="Cancelled"):
-        flasher.flash(firmware(), confirm=lambda: False, log=lambda s: None)
+        flasher.flash(load, confirm=lambda: False, log=lambda s: None)
     assert world.events == []
 
 
 def test_continues_from_dfu(world):
     world.state = "dfu"  # e.g. stopped there for a missing Windows driver
-    assert flasher.flash(firmware(), log=lambda s: None) == OURS
+    assert flasher.flash(load, log=lambda s: None) == OURS
     assert world.events[:4] == ["dfu-erase:0", "dfu-erase:1", "dfu-program", "dfu-jump"]
 
 
-@pytest.mark.parametrize("force", [False, True])
-def test_refuses_f4_pandas_even_forced(world, force):
+def test_black_panda_first_install(world):
     world.hw = p.HW_BLACK_PANDA
-    with pytest.raises(flasher.FlashError, match="STM32F4"):
-        flasher.flash(firmware(), force=force, log=lambda s: None)
+    assert flasher.flash(load, log=lambda s: None) == OURS
+    erases = [e for e in world.events if e.startswith("dfu-erase")]
+    assert erases == [f"dfu-erase:{i}" for i in range(16)]  # comma's F4 recovery erases every sector
+    assert [e for e in world.events if e.startswith("erase:")] == [f"erase:{i}" for i in range(1, 6)]
+    assert world.chunk == 0x10
+
+
+def test_white_panda_needs_force(world):
+    world.hw = p.HW_WHITE_PANDA
+    with pytest.raises(flasher.FlashError, match="--force"):
+        flasher.flash(load, log=lambda s: None)
+    assert flasher.flash(load, force=True, log=lambda s: None) == OURS
+
+
+@pytest.mark.parametrize("hw", [p.HW_GREY_PANDA, p.HW_UNO, p.HW_DOS, 0x42])
+def test_refuses_unsupported(world, hw):
+    world.hw = hw
+    with pytest.raises(flasher.FlashError):
+        flasher.flash(load, force=True, log=lambda s: None)
     assert world.events == []
