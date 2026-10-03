@@ -226,9 +226,13 @@ def finish(serial, fw, via_dfu, log) -> str:
     with Panda.open(serial) as panda:
         version = panda.version()
         signature = panda.signature()
-    if version != fw.version or signature != fw.signature:
+    # The signature proves the exact build is running. F4 builds from before the version-length fix
+    # in firmware/patches/f4/0002-build.patch report their version one character short.
+    if signature != fw.signature:
         raise FlashError(f"The panda is running {version!r} after flashing, not {fw.version!r}.")
-    return version
+    if version not in (fw.version, fw.version[:-1]):
+        raise FlashError(f"The panda has the new firmware's signature but reports {version!r}, not {fw.version!r}.")
+    return fw.version
 
 
 def restore(path, serial=None, confirm=None, log=print) -> str:
