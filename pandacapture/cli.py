@@ -64,6 +64,8 @@ def capture_parser():
     ap.add_argument("--obd", action="store_true", help="record CAN3 (the multiplexed OBD bus, OBD-C pins B10/B11) as bus 1 instead of CAN1")
     ap.add_argument("--out", help="folder for capture files (default: captures next to the program)")
     ap.add_argument("--seconds", type=float, default=0, help="stop after this many seconds")
+    ap.add_argument("--split-mb", type=float, default=100,
+                    help="start a new capture file past this size (default 100, about 15 minutes of a busy bus; 0 = never)")
     ap.add_argument("--no-reconnect", action="store_true", help="stop on a panda error instead of reconnecting")
     ap.add_argument("--reconnect-seconds", type=float, default=60, help="how long to keep trying (default 60)")
     ap.add_argument("--simulate", action="store_true", help="fake traffic, to try the tool without a panda")
@@ -95,7 +97,7 @@ def cmd_capture(argv) -> int:
         return 2
 
     opts = CaptureOptions(out_dir=args.out, seconds=args.seconds, reconnect=not args.no_reconnect,
-                          reconnect_seconds=args.reconnect_seconds, buses=tuple(args.bus or ()))
+                          reconnect_seconds=args.reconnect_seconds, buses=tuple(args.bus or ()), split_mb=args.split_mb)
     if args.simulate or args.simulate_dropout:
         opened = []
 
@@ -458,7 +460,9 @@ def cmd_dashboard(argv) -> int:
     ap.add_argument("--bitrate", action="append", metavar="RATE",
                     help="kbit/s for every bus or per bus (0=500); default: the map's bit rate, else detected")
     ap.add_argument("--record", action="store_true", help="also record every frame to a candump log")
-    ap.add_argument("--out", help="folder for --record (default: captures next to the program)")
+    ap.add_argument("--out", help="folder for recordings (default: captures next to the program)")
+    ap.add_argument("--split-mb", type=float, default=100,
+                    help="start a new capture file past this size (default 100, about 15 minutes; 0 = never)")
     ap.add_argument("--port", type=int, default=8765, help="web server port (default 8765)")
     ap.add_argument("--lan", action="store_true",
                     help="serve to other devices on this network too (e.g. a phone), not only this computer")
@@ -505,7 +509,7 @@ def cmd_dashboard(argv) -> int:
 
     try:
         dash = Dashboard(open_source, address_map, host="0.0.0.0" if args.lan else "127.0.0.1", port=args.port,
-                         record=args.record, record_dir=args.out)
+                         record=args.record, record_dir=args.out, split_mb=args.split_mb)
     except OSError as e:
         print(f"ERROR: can't serve on port {args.port}: {e}. Try --port with another number.")
         return 1
@@ -529,8 +533,9 @@ def cmd_dashboard(argv) -> int:
         pass
     finally:
         dash.stop()
-        rec = dash.state.recording
-        print("\nStopped." + (f" Recorded to {rec}" if rec else ""))
+        print("\nStopped.")
+        for path in dash.reader.saved:
+            print(f"  Recorded {path}")
     return 0
 
 

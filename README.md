@@ -164,6 +164,10 @@ markers, traffic per bus. On Hyundai, Kia and Genesis engines, `RPM(0x316)` appe
 The log goes to a `captures` folder next to the program, as `capture-YYYYMMDD-HHMMSS.log`. A
 summary of every bus and ID is added at the end.
 
+- **Long drives roll over:** a new file starts every 100 MB, about 15 minutes of a busy bus. Each
+  part repeats the header and names the file before and after it, and markers keep counting.
+  `--split-mb N` changes the size, and `--split-mb 0` keeps one file.
+
 - **Stalls** are marked: `# stall: no frames since (time)` after 2 s without frames.
 - **Panda errors** are marked: `# adapter error: …`. PandaCapture then reconnects and keeps recording
   into the same file: it retries every 2 s for up to 60 s.
@@ -217,14 +221,23 @@ An **address map** says which CAN IDs and bits mean what for your vehicle:
   - Put a map in a `maps` folder next to the program to use it by name.
 - **List them:** `pandacapture maps`.
 
-On the page:
-- **Normal:** each value updates 10 times a second.
-- **High resolution:** streams every sample as fast as the bus sends it, with a 10-second trace and
-  the update rate on each tile.
+The bar at the top of the page:
+
+| Control | Does |
+|---|---|
+| **Record / Stop** | records a capture while you watch, with the elapsed time. It rolls over to a new file every 100 MB, as above |
+| **Marker** | drops a numbered marker into the recording. The `M` key does the same |
+| **Map** | switches address map. Every open page reloads with it |
+| **Find signals** | runs [`match`](#6-find-unknown-signals) on a recorded capture. The reference is the ECU's OBD answers in it, or an uploaded JB4 log. It lists the ranked fields, and **Copy entry** copies a ready-made map entry |
+| **Normal / High resolution** | Normal updates each value 10 times a second. High resolution streams every sample as fast as the bus sends it, with a 10-second trace and the update rate on each tile |
+| **Theme, Full screen** | light or dark, and the whole screen for the car |
+
+The page only listens on this computer unless you start it with `--lan`. The controls reach as far
+as the page does.
 
 | Option | Does |
 |---|---|
-| `--record` | also saves a candump capture while you watch |
+| `--record` | starts recording straight away (the Record button does the same) |
 | `--replay LOG` | plays back a capture instead of reading the panda: try maps at your desk |
 | `--simulate` | fake traffic |
 | `--lan` | serves the page to other devices on your network, such as a phone on the dash. Only this computer can open it otherwise |
@@ -298,6 +311,7 @@ pandacapture [options]          record
   --obd                         record CAN3 (the multiplexed OBD bus) as bus 1
   --out DIR                     where to save captures
   --seconds N                   stop after N seconds
+  --split-mb N                  new file every N MB (default 100; 0 = one file)
   --no-reconnect                stop on a panda error
   --reconnect-seconds N         how long to keep trying (default 60)
   --serial S                    which panda (see: pandacapture list)
@@ -308,7 +322,8 @@ pandacapture dashboard [options]      live gauges in the browser
   --map NAME|FILE               address map (see: pandacapture maps)
   --replay LOG [--speed X] [--no-loop]   play back a capture instead of the panda
   --simulate                    fake traffic
-  --record [--out DIR]          also record a candump capture
+  --record [--out DIR]          start recording straight away
+  --split-mb N                  new recording file every N MB (default 100; 0 = one file)
   --bitrate RATE                default: the map's bit rate
   --port N                      web server port (default 8765)
   --lan                         serve to other devices on the network too

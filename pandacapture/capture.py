@@ -47,6 +47,67 @@ class CaptureOptions:
     reconnect_seconds: float = 60.0
     buses: tuple = ()  # record only these buses; empty = all
     stamp: str = None  # file name timestamp, for tests
+    split_mb: float = 100.0  # start a new file past this size; 0 = one file
+
+
+class RollingLog:
+    """A candump log that continues in a new file once it passes a size. Each part repeats the
+    header and names the file before and after it, so the parts read as one recording."""
+
+    def __init__(self, out_dir: Path, header, split_mb=100.0, stamp=None):
+        self.out_dir = Path(out_dir)
+        self.out_dir.mkdir(parents=True, exist_ok=True)
+        self.header = list(header)
+        self.limit = int(split_mb * 1024 * 1024) if split_mb else 0
+        self.paths = []
+        self._f = None
+        self._open(stamp)
+
+    @property
+    def path(self) -> Path:
+        return self.paths[-1]
+
+    def _next_path(self, stamp=None) -> Path:
+        stamp = stamp or dt.datetime.now().strftime("%Y%m%d-%H%M%S")
+        path = self.out_dir / f"capture-{stamp}.log"
+        n = 2
+        while path.exists() or path in self.paths:
+            path = self.out_dir / f"capture-{stamp}-{n}.log"
+            n += 1
+        return path
+
+    def _open(self, stamp=None, continues_from=None, path=None):
+        path = path or self._next_path(stamp)
+        self._f = open(path, "w", encoding="utf-8", newline="\n")
+        self.paths.append(path)
+        self.size = 0
+        for line in self.header:
+            self.write(line + "\n")
+        self.write(f"# started: {dt.datetime.now(dt.timezone.utc).isoformat().replace('+00:00', 'Z')}\n")
+        if continues_from:
+            self.write(f"# continues from: {continues_from.name}\n")
+
+    def write(self, text):
+        self._f.write(text)
+        self.size += len(text)
+
+    def flush(self):
+        self._f.flush()
+
+    def maybe_rotate(self) -> bool:
+        """Call between frames: starts the next part if this one is past the limit."""
+        if not self.limit or self.size < self.limit:
+            return False
+        old, new = self.path, self._next_path()
+        self._f.write(f"# continued in: {new.name}\n")
+        self._f.close()
+        self._open(continues_from=old, path=new)
+        return True
+
+    def close(self):
+        if self._f:
+            self._f.close()
+            self._f = None
 
 
 @dataclass
@@ -141,14 +202,10 @@ def capture(open_source, opts: CaptureOptions, console: Console = None, keys: Ke
         return 1
 
     out_dir = Path(opts.out_dir) if opts.out_dir else default_out_dir()
-    out_dir.mkdir(parents=True, exist_ok=True)
-    stamp = opts.stamp or dt.datetime.now().strftime("%Y%m%d-%H%M%S")
-    path = out_dir / f"capture-{stamp}.log"
 
     old_handler = signal.signal(signal.SIGINT, on_sigint)
     keys = keys or KeyReader()
     session = Session()
-    started = dt.datetime.now(dt.timezone.utc)
     t0_unix = time.time()
     t0 = time.monotonic()
 
@@ -166,15 +223,12 @@ def capture(open_source, opts: CaptureOptions, console: Console = None, keys: Ke
     console.line(f"Capturing from {source.description}")
     for h in source.header:
         console.line(f"  {h}")
-    console.line(f"Writing {path}")
+    w = RollingLog(out_dir, ["# PandaCapture candump log", f"# source: {source.description}",
+                             *[f"# {h}" for h in source.header]], opts.split_mb, opts.stamp)
+    console.line(f"Writing {w.path}" + (f" (a new file every {opts.split_mb:g} MB)" if opts.split_mb else ""))
     console.line("Keys: M = marker, 1-9 = numbered marker, Q or Esc = stop.\n")
 
-    with open(path, "w", encoding="utf-8", newline="\n") as w, keys:
-        w.write("# PandaCapture candump log\n")
-        w.write(f"# source: {source.description}\n")
-        for h in source.header:
-            w.write(f"# {h}\n")
-        w.write(f"# started: {started.isoformat().replace('+00:00', 'Z')}\n")
+    with keys:
         try:
             while not stop.requested and (opts.seconds <= 0 or time.monotonic() - t0 < opts.seconds):
                 try:
@@ -218,6 +272,8 @@ def capture(open_source, opts: CaptureOptions, console: Console = None, keys: Ke
                         st.count += 1
                         st.last_t = t
                         st.last = f.data
+                if w.maybe_rotate():
+                    console.line(f"  Continuing in {w.path.name}")
                 undecodable = getattr(getattr(source, "unpacker", None), "bad_checksums", 0)
                 if undecodable > session.undecodable:
                     w.write(f"# undecodable USB data from the panda ({undecodable - session.undecodable}), dropped\n")
@@ -271,12 +327,17 @@ def capture(open_source, opts: CaptureOptions, console: Console = None, keys: Ke
             signal.signal(signal.SIGINT, old_handler)
             source.close()
             lines = summary(session, time.monotonic() - t0)
+            if len(w.paths) > 1:
+                lines.insert(1, f"Recorded in {len(w.paths)} parts: {', '.join(x.name for x in w.paths)}")
             for line in lines:
                 w.write(f"# {line}\n")
+            w.close()
     console.line("")
     for line in lines:
         console.line(line)
-    console.line(f"\nSaved {path}")
+    console.line("")
+    for x in w.paths:
+        console.line(f"Saved {x}")
     return 0
 
 

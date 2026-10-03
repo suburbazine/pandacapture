@@ -73,8 +73,50 @@
   .pill.live .dot { background: var(--green); box-shadow: 0 0 8px var(--green); }
   .pill.down { color: var(--alert); }
   .pill.down .dot { background: var(--alert); }
-  .pill.rec .dot { background: var(--red); animation: blink 1.2s steps(2, start) infinite; }
   @keyframes blink { to { visibility: hidden; } }
+  .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; flex-basis: 100%; }
+  .ctl {
+    display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 14px;
+    border: 1px solid var(--line); background: var(--panel); color: var(--text);
+    border-radius: 10px; font: inherit; font-size: 14px; cursor: pointer;
+  }
+  .ctl:hover:not(:disabled) { border-color: var(--accent); }
+  .ctl:disabled { opacity: .45; cursor: default; }
+  .ctl.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .rec-btn .dot { width: 10px; height: 10px; background: var(--red); }
+  .rec-btn.on { border-color: var(--red); background: color-mix(in srgb, var(--red) 16%, var(--panel)); }
+  .rec-btn.on .dot { animation: blink 1.2s steps(2, start) infinite; }
+  .ctl.select { gap: 6px; padding-right: 6px; }
+  .ctl.select span { color: var(--muted); font-size: 12px; }
+  .ctl select { border: 0; background: transparent; color: var(--text); font: inherit; max-width: 46vw; }
+  .ctl select option { background: var(--panel); color: var(--text); }
+  .seg button { min-height: 40px; font-size: 13px; padding: 0 12px; }
+  dialog {
+    width: min(960px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto;
+    background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 16px 20px 20px;
+  }
+  dialog::backdrop { background: rgb(0 0 0 / .55); }
+  .dlg-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .dlg-head h2 { margin: 0; font-size: 18px; }
+  .hint { color: var(--muted); font-size: 13px; }
+  .field { margin: 12px 0; border: 0; padding: 0; }
+  .field > label:not(.radio), .field legend { display: block; color: var(--muted); font-size: 12px; margin-bottom: 6px; text-transform: uppercase; letter-spacing: .06em; }
+  .field select, .field input[type=file] { width: 100%; min-height: 40px; background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; font: inherit; }
+  .radio { display: block; margin: 8px 0; }
+  .radio small { color: var(--muted); }
+  .dlg-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  #findLog { background: var(--panel-2); border-radius: 8px; padding: 10px; font-size: 12px; white-space: pre-wrap; max-height: 160px; overflow: auto; }
+  .res { margin-top: 16px; }
+  .res h3 { margin: 0 0 6px; font-size: 14px; }
+  .res table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+  .res th, .res td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .res th { color: var(--muted); font-weight: 600; font-size: 12px; }
+  .res .scroll { overflow-x: auto; }
+  .tag { display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 11px; background: var(--panel-2); color: var(--muted); }
+  .tag.warn { color: var(--warn); }
+  .tag.known { color: var(--green); }
+  .copy { min-height: 30px; padding: 0 10px; font-size: 12px; }
   .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
   .seg button {
     border: 0; background: var(--panel); color: var(--muted); font: inherit; font-size: 12px;
@@ -160,15 +202,44 @@
     <span class="pill" id="status"><span class="dot"></span><span id="statusText">connecting</span></span>
     <span class="pill" id="rate">0 frames/s</span>
     <span class="pill" id="sps" hidden>0 samples/s</span>
-    <span class="pill rec" id="rec" hidden><span class="dot"></span>recording</span>
+  </div>
+  <div class="controls">
+    <button class="ctl rec-btn" id="recBtn" type="button" title="Start or stop recording a capture"><span class="dot"></span><span id="recText">Record</span></button>
+    <button class="ctl" id="markBtn" type="button" title="Marker into the recording (key M)" disabled>Marker</button>
+    <label class="ctl select" title="Address map"><span>Map</span><select id="mapSel" aria-label="Address map"></select></label>
+    <button class="ctl" id="findBtn" type="button" title="Find which CAN fields carry which values">Find signals</button>
     <span class="seg" role="group" aria-label="Update rate">
       <button type="button" id="modeNormal" aria-pressed="true" title="Latest values, 10 times a second">Normal</button>
       <button type="button" id="modeHigh" aria-pressed="false" title="Every sample, as fast as it's received">High resolution</button>
     </span>
-    <button class="icon" id="theme" type="button" title="Switch light/dark">Theme</button>
-    <button class="icon" id="full" type="button" title="Full screen">Full screen</button>
+    <button class="ctl" id="theme" type="button" title="Switch light/dark">Theme</button>
+    <button class="ctl" id="full" type="button" title="Full screen">Full screen</button>
   </div>
 </header>
+<dialog id="findDlg" aria-labelledby="findTitle">
+  <form method="dialog" class="dlg-head">
+    <h2 id="findTitle">Find signals</h2>
+    <button class="ctl" value="close" aria-label="Close">Close</button>
+  </form>
+  <p class="hint">Lines a capture up with a reference recorded at the same time, and ranks every CAN field
+    against each value that changes in it. The panda listens the whole time; nothing is sent.</p>
+  <div class="field">
+    <label for="capSel">Capture</label>
+    <select id="capSel"></select>
+  </div>
+  <fieldset class="field">
+    <legend>Reference</legend>
+    <label class="radio"><input type="radio" name="ref" value="obd" checked> The ECU's OBD answers in the capture
+      <small>(when a JB4 or scan tool was polling during it)</small></label>
+    <label class="radio"><input type="radio" name="ref" value="csv"> A log from another tool, recorded at the same time
+      <small>(e.g. the JB4's CSV)</small></label>
+    <input type="file" id="refFile" accept=".csv,.CSV,text/csv" disabled>
+  </fieldset>
+  <div class="dlg-actions"><button class="ctl primary" id="runFind" type="button">Find signals</button>
+    <span id="findState" class="hint"></span></div>
+  <pre id="findLog" hidden></pre>
+  <div id="findResults"></div>
+</dialog>
 <div class="banner" id="banner"></div>
 <main id="main"></main>
 <footer id="foot"></footer>
@@ -181,6 +252,15 @@
   const tiles = {};
   const live = {};          // key -> {v, seen (ms), hist: [[ms, v]], count, hz}
   let signals = [], byKey = {}, source = null, mode = "normal", lastStatus = {}, dirty = true;
+  let recording = false, mapVersion = null;
+  const clock = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  const post = (path, body, raw) => fetch(path, raw ? { method: "POST", body } :
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) })
+    .then(async (r) => { const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || r.statusText); return j; });
+  const flash = (text) => {
+    const b = $("banner"); b.textContent = text; b.classList.add("show");
+    clearTimeout(flash.t); flash.t = setTimeout(() => b.classList.remove("show"), 4000);
+  };
 
   // Theme and mode are remembered per browser where possible; dark by default (made for the car)
   const root = document.documentElement;
@@ -331,8 +411,14 @@
     $("statusText").textContent = ok ? "live" : st.status;
     $("status").title = st.source || "";
     $("rate").textContent = `${(st.fps || 0).toLocaleString()} frames/s`;
-    $("rec").hidden = !st.recording;
-    $("rec").title = st.recording || "";
+    recording = !!st.recording;
+    $("recBtn").classList.toggle("on", recording);
+    $("recBtn").title = recording ? `Recording to ${st.recording}. Click to stop and save.` : "Start recording a capture";
+    $("recText").textContent = recording ? `Stop  ${clock(st.recording_for || 0)}` : "Record";
+    $("markBtn").disabled = !recording;
+    $("markBtn").textContent = st.markers ? `Marker (${st.markers})` : "Marker";
+    if (mapVersion === null) mapVersion = st.map_version;
+    else if (st.map_version !== mapVersion) location.reload();
     const banner = $("banner");
     banner.textContent = st.error || "";
     banner.classList.toggle("show", !!st.error);
@@ -455,6 +541,84 @@
   }
   $("modeNormal").onclick = () => mode !== "normal" && connect("normal");
   $("modeHigh").onclick = () => mode !== "high" && connect("high");
+
+  // ---- controls ----
+  $("recBtn").onclick = () => post("/record", { on: !recording })
+    .then((j) => flash(j.saved ? `Saved ${j.saved}` : `Recording to ${j.recording}`))
+    .catch((e) => flash(e.message));
+  const marker = () => post("/marker").then((j) => flash(`Marker ${j.marker}`)).catch((e) => flash(e.message));
+  $("markBtn").onclick = marker;
+  document.addEventListener("keydown", (e) => {
+    if (e.key.toLowerCase() === "m" && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey
+        && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) && !$("findDlg").open) {
+      if (recording) marker();
+    }
+  });
+  fetch("/maps").then((r) => r.json()).then((m) => {
+    const sel = $("mapSel");
+    sel.innerHTML = m.maps.map((n) => `<option value="${esc(n)}"${n === m.current_file ? " selected" : ""}>${esc(n)}</option>`).join("");
+    if (!m.maps.includes(m.current_file)) sel.insertAdjacentHTML("afterbegin", `<option selected disabled>${esc(m.current)}</option>`);
+    sel.onchange = () => post("/map", { name: sel.value }).catch((e) => flash(e.message));
+  });
+
+  // ---- Find signals ----
+  const dlg = $("findDlg");
+  let polling = null;
+  $("findBtn").onclick = () => {
+    fetch("/captures").then((r) => r.json()).then((c) => {
+      $("capSel").innerHTML = c.captures.length ? c.captures.map((x) =>
+        `<option value="${esc(x.name)}">${esc(x.name)} · ${(x.size / 1048576).toFixed(1)} MB · ${esc(x.modified)}${x.recording ? " · recording now" : ""}</option>`).join("")
+        : `<option value="" disabled selected>No captures in ${esc(c.folder)} yet</option>`;
+    });
+    fetch("/match").then((r) => r.json()).then(showMatch);
+    dlg.showModal();
+  };
+  dlg.querySelectorAll("input[name=ref]").forEach((r) => r.onchange = () => {
+    $("refFile").disabled = dlg.querySelector("input[name=ref]:checked").value !== "csv";
+  });
+  $("runFind").onclick = async () => {
+    const capture = $("capSel").value;
+    const ref = dlg.querySelector("input[name=ref]:checked").value;
+    const file = $("refFile").files[0];
+    if (!capture) return flash("Record a capture first.");
+    if (ref === "csv" && !file) return flash("Choose the reference CSV.");
+    const q = `/match?capture=${encodeURIComponent(capture)}&ref=${ref}` + (file ? `&filename=${encodeURIComponent(file.name)}` : "");
+    try {
+      await post(q, ref === "csv" ? await file.arrayBuffer() : null, ref === "csv");
+      watchMatch();
+    } catch (e) { $("findState").textContent = e.message; }
+  };
+  function watchMatch() {
+    clearInterval(polling);
+    polling = setInterval(() => fetch("/match").then((r) => r.json()).then((m) => {
+      showMatch(m);
+      if (m.state !== "running") clearInterval(polling);
+    }), 500);
+  }
+  function showMatch(m) {
+    const st = $("findState"), log = $("findLog"), out = $("findResults");
+    $("runFind").disabled = m.state === "running";
+    st.textContent = m.state === "running" ? `Searching ${m.capture}…` : m.state === "error" ? `Couldn't finish: ${m.error}` :
+      m.state === "done" ? `${m.capture} against ${m.reference === "obd" ? "the ECU's OBD answers" : m.reference}` : "";
+    log.hidden = !(m.log && m.log.length);
+    log.textContent = (m.log || []).join("\n");
+    if (m.state !== "done") { if (m.state === "running") out.innerHTML = ""; return; }
+    out.innerHTML = m.results.map((c, ci) => `<div class="res"><h3>${esc(c.column)}</h3>` + (c.matches.length ? `
+      <div class="scroll"><table><thead><tr><th>r</th><th title="Correlation of changes: low means maybe just a shared drift">changes</th>
+      <th title="Partial correlation with RPM held fixed: low means maybe both just follow RPM">RPM held</th><th>field</th>
+      <th>value = raw ×</th><th>+</th><th></th><th></th></tr></thead><tbody>` +
+      c.matches.map((x, xi) => `<tr><td>${x.r.toFixed(3)}</td><td>${x.changes ?? ""}</td><td>${x.rpm_held ?? ""}</td>
+        <td>${esc(x.field)}</td><td>${x.scale}</td><td>${x.offset}</td>
+        <td>${x.known ? `<span class="tag known">map: ${esc(x.known)}</span> ` : ""}${x.verdict ? `<span class="tag warn">${esc(x.verdict)}</span>` : ""}</td>
+        <td><button class="ctl copy" type="button" data-c="${ci}" data-x="${xi}" title="Copy a map entry for this field">Copy entry</button></td></tr>`).join("") +
+      `</tbody></table></div>` : `<p class="hint">No field tracks it: it may not be broadcast on this bus.</p>`) + `</div>`).join("");
+    out.querySelectorAll(".copy").forEach((b) => b.onclick = () => {
+      const entry = m.results[+b.dataset.c].matches[+b.dataset.x].entry;
+      const text = JSON.stringify(entry);
+      (navigator.clipboard?.writeText(text) ?? Promise.reject()).then(() => flash("Map entry copied"),
+        () => { prompt("Copy this map entry:", text); });
+    });
+  }
 
   fetch("/map").then((r) => r.json()).then((map) => {
     build(map);

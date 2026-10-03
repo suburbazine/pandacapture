@@ -1,4 +1,6 @@
 import json
+import urllib.error
+from pathlib import Path
 import time
 import urllib.request
 
@@ -228,3 +230,65 @@ def test_stinger_map_cam_conventions():
     assert by["intake_b1_target"].decode(bytes([0x80, 0x80, 0x80, 0x80, 0x82, 0x82, 0x70, 0])) is None
     assert by["exhaust_b1_target"].decode(bytes([0x80, 0x80, 0x80, 0x80, 0x82, 0x82, 0x70, 0])) is None
     assert by["gear"].text(0) == "P" and by["drive_mode"].text(1) == "Sport"
+
+
+def post(url, body=b"{}", ctype="application/json"):
+    req = urllib.request.Request(url, data=body, method="POST", headers={"Content-Type": ctype})
+    try:
+        with urllib.request.urlopen(req, timeout=3) as r:
+            return r.status, json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        return e.code, json.loads(e.read())
+
+
+def test_controls_record_marker_map(tmp_path):
+    dash = Dashboard(SimulatedSource, load_map("kia-stinger-33t-pcan"), port=0, record_dir=tmp_path)
+    dash.start()
+    try:
+        assert post(dash.url + "marker")[0] == 409            # no marker without a recording
+        code, j = post(dash.url + "record", b'{"on": true}')
+        assert code == 200 and j["recording"]
+        time.sleep(0.5)
+        assert post(dash.url + "marker") == (200, {"marker": 1})
+        caps = json.loads(get(dash.url + "captures"))["captures"]
+        assert caps and caps[0]["recording"]
+        code, j = post(dash.url + "record", b'{"on": false}')
+        saved = Path(j["saved"])
+        assert "# marker 1 (" in saved.read_text(encoding="utf-8")
+        maps = json.loads(get(dash.url + "maps"))
+        assert "kia-stinger-33t-pcan" in maps["maps"]
+        v0 = json.loads(get(dash.url + "state"))["map_version"]
+        assert post(dash.url + "map", b'{"name": "kia-stinger-33t-pcan"}')[0] == 200
+        assert json.loads(get(dash.url + "state"))["map_version"] == v0 + 1
+        assert post(dash.url + "map", b'{"name": "nope"}')[0] == 404
+    finally:
+        dash.stop()
+
+
+def test_find_signals_from_the_page(tmp_path):
+    from tests.test_match import write_capture, write_jb4
+    write_capture(tmp_path / "capture-x.log", with_obd=True)
+    write_jb4(tmp_path / "jb4.csv")
+    m = parse_map({"signals": [{"key": "rpm", "id": "0x316", "byte": 2, "bits": 16, "scale": 0.25}]})
+    dash = Dashboard(SimulatedSource, m, port=0, record_dir=tmp_path)
+    dash.start()
+    try:
+        assert post(dash.url + "match?capture=../secret.log&ref=obd")[0] == 400   # only listed captures
+        for ref, body, ctype in (("obd", b"", "application/json"),
+                                 ("csv", (tmp_path / "jb4.csv").read_bytes(), "text/csv")):
+            code, _ = post(dash.url + f"match?capture=capture-x.log&ref={ref}&filename=jb4.csv", body, ctype)
+            assert code == 200
+            for _ in range(100):
+                state = json.loads(get(dash.url + "match"))
+                if state["state"] != "running":
+                    break
+                time.sleep(0.1)
+            assert state["state"] == "done", state
+            cols = {c["column"]: c for c in state["results"]}
+            rpm_col = "OBD RPM" if ref == "obd" else "RPM"
+            assert cols[rpm_col]["matches"][0]["known"] == "rpm"
+            if ref == "csv":
+                best = cols["Boost kPa"]["matches"][0]
+                assert best["entry"]["id"] == "0x123" and best["entry"]["source"] == "observed"
+    finally:
+        dash.stop()
