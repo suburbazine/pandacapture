@@ -270,7 +270,7 @@ On a phone (with `--lan`), the controls fold into two rows:
 <img src="docs/images/dashboard-phone.png" alt="The dashboard on a phone" width="300">
 
 An **address map** says which CAN IDs and bits mean what for your vehicle:
-- **Built in:** `kia-stinger-33t-pcan`, 88 signals from comma's DBC, tracing of the ECU's CAN code, and captures of the car. It covers:
+- **Built in:** `kia-stinger-33t-pcan`, 89 signals from comma's DBC, tracing of the ECU's CAN code, and captures of the car. It covers:
   - engine and boost; torque and spark
   - an idle and lope panel: idle target, 5 s RPM swing and low, alternator duty
   - cam phasers in degrees, with overlap, off-target (red) and tracking-lag (amber) lamps
