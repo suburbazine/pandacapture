@@ -337,6 +337,7 @@
     const key = c.key || {};
     $("keyLine").innerHTML = c.local === false ? `<span class="key-no">Claude runs only from the computer running PandaCapture.</span>`
       : key.ready ? `<span class="key-ok">API key ready</span> <span class="hint">(from ${key.env ? "ANTHROPIC_API_KEY" : "the system credential store"})</span>`
+      : key.problem ? `<span class="key-no">The key in ${key.env ? "ANTHROPIC_API_KEY" : "the system credential store"} isn't usable.</span> ${esc(key.problem)}`
       : `<span class="key-no">No API key yet.</span> In a terminal on this computer: <code>pandacapture apikey set</code>
          (it's kept in the system's credential store, never in PandaCapture's files). Then reload this page.`;
     const busy = ["preparing", "running"].includes(c.state);

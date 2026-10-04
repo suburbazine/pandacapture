@@ -91,7 +91,7 @@ def test_references_find_and_bundle(dash, tmp_path):
 
 def test_claude_flow(dash, tmp_path):
     c = get(dash.url + "claude")
-    assert c["state"] == "idle" and c["key"] == {"env": True, "store": False, "ready": True} and c["local"]
+    assert c["state"] == "idle" and c["key"] == {"env": True, "store": False, "ready": True, "problem": ""} and c["local"]
     assert c["models"] == {"opus": "claude-opus-5-5", "fable": "claude-fable-5-1"}
     assert post(dash.url + "claude/start")["status"] == 400                 # nothing prepared
     assert post(dash.url + "claude/prepare", {"capture": "capture-20261004-101500.log", "model": "sonnet"})["status"] == 400

@@ -171,10 +171,24 @@ def test_api_key_sources(monkeypatch):
     monkeypatch.setattr(ai, "stored_key", lambda: None)
     with pytest.raises(ai.AnalyzeError, match="apikey set"):
         ai.api_key()
-    monkeypatch.setattr(ai, "stored_key", lambda: "sk-ant-from-store")
-    assert ai.api_key() == ("sk-ant-from-store", "the system credential store")
+    monkeypatch.setattr(ai, "stored_key", lambda: "sk-ant-api03-from-store")
+    assert ai.api_key() == ("sk-ant-api03-from-store", "the system credential store")
     monkeypatch.setenv("ANTHROPIC_API_KEY", KEY)
     assert ai.api_key() == (KEY, "ANTHROPIC_API_KEY")
+
+
+@pytest.mark.parametrize("key,msg", [("sk-ant-oat01-x", "subscription login token"), ("sk-ant-admin01-x", "Admin"),
+                                     ("sk-proj-x", "doesn't look like")])
+def test_only_api_keys(monkeypatch, key, msg):
+    # The user's rule: API keys only. No subscription OAuth tokens, no admin keys, from either source
+    monkeypatch.setenv("ANTHROPIC_API_KEY", key)
+    with pytest.raises(ai.AnalyzeError, match=msg) as e:
+        ai.api_key()
+    assert key not in str(e.value)
+    monkeypatch.delenv("ANTHROPIC_API_KEY")
+    monkeypatch.setattr(ai, "stored_key", lambda: key)
+    with pytest.raises(ai.AnalyzeError, match=msg):
+        ai.api_key()
 
 
 def test_command_keeps_the_key_out_of_everything(capture, tmp_path, monkeypatch, capsys):

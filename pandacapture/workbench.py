@@ -56,12 +56,15 @@ def bundle_bytes(capture, address_map, reference=None, ref_name=None) -> bytes:
 
 
 def key_status() -> dict:
-    """Where the API key would come from. Never the key itself."""
+    """Where the API key would come from, and whether it's usable. Never the key itself."""
     import os
-    from .ai import stored_key
-    env = bool(os.environ.get("ANTHROPIC_API_KEY", "").strip())
-    store = False if env else bool(stored_key())
-    return {"env": env, "store": store, "ready": env or store}
+    from .ai import key_problem, stored_key
+    key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    env = bool(key)
+    if not env:
+        key = (stored_key() or "").strip()
+    problem = key_problem(key) if key else ""
+    return {"env": env, "store": bool(key) and not env, "ready": bool(key) and not problem, "problem": problem or ""}
 
 
 class ClaudeJob:

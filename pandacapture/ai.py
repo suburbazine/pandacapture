@@ -103,14 +103,29 @@ def stored_key():
         return None
 
 
+def key_problem(key: str):
+    """Why this isn't an ordinary API key, or None. Only API keys (sk-ant-api…): never an admin key, which can
+    manage the organization, nor an OAuth token from a subscription login."""
+    if key.startswith("sk-ant-api"):
+        return None
+    if key.startswith("sk-ant-admin"):
+        return "That's an Admin API key, which can manage your organization. Use an ordinary API key."
+    if key.startswith("sk-ant-oat") or key.startswith("sk-ant-ort"):
+        return ("That's a Claude subscription login token, not an API key. PandaCapture only uses API keys "
+                "(console.anthropic.com); to use your subscription, download a bundle instead.")
+    return "That doesn't look like an Anthropic API key (they start with sk-ant-api)."
+
+
 def api_key():
     """(key, where it came from). The environment wins, then the credential store."""
-    key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
-    if key:
-        return key, "ANTHROPIC_API_KEY"
-    key = stored_key()
-    if key:
-        return key, "the system credential store"
+    for get, where in ((lambda: os.environ.get("ANTHROPIC_API_KEY", ""), "ANTHROPIC_API_KEY"),
+                       (lambda: stored_key() or "", "the system credential store")):
+        key = get().strip()
+        if key:
+            problem = key_problem(key)
+            if problem:
+                raise AnalyzeError(f"The key in {where} isn't usable. {problem}")
+            return key, where
     raise AnalyzeError("No Anthropic API key. Save yours with: pandacapture apikey set  "
                        "(or set ANTHROPIC_API_KEY). Get one at console.anthropic.com; it's billed to that account.")
 
@@ -131,12 +146,9 @@ def apikey_main(argv) -> int:
         if args.action == "set":
             import getpass
             key = getpass.getpass("Paste your Anthropic API key (not shown): ").strip()
-            if not key.startswith("sk-ant-"):
-                print("That doesn't look like an Anthropic API key (they start with sk-ant-). Nothing saved.")
-                return 1
-            if key.startswith("sk-ant-admin"):
-                print("That's an Admin API key, which can manage your organization. Use an ordinary API key. "
-                      "Nothing saved.")
+            problem = key_problem(key)
+            if problem:
+                print(f"{problem} Nothing saved.")
                 return 1
             keyring.set_password(KEYRING_SERVICE, KEYRING_USER, key)
             print(f"Saved in {keyring.get_keyring().name}. Remove it with: pandacapture apikey clear")
