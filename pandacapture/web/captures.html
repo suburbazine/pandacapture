@@ -83,6 +83,7 @@
   .card ul { margin: 6px 0 10px; padding-left: 20px; }
   .card li { margin: 3px 0; }
   .summary { white-space: pre-wrap; margin: 12px 0 0; }
+  .built { margin-top: 14px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); }
   .key-ok { color: var(--green); }
   .key-no { color: var(--warn); }
   code { background: var(--panel-2); padding: 1px 5px; border-radius: 5px; font-size: 13px; }
@@ -377,10 +378,11 @@
     out.innerHTML = `<div class="res">
       <h3>${props.length} proposal${props.length === 1 ? "" : "s"}, each checked against the capture</h3>` +
       (props.length ? `<div class="scroll"><table><thead><tr><th>key</th><th>field</th><th>value = raw ×</th><th>+</th><th>unit</th>
-        <th>confidence</th><th>check</th><th>evidence</th><th></th></tr></thead><tbody>` +
+        <th>shown as</th><th>confidence</th><th>check</th><th>evidence</th><th></th></tr></thead><tbody>` +
         props.map((p, i) => { const e = p.entry, k = p.check;
           return `<tr><td>${esc(e.key)}</td><td>${esc(e.id)} byte ${e.byte}${e.bit ? ` bit ${e.bit}` : ""}, ${e.bits} bits${e.order === "big" ? " big-endian" : ""}${e.signed ? ", signed" : ""}</td>
             <td>${e.scale}</td><td>${e.offset}</td><td>${esc(e.unit)}</td>
+            <td>${esc(e.display || "number")}${e.display === "gauge" ? ` ${e.min} to ${e.max}` : ""}${e.group ? `<br><span class="hint">${esc(e.group)}</span>` : ""}</td>
             <td><span class="tag ${p.confidence === "high" ? "ok" : p.confidence === "low" ? "warn" : ""}">${esc(p.confidence)}</span></td>
             <td>${k && k.r != null ? `r ${k.r} vs ${esc(k.reference)}` : '<span class="hint">no reference</span>'}</td>
             <td>${esc(p.reasoning)}</td>
@@ -388,9 +390,21 @@
         `</tbody></table></div>
         <div class="row" style="margin-top:10px"><button class="ctl" id="dlEntries" type="button">Download map entries</button>
           <span class="hint" style="margin:0">Marked "observed": check each on the car before relying on it.</span></div>` : "") +
+      (c.built_map ? `<div class="built"><strong>Claude built a map: ${esc(c.built_map.name)}</strong>
+        <p class="hint" style="margin:4px 0 10px">${c.built_map.signals} signals: your current map plus
+          ${esc(c.built_map.added.join(", ") || "nothing new")}. Your current map isn't changed.</p>
+        <div class="row"><button class="ctl primary" id="useMap" type="button">Use this map</button>
+          <span class="hint" style="margin:0">Adds it to your maps and switches the dashboard to it. Your current
+          map stays in the map list, to switch back.</span></div></div>` : "") +
       (c.summary ? `<p class="summary">${esc(c.summary)}</p>` : "") +
       `<p class="hint" style="margin-top:12px">Used about ${money(c.cost || 0)}${c.saved ? ` · saved ${esc(c.saved)}` : ""}</p></div>`;
     out.querySelectorAll("button[data-p]").forEach((b) => b.onclick = () => copy(JSON.stringify(props[+b.dataset.p].entry)));
+    const use = $("useMap");
+    if (use) use.onclick = () => post("/claude/use-map").then((j) => {
+      use.disabled = true;
+      $("sub").textContent = `Address map: ${j.map}`;
+      flash(`The dashboard now uses ${j.map} (saved as ${j.file}).`);
+    }).catch((e) => flash(e.message));
     const dl = $("dlEntries");
     if (dl) dl.onclick = () => {
       const blob = new Blob([JSON.stringify(props.map((p) => p.entry), null, 2)], { type: "application/json" });

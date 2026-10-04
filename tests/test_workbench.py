@@ -89,7 +89,10 @@ def test_references_find_and_bundle(dash, tmp_path):
     assert ta.VIN.encode() not in data
 
 
-def test_claude_flow(dash, tmp_path):
+def test_claude_flow(dash, tmp_path, monkeypatch):
+    from pandacapture import signals
+    monkeypatch.setattr(signals, "user_dir", lambda: tmp_path / "maps")
+    assert post(dash.url + "claude/use-map")["status"] == 400                # nothing built yet
     c = get(dash.url + "claude")
     assert c["state"] == "idle" and c["key"] == {"env": True, "store": False, "ready": True, "problem": ""} and c["local"]
     assert c["models"] == {"opus": "claude-opus-5-5", "fable": "claude-fable-5-1"}
@@ -104,6 +107,14 @@ def test_claude_flow(dash, tmp_path):
     c = wait(dash.url + "claude", lambda s: s["state"] in ("done", "error"))
     assert c["state"] == "done" and [p["entry"]["key"] for p in c["proposals"]] == ["coolant_c2"]
     assert Path(c["saved"]).parent == tmp_path and json.loads(Path(c["saved"]).read_text())["map_entries"]
+    assert c["built_map"]["name"] == "Stinger + analysis" and c["built_map"]["added"] == ["coolant_c2"]
+    # Only when the user picks it: added to their maps (never over one) and the dashboard switches to it
+    assert get(dash.url + "map")["name"] == "Kia Stinger 3.3T (P-CAN)"
+    used = post(dash.url + "claude/use-map")
+    assert used["map"] == "Stinger + analysis" and Path(used["file"]) == tmp_path / "maps" / "stinger-analysis.json"
+    assert get(dash.url + "map")["signals"][-1]["key"] == "coolant_c2"
+    assert Path(post(dash.url + "claude/use-map")["file"]).name == "stinger-analysis-2.json"
+    assert {"kia-stinger-33t-pcan", "stinger-analysis"} <= set(get(dash.url + "maps")["maps"])
     everything = json.dumps(c) + json.dumps(get(dash.url + "claude"))
     assert ta.KEY not in everything and "sk-ant" not in everything
 

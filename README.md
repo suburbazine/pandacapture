@@ -308,7 +308,8 @@ page:
 - **Analyze with Claude:** the same as [`analyze`](#let-claude-study-a-capture), with your API key. It
   shows what would be sent and what the first request costs, and nothing goes out until you press
   **Send**. Proposals come back checked against the capture, with **Copy entry** and **Download map
-  entries**.
+  entries**. If Claude built a map from them, **Use this map** adds it to your maps and switches the
+  gauges to it; your old map stays in the map list.
 
 ![The Captures & Claude page: Find signals on a Stinger capture](docs/images/captures-page.png)
 
@@ -390,9 +391,12 @@ capture before you see it. It uses **your own Anthropic API key**, billed to you
    - diagnostic ids only appear as decoded reference values
 4. **Claude works with read-only tools:** an id's byte statistics and sample frames, value series, and
    correlations against the reference. Nothing it does can reach the car's bus.
-5. **Its proposals are checked locally** against the map's rules and the reference. The results are
-   saved as `analysis-….json`, with `map_entries` ready to paste into a map, marked `observed`. No map is
-   changed.
+5. **Its proposals are checked locally** against the map's rules and the reference. Each says where it
+   goes on the dashboard: its group, and number, gauge (with a range) or status light. The results are
+   saved as `analysis-….json`, with `map_entries` ready to paste into a map, marked `observed`.
+6. **It can build a new map:** your current map plus the proposals it picks, checked like any map and
+   saved beside the results as `analysis-…-map.json`. No map is changed: try the new one with
+   `pandacapture dashboard --map` and that file, or **Use this map** on the dashboard.
 
 It stops at about $2 or 20 turns (`--max-cost`, `--max-turns`) and prints what it used. The dashboard's
 Captures & Claude page does the same from the browser:

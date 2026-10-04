@@ -1,5 +1,6 @@
-"""pandacapture analyze, with a scripted stand-in for the API: tools, proposals and their checks, the turn,
-cost and refusal stops, text ids withheld, the model lock, and the API key kept out of everything."""
+"""pandacapture analyze, with a scripted stand-in for the API: tools, proposals and their checks, building a
+map from them, the turn, cost and refusal stops, text ids withheld, the model lock, and the API key kept out of
+everything."""
 
 import json
 import types
@@ -78,13 +79,13 @@ class FakeClient:
         return types.SimpleNamespace(input_tokens=4321)
 
 
-def call(id_, name, **inp):
-    return block("tool_use", id=id_, name=name, input=inp)
+def call(id_, tool, **inp):
+    return block("tool_use", id=id_, name=tool, input=inp)
 
 
-GOOD = dict(key="coolant_c2", label="Coolant (second copy)", can_id="0x329", byte=1, bit=0, bits=8, order="little",
-            signed=False, scale=1, offset=-40, unit="°C", reference="OBD coolant C", confidence="high",
-            reasoning="Tracks the OBD coolant answer exactly.")
+GOOD = dict(key="coolant_c2", label="Coolant (second copy)", group="Temperatures", display="gauge", min=-40, max=130,
+            can_id="0x329", byte=1, bit=0, bits=8, order="little", signed=False, scale=1, offset=-40, unit="°C",
+            reference="OBD coolant C", confidence="high", reasoning="Tracks the OBD coolant answer exactly.")
 
 
 def scripted():
@@ -96,7 +97,12 @@ def scripted():
         response(call("t3", "propose_signal", **{**GOOD, "can_id": "0x5B0"}),          # withheld id
                  call("t4", "propose_signal", **{**GOOD, "key": "rpm"}),                # the map has it
                  call("t5", "id_detail", can_id="0x7E8")),                              # diagnostic: not offered
-        response(call("t6", "propose_signal", **GOOD)),
+        response(call("t6", "propose_signal", **{**GOOD, "min": None}),               # a gauge needs a range
+                 call("t7", "propose_signal", **GOOD)),
+        response(call("t8", "build_map", name="Kia Stinger 3.3T (P-CAN)", keys=["coolant_c2"], notes="x"),
+                 call("t9", "build_map", name="Stinger + analysis", keys=["coolant_c2", "boost_x"], notes="x"),
+                 call("t10", "build_map", name="Stinger + analysis", keys=["coolant_c2"],
+                      notes="A second coolant reading, matched to OBD.")),
         response(block("text", text="Proposed coolant_c2 (high confidence)."), stop="end_turn"),
     ]
 
@@ -132,7 +138,19 @@ def test_session(analysis):
     p = s.proposals[0]
     assert p["check"]["r"] > 0.999 and p["check"]["rms_error"] < 0.01
     assert p["entry"]["source"] == "observed" and p["entry"]["id"] == "0x329"
-    assert len(s.rejected) == 1 and "0x5B0" in s.rejected[0]["why"]
+    assert p["entry"]["group"] == "Temperatures" and p["entry"]["display"] == "gauge"
+    assert (p["entry"]["min"], p["entry"]["max"]) == (-40, 130)
+    assert len(s.rejected) == 2 and "0x5B0" in s.rejected[0]["why"] and "min and max" in s.rejected[1]["why"]
+    # build_map: a new name, accepted keys only, and the result passes the map rules
+    b = s.built_map
+    assert b["name"] == "Stinger + analysis" and b["signals"][-1] == p["entry"]
+    assert len(b["signals"]) == len(analysis.map.signals) + 1 and "A second coolant reading" in b["notes"]
+    assert b["notes"].startswith("Powertrain/chassis bus")                  # the current map's own notes kept
+    from pandacapture.signals import parse_map
+    assert parse_map(b).signals[-1].display == "gauge"
+    final = {r["tool_use_id"]: r for r in client.requests[4]["messages"][-1]["content"]}
+    assert "current map's name" in final["t8"]["content"] and "boost_x" in final["t9"]["content"]
+    assert final["t8"].get("is_error") and json.loads(final["t10"]["content"])["added"] == ["coolant_c2"]
     assert s.summary.startswith("Proposed coolant_c2") and not s.stopped
     req = client.requests[0]
     assert req["model"] == "claude-opus-5-5" and req["output_config"] == {"effort": "high"}
@@ -143,8 +161,8 @@ def test_session(analysis):
     results = {r["tool_use_id"]: r for r in last[-1]["content"]}
     assert results["t5"].get("is_error") and results["t4"]["content"].count("already has")
     assert last[:len(client.requests[1]["messages"])] == client.requests[1]["messages"]
-    assert s.usage == {"input": 4000, "output": 800, "cache_write": 0, "cache_read": 0}
-    assert s.cost() == pytest.approx((4000 * 4 + 800 * 20) / 1e6)
+    assert s.usage == {"input": 5000, "output": 1000, "cache_write": 0, "cache_read": 0}
+    assert s.cost() == pytest.approx((5000 * 4 + 1000 * 20) / 1e6)
 
 
 def test_stops(analysis):
@@ -204,11 +222,14 @@ def test_command_keeps_the_key_out_of_everything(capture, tmp_path, monkeypatch,
     assert ai.main([str(capture), "--yes", "--out", str(out)]) == 0
     assert made == {"api_key": KEY}                  # always given explicitly: no other login is used
     printed = capsys.readouterr().out
-    saved = next(out.glob("analysis-*.json")).read_text(encoding="utf-8")
+    saved = next(p for p in out.glob("analysis-*.json") if not p.stem.endswith("-map")).read_text(encoding="utf-8")
     assert KEY not in printed and KEY not in saved and "sk-ant" not in saved
     assert "first request is 4,321 tokens" in printed and "0x5B0" in printed
     data = json.loads(saved)
     assert [e["key"] for e in data["map_entries"]] == ["coolant_c2"] and data["model"] == "claude-opus-5-5"
+    # The built map is saved beside the results, never over a map: the user decides whether to use it
+    built = load_map(data["built_map"])
+    assert built.name == "Stinger + analysis" and "--map" in printed and "current map is unchanged" in printed
 
 
 def test_command_asks_before_sending(capture, monkeypatch, capsys):

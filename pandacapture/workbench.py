@@ -145,23 +145,41 @@ class ClaudeJob:
         threading.Thread(target=work, daemon=True, name="pandacapture-claude").start()
 
     def _finish(self, session, state, error=""):
-        import datetime as dt
-        from .ai import report
-        path = ""
+        from .ai import report, write_results
+        saved = {"saved": "", "built_map": ""}
         if session.proposals or session.summary:
-            self.out_dir.mkdir(parents=True, exist_ok=True)
-            out = self.out_dir / f"analysis-{dt.datetime.now().strftime('%Y%m%d-%H%M%S')}.json"
-            out.write_text(json.dumps({
-                "capture": self.state.get("capture"), "reference": self.state.get("reference"),
-                "model": session.model, "effort": session.effort, "usage": session.usage,
-                "approx_cost_usd": round(session.cost(), 4), "proposals": session.proposals,
-                "rejected": session.rejected, "summary": session.summary, "stopped": session.stopped,
-                "map_entries": [p["entry"] for p in session.proposals]}, indent=2), encoding="utf-8")
-            path = str(out)
+            saved = write_results(session, self.out_dir, {"capture": self.state.get("capture"),
+                                                          "reference": self.state.get("reference"),
+                                                          "map": session.analysis.map.name})
+        built = None
+        if saved["built_map"]:
+            b = session.built_map
+            base = {s.key for s in session.analysis.map.signals}
+            built = {"name": b["name"], "signals": len(b["signals"]),
+                     "added": [s["key"] for s in b["signals"] if s.get("key") not in base], "path": saved["built_map"]}
         self._set(state=state, error=error, proposals=session.proposals, rejected=len(session.rejected),
                   summary=session.summary, stopped=session.stopped, cost=round(session.cost(), 4),
-                  usage=session.usage, saved=path, report=report(session))
+                  usage=session.usage, saved=saved["saved"], built_map=built, report=report(session))
         self._session = None
+
+    def use_built_map(self, maps_dir) -> Path:
+        """Copies the map Claude built into your maps folder (never over another map) and returns its path."""
+        from .ai import map_file_name
+        from .signals import builtin_maps, load_map
+        with self.lock:
+            built = (self.state.get("built_map") or {}).get("path", "")
+        if not built or not Path(built).exists():
+            raise ValueError("This analysis didn't build a map.")
+        load_map(built)                                   # still passes the map rules
+        maps_dir = Path(maps_dir)
+        maps_dir.mkdir(parents=True, exist_ok=True)
+        name = json.loads(Path(built).read_text(encoding="utf-8"))["name"]
+        stem = map_file_name(name)[:-5]
+        dest, n = maps_dir / f"{stem}.json", 2
+        while dest.exists() or dest.stem in builtin_maps():     # never shadows a map you or PandaCapture have
+            dest, n = maps_dir / f"{stem}-{n}.json", n + 1
+        dest.write_bytes(Path(built).read_bytes())
+        return dest
 
     def cancel(self):
         with self.lock:

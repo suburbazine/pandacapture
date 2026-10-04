@@ -549,6 +549,14 @@ def make_handler(dash):
                         raise ValueError("Choose a CSV file.")
                     name = (parse_qs(url.query).get("filename") or ["reference.csv"])[0]
                     self._json({"id": dash.references.add(body, name), "name": name})
+                elif url.path == "/claude/use-map":
+                    # The user's choice: add the map Claude built to their maps and switch the dashboard to it
+                    if not self._local():
+                        return
+                    from .signals import user_dir
+                    path = dash.claude.use_built_map(user_dir())
+                    state.set_map(load_map(path))
+                    self._json({"map": state.map.name, "file": str(path)})
                 elif url.path in ("/claude/prepare", "/claude/start", "/claude/cancel"):
                     if not self._local():
                         return
