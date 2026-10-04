@@ -88,7 +88,7 @@ resolution it streams at its inputs' rate.
 | `+ - * /`, brackets, unary minus | |
 | `< <= > >= == !=` | 1 when true, 0 when false: handy for lights |
 | `abs(x)`, `min(a, b, ...)`, `max(a, b, ...)` | |
-| `p2p(key, seconds)`, `lo(key, seconds)`, `hi(key, seconds)` | peak-to-peak, lowest and highest of a signal over the last 1-60 s |
+| `p2p(key, seconds)`, `lo(key, seconds)`, `hi(key, seconds)`, `avg(key, seconds)` | peak-to-peak, lowest, highest and mean of a signal over the last 1-60 s. The key can be a derived signal above, e.g. `avg(intake_b1_err, 3)` |
 
 Nothing else is accepted. Expressions are checked when the map loads, and evaluated without running
 any code from the file. A derived signal has no value until all its inputs have one.

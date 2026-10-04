@@ -184,6 +184,25 @@ def test_windowed_expressions():
     assert (v["d0"], v["d1"], v["d2"]) == (20, 60, 70)
 
 
+def test_avg_and_windows_over_derived_signals():
+    m = derived_map("avg(a, 5)", "abs(a - b)", "avg(d1, 3)", "(d2 > 5) * (a > 10)")
+    state = LiveState(m)
+    for t, a, b in ((0.0, 50, 50), (2.0, 80, 60), (4.0, 60, 60), (6.5, 70, 40)):
+        state.feed([p.Frame(0, 0x100, bytes([a, b]))], t)
+    v = {k: e["v"] for k, e in state.snapshot()["values"].items()}
+    # avg(a, 5) at 6.5 s: 80, 60, 70. d1 = |a - b| is derived; its own 3 s window at 6.5 s holds 0 (4 s) and 30
+    assert v["d0"] == 70 and v["d1"] == 30 and v["d2"] == 15 and v["d3"] == 1
+
+
+def test_stinger_cam_lag_lights():
+    from pandacapture.signals import load_map
+    m = load_map("kia-stinger-33t-pcan")
+    keys = {s.key: s for s in m.signals}
+    for cam in ("intake_b1", "exhaust_b1", "intake_b2", "exhaust_b2"):
+        assert keys[f"{cam}_slow"].color == "amber" and keys[f"{cam}_error"].color == "red"
+        assert "rpm > 400" in keys[f"{cam}_error"].expr and f"avg({cam}_err, 3)" == keys[f"{cam}_lag"].expr
+
+
 def test_derived_samples_stream_at_input_rate():
     m = derived_map("a * 2")
     state = LiveState(m)

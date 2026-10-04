@@ -8,7 +8,8 @@ A map is a JSON file (see docs/address-maps.md):
 
 A signal is either decoded from a frame (id, byte, bit, bits ...) or derived from other signals with
 an expression ("expr": "(tqi_acor - tqfr) * 5"). Expressions allow numbers, signal keys,
-+ - * / and comparisons, abs/min/max, and windowed p2p/lo/hi(key, seconds). They're checked when
++ - * / and comparisons, abs/min/max, and windowed p2p/lo/hi/avg(key, seconds) over any signal above, derived
+ones included. They're checked when
 the map loads and evaluated by walking the syntax tree, never with eval().
 
 Maps are found by file name without ".json" in a "maps" folder next to the program (the current
@@ -29,7 +30,7 @@ from .firmware import bundled_dir
 DISPLAYS = ("gauge", "number", "light")
 COLORS = ("red", "amber", "green", "blue")
 SOURCES = ("verified", "dbc", "observed", "unconfirmed")
-WINDOW_FUNCS = ("p2p", "lo", "hi")
+WINDOW_FUNCS = ("p2p", "lo", "hi", "avg")
 MAX_WINDOW = 60.0
 
 
@@ -225,6 +226,8 @@ class Expression:
             pts = [v for t, v in history.get(key, ()) if now - t <= secs]
             if not pts:
                 raise _Missing
+            if name == "avg":
+                return sum(pts) / len(pts)
             return max(pts) - min(pts) if name == "p2p" else min(pts) if name == "lo" else max(pts)
         args = [self._eval(a, values, history, now) for a in n.args]
         return abs(args[0]) if name == "abs" else min(args) if name == "min" else max(args)
@@ -284,6 +287,12 @@ class Evaluator:
                     values[s.key] = v
                     out[s.key] = v
                     changed = changed | {s.key}
+                    # Windows over a derived signal: map order means it's computed before anything windows it
+                    if s.key in self.history:
+                        h = self.history[s.key]
+                        h.append((now, v))
+                        while h and now - h[0][0] > self.map.windows[s.key]:
+                            h.popleft()
         return out
 
 

@@ -34,7 +34,7 @@ them live as gauges, numbers and status lights.
 > **Status:** tested on a oneclone mini blackpanda (STM32F4):
 > - flash backup, flashing and updating, and the transmit gate
 > - capture from a Kia Stinger's P-CAN: about 2,430 frames/s for 165 s, with no dropouts
-> - the dashboard: replaying real Stinger captures at full rate, with all 76 map signals decoding
+> - the dashboard: replaying real Stinger captures at full rate, with all 88 map signals decoding
 >
 > Not yet tested: a Red Panda, transmitting on a real bus, and the dashboard live in the car.
 > See [STATUS.md](STATUS.md).
@@ -265,10 +265,10 @@ On a phone (with `--lan`), the controls fold into two rows:
 <img src="docs/images/dashboard-phone.png" alt="The dashboard on a phone" width="300">
 
 An **address map** says which CAN IDs and bits mean what for your vehicle:
-- **Built in:** `kia-stinger-33t-pcan`, 76 signals from comma's DBC, tracing of the ECU's CAN code, and captures of the car. It covers:
+- **Built in:** `kia-stinger-33t-pcan`, 88 signals from comma's DBC, tracing of the ECU's CAN code, and captures of the car. It covers:
   - engine and boost; torque and spark
   - an idle and lope panel: idle target, 5 s RPM swing and low, alternator duty
-  - cam phasers in degrees, with overlap and off-target lamps
+  - cam phasers in degrees, with overlap, off-target (red) and tracking-lag (amber) lamps
   - temperatures, battery, fuel pressures
   - drive mode and gear
   - engine and chassis lamps
