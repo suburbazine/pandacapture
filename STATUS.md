@@ -42,6 +42,10 @@
   - Stopping the heartbeats, after a refused request to disable heartbeat checks, disarmed it after 1.6 s.
 
 ## Not yet tested on hardware
+- `pandacapture analyze` (2026-10-04): the local analysis was run on the real Stinger capture (60 ids,
+  about 3,600 tokens of overview; 0x316 bytes 2-3 vs OBD RPM: r 0.9999, scale 0.250017). The conversation
+  with Claude was tested with a scripted stand-in for the API (tests/test_ai.py), not yet against the
+  real API.
 - `pandacapture codes` and the diagnostic policy (2026-10-04): tested against a simulated car
   (tests/test_codes.py, tests/test_policy.py). Covered: long answers with flow control, a module that
   needs time (response pending), refusals, broken long answers, through a panda-style link and an

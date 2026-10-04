@@ -341,6 +341,41 @@ That's how the Stinger map's lambda, fuel trims, OBD throttle and fuel rail pres
 against the ECU's own answers. A match is evidence, not proof: add it to a map as `observed` until
 it's checked.
 
+### Let Claude study a capture
+
+```bash
+pandacapture analyze captures/capture-20261003-035135.log
+```
+
+Claude reads the capture's statistics and proposes address-map entries. Each one is checked against the
+capture before you see it. It uses **your own Anthropic API key**, billed to your account, and only
+**Claude Opus 5.5** (default) or **Claude Fable 5.1** (`--model fable`, about 2.5x the price).
+
+1. **Save your key once.** It goes into the system's credential store (Windows Credential Manager, macOS
+   Keychain, Secret Service on Linux), never into PandaCapture's files:
+
+   ```bash
+   pandacapture apikey set
+   ```
+
+   Or set `ANTHROPIC_API_KEY`. PandaCapture uses an API key only, never any other login.
+2. **The local part runs first.** It works out statistics for every broadcast id, and the reference
+   values: the engine computer's OBD answers in the capture, or a log you give alongside it
+   (`analyze CAPTURE jb4-log.csv`).
+3. **It asks before sending,** and says what goes out and what the first request costs:
+   - statistics, not the capture itself
+   - ids whose frames carry text (which can include the VIN) are withheld
+   - diagnostic ids only appear as decoded reference values
+4. **Claude works with read-only tools:** an id's byte statistics and sample frames, value series, and
+   correlations against the reference. Nothing it does can reach the car's bus.
+5. **Its proposals are checked locally** against the map's rules and the reference. The results are
+   saved as `analysis-….json`, with `map_entries` ready to paste into a map, marked `observed`. No map is
+   changed.
+
+It stops at about $2 or 20 turns (`--max-cost`, `--max-turns`) and prints what it used. A short capture
+with the engine computer's OBD answers in it (a JB4 or `pandacapture obd` polling meanwhile) gives it
+the most to work with.
+
 ## 7. Scan the OBD PIDs
 
 The panda can ask the car's modules for standard OBD data itself, like a scan tool, with no other
@@ -524,13 +559,18 @@ pandacapture codes [options]    read stored, pending and permanent codes, freeze
 pandacapture modules [--find] [--module ID]     the modules that answer, and what they are
 pandacapture did --module ID DID... [--every S]  read data identifiers from one module
 
+pandacapture analyze CAPTURE [REFERENCE.csv] [options]     Claude proposes map entries (your API key)
+  --model opus|fable            Claude Opus 5.5 (default) or Claude Fable 5.1
+  --max-cost D, --max-turns N   stop at about D dollars (default 2) or N turns (default 20)
+pandacapture apikey set | clear | status     your Anthropic API key, in the system's credential store
+
 pandacapture match CAPTURE [REFERENCE.csv | --obd] [options]     find which fields carry which values
   --map NAME|FILE               map with the RPM signal used to line the logs up
   --ref-rpm COLUMN              the reference's RPM column (default RPM)
   --column NAME                 match only this column (repeatable)
   --top N, --min-r R            how many matches to show, and the weakest to show
 
-pandacapture list | info | dashboard | maps | match | obd | codes | modules | did | flash | backup | restore | send | replay | selftest      (each has --help)
+pandacapture list | info | dashboard | maps | match | analyze | apikey | obd | codes | modules | did | flash | backup | restore | send | replay | selftest      (each has --help)
 ```
 
 ## Documentation

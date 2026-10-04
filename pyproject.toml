@@ -8,6 +8,8 @@ dependencies = [
   "libusb1>=3.1",
   "libusb-package>=1.0.26",
   "pyserial>=3.5",          # ELM327 OBD adapters (USB, Bluetooth serial, WiFi)
+  "anthropic>=1.11",        # pandacapture analyze: your own API key, Opus or Fable
+  "keyring>=25",            # where pandacapture apikey keeps that key
 ]
 
 [project.optional-dependencies]

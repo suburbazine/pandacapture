@@ -39,6 +39,10 @@ PyInstaller.__main__.run([
     "--add-data", f"{ROOT / 'pandacapture' / 'web'}{sep}pandacapture/web",
     *extra,
     "--collect-binaries", "libusb_package",
+    # pandacapture analyze: the Anthropic SDK, and keyring's credential-store backends (found by entry point)
+    "--collect-submodules", "anthropic",
+    "--collect-submodules", "keyring",
+    "--copy-metadata", "keyring",
     "--distpath", str(ROOT / "dist"),
     "--workpath", str(ROOT / "build" / "pyinstaller"),
     "--specpath", str(ROOT / "build" / "pyinstaller"),
