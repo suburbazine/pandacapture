@@ -285,6 +285,7 @@ class Scanner:
         self.log = log
         self.on_sent = on_sent   # e.g. TxLog.sent
         self.result = ScanResult()
+        self._rpm_modules = {}   # bus -> modules that answered 01 0C
         self._answers = None
         self._pid = self._bus = None
 
@@ -315,15 +316,21 @@ class Scanner:
 
     def _ensure_rpm(self):
         """Fresh engine speed before a request: from the broadcast (listening for it first, so a stale
-        reading never costs a request), else by asking for OBD RPM."""
-        if not self.guard.fresh() and self.guard.signal is not None:
+        reading never costs a request), else by asking for OBD RPM. Fresh enough means still fresh at the
+        check after the request, which may wait its whole ANSWER_WAIT (a panda can't tell when every module
+        has answered); found by the FrostBYTE Android port."""
+        ahead = ANSWER_WAIT * 1.25
+        if not self.guard.fresh(ahead=ahead) and self.guard.signal is not None:
             end = time.monotonic() + RPM_FRESH
-            while not self.guard.fresh() and time.monotonic() < end:
+            while not self.guard.fresh(ahead=ahead) and time.monotonic() < end:
                 self.link.wait(0.01)
         for bus in self.buses:
-            if self.guard.fresh():
+            if self.guard.fresh(ahead=ahead):
                 break
-            self._ask(bus, 0x0C)
+            # Once a module has answered RPM, wait only for it: the reading then starts the next request fresh
+            answered = self._ask(bus, 0x0C, self._rpm_modules.get(bus, ()))
+            if answered:
+                self._rpm_modules[bus] = tuple(answered)
         self.guard.check_scan()
         self.result.max_rpm = max(self.result.max_rpm, self.guard.rpm)
 

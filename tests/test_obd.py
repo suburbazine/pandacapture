@@ -192,3 +192,17 @@ def test_only_read_requests_are_ever_built():
     for pid in range(256):
         f = obd.request_frame(pid)
         assert f.addr == 0x7DF and f.data[:3] == bytes([2, 1, pid])
+
+
+def test_scan_with_obd_rpm_only_through_a_panda(monkeypatch):
+    """No broadcast RPM: engine speed comes from 01 0C answers, and every request waits its full answer time (a
+    panda can't tell when all modules have answered). A reading that's fresh before a request must still be fresh
+    at the check after it, or the scan stops part way. Real timings scaled down: FRESH 0.5 s / ANSWER_WAIT 0.2 s."""
+    from pandacapture import policy
+    monkeypatch.setattr(policy, "FRESH", 0.05)
+    monkeypatch.setattr(obd, "ANSWER_WAIT", 0.02)
+    car = Car(stinger_like(), rpm=800, broadcast=False)
+    scanner, r = run_scan(car, None)
+    assert r.values[(0, 0x7E8)][0x05] == bytes([130]) and r.max_rpm == 800
+    rpm_asks = sum(1 for f in car.sent if f.data[2] == 0x0C)
+    assert 2 <= rpm_asks < len(car.sent) // 2     # asked again when needed, not before every request

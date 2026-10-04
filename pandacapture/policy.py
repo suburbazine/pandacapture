@@ -253,9 +253,10 @@ class VehicleState:
         r = self.readings.get(name)
         return r is not None and r[1] >= t
 
-    def fresh(self, name="rpm") -> bool:
+    def fresh(self, name="rpm", ahead=0.0) -> bool:
+        """A reading under FRESH seconds old, now, or still so `ahead` seconds from now."""
         r = self.readings.get(name)
-        return r is not None and self.clock() - r[1] <= FRESH
+        return r is not None and self.clock() + ahead - r[1] <= FRESH
 
     def value(self, name="rpm"):
         return self.readings[name][0] if self.fresh(name) else None
