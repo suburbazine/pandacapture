@@ -412,6 +412,8 @@ def make_handler(dash):
     state, reader, stopping = dash.state, dash.reader, dash.stopping
     page = (web_dir() / "dashboard.html").read_bytes()
     captures_page = (web_dir() / "captures.html").read_bytes()
+    icons = {"/icon.svg": ((web_dir() / "icon.svg").read_bytes(), "image/svg+xml"),
+             "/icon-512.png": ((web_dir() / "icon-512.png").read_bytes(), "image/png")}
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args):
@@ -448,6 +450,8 @@ def make_handler(dash):
                 self._send(page, "text/html; charset=utf-8")
             elif path == "/captures.html":
                 self._send(captures_page, "text/html; charset=utf-8")
+            elif path in icons:
+                self._send(*icons[path])
             elif path == "/references":
                 self._json({"references": dash.references.listing()})
             elif path == "/claude":

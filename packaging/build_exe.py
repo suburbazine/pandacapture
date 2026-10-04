@@ -32,6 +32,7 @@ PyInstaller.__main__.run([
     "--onefile",
     "--console",
     "--noconfirm",
+    "--icon", str(ROOT / "packaging" / "pandacapture.ico"),
     "--clean",
     "--paths", str(ROOT),
     "--add-data", f"{FW}{sep}pandacapture/firmware_bin",

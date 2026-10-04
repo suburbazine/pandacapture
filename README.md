@@ -1,3 +1,5 @@
+<img src="pandacapture/web/icon.svg" width="96" align="right" alt="PandaCapture icon: a panda biting a CAN data line like bamboo">
+
 # PandaCapture for comma pandas
 
 Records a car's CAN buses through a [comma](https://comma.ai) Red Panda or Black Panda, and shows
