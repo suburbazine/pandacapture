@@ -1,3 +1,3 @@
 """PandaCapture for the comma Red Panda: CAN capture, firmware flashing and gated transmit."""
 
-__version__ = "0.7.1"
+__version__ = "0.8.0"
