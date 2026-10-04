@@ -318,8 +318,9 @@ class Scanner:
         """Fresh engine speed before a request: from the broadcast (listening for it first, so a stale
         reading never costs a request), else by asking for OBD RPM. Fresh enough means still fresh at the
         check after the request, which may wait its whole ANSWER_WAIT (a panda can't tell when every module
-        has answered); found by the FrostBYTE Android port."""
-        ahead = ANSWER_WAIT * 1.25
+        has answered), with room for slow timers (Windows ticks in about 15 ms steps). Found by the FrostBYTE
+        Android port. Once a module has answered RPM, asking again is quick, so err towards asking."""
+        ahead = ANSWER_WAIT * 2
         if not self.guard.fresh(ahead=ahead) and self.guard.signal is not None:
             end = time.monotonic() + RPM_FRESH
             while not self.guard.fresh(ahead=ahead) and time.monotonic() < end:
