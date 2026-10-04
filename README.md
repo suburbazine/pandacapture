@@ -257,6 +257,9 @@ listens silently. Press `Q` in the console to stop.
   says when a lamp is lit or a value is in its warning zone.
 - **A strip above the gauges** lists every lit warning lamp and every value in a warn or alert
   zone.
+- **Pinned:** the star in any tile's corner puts a copy of it in a Pinned band at the top, under
+  the warnings strip, in the order you pin them. The original stays where it was. Tap either star to
+  unpin it. Each browser remembers its own pins for each map.
 
 High resolution mode adds a 10-second trace and the update rate to each tile:
 

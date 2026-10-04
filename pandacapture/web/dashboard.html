@@ -159,6 +159,11 @@
   .grid.lights { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }
   .grid + .grid { margin-top: var(--gap); }
 
+  /* Pinned: copies of the tiles starred below, in the order they were pinned: gauges, then numbers and lamps */
+  .pinned { display: flex; flex-direction: column; gap: var(--gap); padding-bottom: 14px; border-bottom: 1px solid var(--line); }
+  .pinned .grid + .grid { margin-top: 0; }
+  .band-title { font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); }
+
   .groups-bar { display: flex; align-items: center; gap: 4px; margin: 18px 0 0; }
   .groups-bar span { flex: 1; font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); }
   .link { min-height: 36px; padding: 0 10px; border: 0; background: none; color: var(--accent); font: inherit; font-size: 13px; cursor: pointer; border-radius: 8px; }
@@ -184,7 +189,17 @@
     position: relative; min-width: 0; padding: 10px 12px 12px;
     background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
   }
-  .tile .head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+  .tile .head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding-right: 26px; }
+  /* The star in every tile's corner: pins a copy to the top, or unpins it */
+  .pin {
+    position: absolute; top: 5px; right: 5px; z-index: 1;
+    display: grid; place-items: center; width: 28px; height: 28px; padding: 0;
+    border: 0; border-radius: 8px; background: none; color: var(--faint); cursor: pointer;
+  }
+  .pin svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; }
+  .pin:hover { color: var(--text); background: var(--panel-2); }
+  .pin[aria-pressed="true"] { color: var(--amber); }
+  .pin[aria-pressed="true"] svg { fill: currentColor; }
   .tile .label { min-width: 0; color: var(--muted); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .tile .src { flex: none; font-size: 10px; letter-spacing: .04em; color: var(--faint); text-transform: uppercase; text-align: right; }
   .tile .hz { display: none; font-variant-numeric: tabular-nums; text-transform: none; letter-spacing: 0; }
@@ -196,7 +211,7 @@
   .tile.lvl-warn, .tile.lvl-alert { border-color: color-mix(in srgb, var(--lc) 60%, var(--line)); }
   .tile.lvl-alert { background: color-mix(in srgb, var(--alert) 10%, var(--panel)); }
   .lvl-warn .v, .lvl-warn .gv, .lvl-alert .v, .lvl-alert .gv { color: var(--lc); fill: var(--lc); }
-  .gauge svg { display: block; width: 100%; height: auto; margin-top: 2px; }
+  .gauge > svg { display: block; width: 100%; height: auto; margin-top: 2px; }
   .gauge .track { stroke: var(--panel-2); }
   .gauge .val { stroke: var(--ok); }
   .gauge.lvl-warn .val, .gauge.lvl-alert .val { stroke: var(--lc); }
@@ -211,6 +226,7 @@
   /* Lamps: a hollow ring when off, a filled glowing one with a tinted tile when on */
   .light { display: flex; align-items: center; gap: 12px; min-height: 64px; padding: 10px 14px; }
   .lamp { flex: none; width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--faint); transition: background .15s, box-shadow .15s; }
+  .tile.light { padding-right: 40px; }
   .light .label { white-space: normal; line-height: 1.25; }
   .light .sub { color: var(--faint); font-size: 12px; font-variant-numeric: tabular-nums; }
   .light.on { background: color-mix(in srgb, var(--lc) 14%, var(--panel)); border-color: color-mix(in srgb, var(--lc) 55%, var(--line)); }
@@ -222,7 +238,7 @@
   .tile.stale { border-style: dashed; }
   .tile.stale .src { visibility: hidden; }
   .tile.stale::after, .tile.nodata::after {
-    content: "stale"; position: absolute; top: 9px; right: 10px;
+    content: "stale"; position: absolute; top: 9px; right: 38px;
     padding: 1px 7px; border-radius: 999px; font-size: 10px; letter-spacing: .04em; text-transform: uppercase;
     color: var(--muted); background: var(--panel-2);
   }
@@ -289,6 +305,8 @@
 <div class="banner" id="banner"></div>
 <main id="main">
   <div class="attention" id="attention"><span class="calm">No warnings</span></div>
+  <section class="band pinned" id="pinned" hidden><div class="band-title">Pinned</div>
+    <div class="grid gauges"></div><div class="grid"></div></section>
   <section class="band" id="gauges" hidden><div class="grid gauges"></div></section>
   <div class="groups-bar" id="groupsBar" hidden><span>Details</span>
     <button class="link" id="openAll" type="button">Expand all</button>
@@ -306,8 +324,11 @@
   const TRACE_MS = 10000;    // the trace window in high-resolution mode
   const MAX_POINTS = 2000;   // trace points kept per signal: a 100 Hz signal fills 1,000 in the window
   const tiles = {};          // key -> tile (see the tile builders)
-  const live = {};           // key -> {v, seen (ms), hist: [[ms, v]], count, hz, level, on, shown}
+  const live = {};           // key -> {v, seen (ms), hist: [[ms, v]], count, hz, level, on}
   const groups = {};         // group name -> {details, badge, badgeText}
+  const pins = {};           // key -> the pinned copy of its tile
+  const stars = {};          // key -> the star on its own tile
+  let pinned = [], pinStore = "";   // pinned keys in pin order, remembered per map in this browser
   let signals = [], source = null, mode = "normal", dirty = true;
   let recording = false, mapVersion = null;
 
@@ -432,6 +453,46 @@
     }};
   }
 
+  // ---- pinning: a star on every tile puts a copy in the Pinned band at the top ----
+  const STAR = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z"/></svg>`;
+  const setStar = (b, s, on) => {
+    b.setAttribute("aria-pressed", String(on));
+    b.title = on ? "Unpin from the top" : "Pin a copy to the top";
+    b.setAttribute("aria-label", `${on ? "Unpin" : "Pin"} ${s.label}`);
+  };
+  function makeTile(s, copy) {
+    const t = s.display === "gauge" ? gaugeTile(s) : s.display === "light" ? lightTile(s) : numberTile(s);
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "pin";
+    b.innerHTML = STAR;
+    b.onclick = () => togglePin(s.key);
+    setStar(b, s, copy || pinned.includes(s.key));
+    if (!copy) stars[s.key] = b;
+    t.el.appendChild(b);
+    return t;
+  }
+  function togglePin(key) {
+    const i = pinned.indexOf(key);
+    if (i < 0) pinned.push(key); else pinned.splice(i, 1);
+    remember(pinStore, JSON.stringify(pinned));
+    setStar(stars[key], tiles[key].s, i < 0);
+    renderPins();
+  }
+  function renderPins() {
+    const box = $("pinned");
+    const [gauges, small] = box.querySelectorAll(".grid");
+    for (const g of [gauges, small]) g.innerHTML = "";
+    for (const k of Object.keys(pins)) delete pins[k];
+    for (const key of pinned) {
+      const t = pins[key] = makeTile(tiles[key].s, true);
+      (t.s.display === "gauge" ? gauges : small).appendChild(t.el);
+    }
+    for (const g of [gauges, small]) g.hidden = !g.children.length;
+    box.hidden = !pinned.length;
+    dirty = true;
+  }
+
   // ---- building the page from the map ----
   // Gauges go in one band at the top whatever their group: they are the driving values. Every
   // group then gets a collapsible section for its numbers and lamps, in the map's order.
@@ -441,11 +502,14 @@
     document.title = `${map.name} · PandaCapture`;
     $("foot").textContent = map.notes || "";
     signals = map.signals;
+    pinStore = `pc-pins:${map.name}`;
+    try { pinned = JSON.parse(recall(pinStore)) || []; } catch (e) { pinned = []; }
+    pinned = pinned.filter((k) => signals.some((s) => s.key === k));   // signals since dropped from the map
 
     const make = (s) => {
-      const t = s.display === "gauge" ? gaugeTile(s) : s.display === "light" ? lightTile(s) : numberTile(s);
+      const t = makeTile(s, false);
       tiles[s.key] = t;
-      live[s.key] = { v: null, seen: 0, hist: [], count: 0, hz: 0, level: null, on: false, shown: false };
+      live[s.key] = { v: null, seen: 0, hist: [], count: 0, hz: 0, level: null, on: false };
       return t.el;
     };
     const gaugeGrid = $("gauges").querySelector(".grid");
@@ -483,6 +547,7 @@
       holder.appendChild(details);
     }
     $("groupsBar").hidden = byGroup.size < 2;
+    renderPins();
   }
   const setAll = (open) => { for (const [name, g] of Object.entries(groups)) { g.details.open = open; rememberGroup(name, open); } };
   $("openAll").onclick = () => setAll(true);
@@ -623,22 +688,25 @@
     }
     const noticed = [], counts = {};
     for (const s of signals) {
-      const t = tiles[s.key], l = live[s.key];
-      if (!t || !l) continue;
+      const l = live[s.key];
+      if (!tiles[s.key] || !l) continue;
+      const views = pins[s.key] ? [tiles[s.key], pins[s.key]] : [tiles[s.key]];
       trim(l, now);
       const stale = l.v === null || now - l.seen > STALE_MS;
-      t.el.classList.toggle("stale", stale);
+      for (const t of views) t.el.classList.toggle("stale", stale);
       if (l.v === null) continue;
-      if (!l.shown) { l.shown = true; t.el.classList.remove("nodata"); }
+      for (const t of views) if (!t.shown) { t.shown = true; t.el.classList.remove("nodata"); }
       if (dirty) {
-        t.show(l.v);
         const light = s.display === "light";
         l.level = light ? null : level(s, l.v);
         l.on = light && !stale && lightOn(s, l.v);
-        t.el.classList.toggle("on", l.on);
-        t.el.classList.toggle("lvl-warn", !stale && l.level === "warn");
-        t.el.classList.toggle("lvl-alert", !stale && l.level === "alert");
-        if (t.hz) t.hz.textContent = mode === "high" ? `${Math.round(l.hz)}/s` : "";
+        for (const t of views) {
+          t.show(l.v);
+          t.el.classList.toggle("on", l.on);
+          t.el.classList.toggle("lvl-warn", !stale && l.level === "warn");
+          t.el.classList.toggle("lvl-alert", !stale && l.level === "alert");
+          if (t.hz) t.hz.textContent = mode === "high" ? `${Math.round(l.hz)}/s` : "";
+        }
         const c = counts[s._group] || (counts[s._group] = { alert: 0, warn: 0, on: 0 });
         if (l.on) {
           c.on++;
@@ -649,7 +717,7 @@
           noticed.push({ key: s.key, cls: `lvl-${l.level}`, label: s.label, value: `${fmt(l.v, s.decimals)} ${s.unit || ""}`.trim() });
         }
       }
-      if (mode === "high") drawTrace(t, l, now);
+      if (mode === "high") for (const t of views) drawTrace(t, l, now);
     }
     if (dirty) {
       showAttention(noticed);

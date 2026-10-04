@@ -124,6 +124,7 @@ def test_server_end_to_end():
     dash.start()
     try:
         assert b"PandaCapture" in get(dash.url)
+        assert b'id="pinned"' in get(dash.url) and b"function togglePin" in get(dash.url)
         assert b'href="icon.svg"' in get(dash.url) and b'href="icon.svg"' in get(dash.url + "captures.html")
         assert get(dash.url + "icon.svg").startswith(b"<svg") and get(dash.url + "icon-512.png")[:4] == b"\x89PNG"
         assert json.loads(get(dash.url + "map"))["signals"][0]["key"] == "rpm"
