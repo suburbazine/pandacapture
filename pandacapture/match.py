@@ -23,7 +23,7 @@ import math
 from dataclasses import dataclass
 from pathlib import Path
 
-from .transmit import read_replay
+from .logs import read_replay
 
 UNITS = (0.1, 1.0, 0.01, 0.001)   # reference time units to try, in seconds
 MIN_DISTINCT = 5                  # reference columns need this many distinct values to be matched
@@ -136,19 +136,23 @@ def obd_answers(frames):
 
 
 def obd_reference(path, frames) -> "Reference":
-    """The capture's own OBD answers, as a reference on the capture's clock. Each answer is matched
-    at the time it arrived; columns without an answer at that time hold their last value."""
+    """The capture's own OBD answers, as a reference on the capture's clock: a row per RPM answer, at the
+    time it arrived. Other values take the answer nearest that time (a poller asks for them in the same
+    cycle, just before or after)."""
     answers = obd_answers(frames)
     if "OBD RPM" not in answers:
         raise MatchError("no OBD mode 01 RPM answers in this capture: nothing was polling the ECU")
     times = [t for t, _ in answers["OBD RPM"]]
-    values = {}
+    values = {"OBD RPM": [v for _, v in answers["OBD RPM"]]}
     for name, series in answers.items():
+        if name == "OBD RPM":
+            continue
         ts = [t for t, _ in series]
         col = []
         for t in times:
-            i = bisect.bisect_right(ts, t + 0.05) - 1
-            col.append(series[i][1] if i >= 0 else None)
+            i = bisect.bisect_left(ts, t)
+            near = [j for j in (i - 1, i) if 0 <= j < len(ts)]
+            col.append(series[min(near, key=lambda j: abs(ts[j] - t))][1] if near else None)
         values[name] = col
     columns = ["OBD RPM"] + sorted(n for n in values if n != "OBD RPM")
     return Reference(f"{path} (OBD answers)", columns, times, values)

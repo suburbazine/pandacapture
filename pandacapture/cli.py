@@ -18,7 +18,7 @@ from .sources import BusSetup, PandaSource, SimulatedSource, SourceError, detect
 from .transmit import ArmedPanda, TransmitRefused, TxLog, acknowledge, read_replay
 from .usbdev import UsbError
 
-COMMANDS = ("capture", "list", "info", "dashboard", "maps", "match", "obd", "codes", "modules", "did", "analyze", "apikey", "flash", "backup", "restore", "send", "replay",
+COMMANDS = ("capture", "list", "info", "dashboard", "maps", "match", "obd", "codes", "modules", "did", "analyze", "apikey", "bundle", "flash", "backup", "restore", "send", "replay",
             "selftest")
 
 
@@ -74,7 +74,7 @@ def adapter_opener(spec, rates):
 def capture_parser():
     ap = argparse.ArgumentParser(prog="pandacapture", description=(
         "Records a car's CAN buses through a comma Red Panda into a candump log, listen-only by default. "
-        "Other commands: list, info, dashboard, match, analyze, obd, codes, modules, did, flash, send, replay, selftest (pandacapture COMMAND --help)."))
+        "Other commands: list, info, dashboard, match, analyze, bundle, obd, codes, modules, did, flash, send, replay, selftest (pandacapture COMMAND --help)."))
     add_common(ap)
     add_adapter(ap)
     ap.add_argument("--bitrate", action="append", metavar="RATE",
@@ -476,6 +476,11 @@ def cmd_apikey(argv) -> int:
     return apikey_main(argv)
 
 
+def cmd_bundle(argv) -> int:
+    from .bundle import main
+    return main(argv)
+
+
 def cmd_maps(argv) -> int:
     argparse.ArgumentParser(prog="pandacapture maps", description=(
         "Address maps found in the maps folder next to the program (or the current folder from source).")).parse_args(argv)
@@ -679,7 +684,7 @@ def main(argv=None) -> int:
     command = argv.pop(0) if argv and argv[0] in COMMANDS else "capture"
     try:
         return {"capture": cmd_capture, "list": cmd_list, "info": cmd_info, "dashboard": cmd_dashboard, "maps": cmd_maps, "match": cmd_match, "flash": cmd_flash, "backup": cmd_backup, "restore": cmd_restore,
-                "send": cmd_send, "replay": cmd_replay, "selftest": cmd_selftest, "obd": cmd_obd, "codes": cmd_codes, "modules": cmd_modules, "did": cmd_did, "analyze": cmd_analyze, "apikey": cmd_apikey}[command](argv)
+                "send": cmd_send, "replay": cmd_replay, "selftest": cmd_selftest, "obd": cmd_obd, "codes": cmd_codes, "modules": cmd_modules, "did": cmd_did, "analyze": cmd_analyze, "apikey": cmd_apikey, "bundle": cmd_bundle}[command](argv)
     except KeyboardInterrupt:
         print("\nStopped.")
         return 130

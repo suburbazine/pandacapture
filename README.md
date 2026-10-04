@@ -376,6 +376,33 @@ It stops at about $2 or 20 turns (`--max-cost`, `--max-turns`) and prints what i
 with the engine computer's OBD answers in it (a JB4 or `pandacapture obd` polling meanwhile) gives it
 the most to work with.
 
+### Hand a capture to another agent
+
+```bash
+pandacapture bundle captures/capture-20261003-035135.log jb4-log.csv
+```
+
+Writes `capture-…-bundle.zip` for your own Claude account, Claude Code, or anyone else. It holds the
+capture, the reference log, the address map, and PandaCapture's analysis tools: the same read-only tools
+`analyze` gives Claude, as a small Python program that needs nothing else installed. Unzip it and point
+the agent at the folder: its `README.md` says how to work, and Claude Code also reads its `CLAUDE.md`.
+
+```bash
+python tools.py
+```
+
+```bash
+python tools.py search_references "reference=OBD RPM" top=5
+```
+
+The capture in the bundle is scrubbed:
+- **no header lines,** which name the panda's serial number
+- **no ids whose frames carry text,** which can include the VIN
+- **of the diagnostic ids, only OBD mode 01 live-value exchanges.** VIN reads (mode 09) and UDS reads
+  are dropped.
+
+Markers and events stay. The reference log goes in as you gave it, so check it before sharing.
+
 ## 7. Scan the OBD PIDs
 
 The panda can ask the car's modules for standard OBD data itself, like a scan tool, with no other
@@ -563,6 +590,7 @@ pandacapture analyze CAPTURE [REFERENCE.csv] [options]     Claude proposes map e
   --model opus|fable            Claude Opus 5.5 (default) or Claude Fable 5.1
   --max-cost D, --max-turns N   stop at about D dollars (default 2) or N turns (default 20)
 pandacapture apikey set | clear | status     your Anthropic API key, in the system's credential store
+pandacapture bundle CAPTURE [REFERENCE.csv]  a scrubbed capture with the analysis tools, for another agent
 
 pandacapture match CAPTURE [REFERENCE.csv | --obd] [options]     find which fields carry which values
   --map NAME|FILE               map with the RPM signal used to line the logs up
@@ -570,7 +598,7 @@ pandacapture match CAPTURE [REFERENCE.csv | --obd] [options]     find which fiel
   --column NAME                 match only this column (repeatable)
   --top N, --min-r R            how many matches to show, and the weakest to show
 
-pandacapture list | info | dashboard | maps | match | analyze | apikey | obd | codes | modules | did | flash | backup | restore | send | replay | selftest      (each has --help)
+pandacapture list | info | dashboard | maps | match | analyze | apikey | bundle | obd | codes | modules | did | flash | backup | restore | send | replay | selftest      (each has --help)
 ```
 
 ## Documentation
