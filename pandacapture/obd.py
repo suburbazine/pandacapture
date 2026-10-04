@@ -3,10 +3,12 @@
 Read-only: the only requests sent are mode 01 "show current data" (02 01 PID) to the functional
 address 0x7DF, one at a time. Nothing that clears codes, changes settings or writes is ever sent.
 
-It's blocked above MAX_SCAN_RPM, so it only runs key-on or at idle. Engine speed comes from the
-address map's broadcast RPM signal while listening silently, or, when the map has none, from one
-OBD RPM request (01 0C) before anything else is asked. Engine speed is checked again before and
-after every request; the scan stops as soon as it's above the limit or no longer known.
+The scan (finding what's supported) is blocked above MAX_SCAN_RPM, so it only runs key-on or at
+idle. Engine speed comes from the address map's broadcast RPM signal while listening silently, or,
+when there's none, from one OBD RPM request (01 0C) before anything else is asked. It's checked
+again before and after every scan request; the scan stops as soon as it's above the limit or no
+longer known. Polling PIDs already known to answer runs at any engine speed, as scan tools and
+loggers do.
 """
 
 import collections
@@ -348,7 +350,8 @@ class Scanner:
         end = time.monotonic() + ANSWER_WAIT
         while time.monotonic() < end:
             self.link.wait(0.005)
-            if expect and all(m in self._answers for m in expect):
+            # An ELM327 says when every answer is in; with a panda, stop once the expected modules answered
+            if getattr(self.link, "answers_complete", False) or (expect and all(m in self._answers for m in expect)):
                 break
         answers, self._answers = self._answers, None
         return answers
@@ -390,10 +393,10 @@ class Scanner:
 
     def poll(self, keep, should_stop, on_answer):
         """Asks for each kept PID in turn until should_stop(); on_answer(bus, module, pid, data) for
-        every answer. Stops with ScanBlocked like the scan."""
+        every answer. Unlike the scan, it runs at any engine speed: these PIDs are known to answer."""
         while keep and not should_stop():
             for f in keep:
                 if should_stop():
                     return
-                for module, data in self.query(f.bus, f.pid, f.modules).items():
+                for module, data in self._ask(f.bus, f.pid, f.modules).items():
                     on_answer(f.bus, module, f.pid, data)

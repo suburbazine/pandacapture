@@ -180,9 +180,12 @@ def test_poll_answers_and_interlock(rpm_signal, tmp_path):
     assert "Coolant temperature (°C)" in ref.columns and "Coolant temperature (°C) [7E9]" in ref.columns
     assert "Accelerator pedal position D (%) [bus 2]" in ref.columns
 
-    car.rpm = 1000
-    with pytest.raises(ScanBlocked):
-        scanner.poll(keep, lambda: False, on_answer)
+    # The poll runs at any engine speed: these PIDs are known to answer
+    car.rpm = 3500
+    got.clear()
+    rounds["n"] = 0
+    scanner.poll(keep, stop, on_answer)
+    assert (0, 0x7E8, 0x05) in got
 
 
 def test_only_read_requests_are_ever_built():

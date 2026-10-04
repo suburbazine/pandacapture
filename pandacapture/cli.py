@@ -171,6 +171,12 @@ def cmd_list(argv) -> int:
         for a in adapters:
             print(f"  --adapter \"{a.key}\"\n      {a.label()}"
                   + (f"\n      can't be used: {a.problem}" if a.problem else ""))
+    from .elm import list_ports
+    ports = list_ports()
+    if ports:
+        print("\nSerial ports (an ELM327 for pandacapture obd --elm PORT; WiFi ones: --elm socket://192.168.0.10:35000):")
+        for device, description in ports:
+            print(f"  --elm {device:<14} {description}")
     return status
 
 

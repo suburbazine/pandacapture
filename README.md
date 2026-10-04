@@ -350,6 +350,17 @@ hardware:
 pandacapture obd
 ```
 
+So can an ELM327 (USB, Bluetooth or WiFi) plugged into the OBD port, for anyone without a panda:
+
+```bash
+pandacapture obd --elm COM5
+```
+
+`pandacapture list` shows the serial ports. A Bluetooth ELM327 gets a COM port (Windows) or
+`/dev/rfcomm0` (Linux) once paired; a WiFi one is `--elm socket://192.168.0.10:35000`. An ELM327
+only works on CAN cars (every US car since 2008), and it can't record the bus: only the requests and
+answers are saved.
+
 1. **Listens first:** finds the bit rates and which buses have traffic, and reads the engine speed
    from the address map's RPM signal.
 2. **Scans:** asks every module on each bus which standard (mode 01) PIDs it supports, and reads
@@ -359,6 +370,16 @@ pandacapture obd
    discarded, and the scan's report lists each one with the reason.
 4. **Polls** the kept PIDs one after another until you press `Q` (or after `--seconds N`;
    `--scan-only` skips it).
+
+The scan only needs doing once per car. Later, poll straight away, at any engine speed:
+
+```bash
+pandacapture obd --poll captures/obd-scan-20261004-101500.json
+```
+
+```bash
+pandacapture obd --elm COM5 --pids 0C,0D,05,0B
+```
 
 It saves three files in the captures folder:
 - **`obd-scan-….json`:** what each module supports, the values read, and the discarded PIDs with
@@ -370,12 +391,14 @@ It saves three files in the captures folder:
 Rules it keeps to:
 - **Read-only:** the only request it sends is mode 01 "current data" (`02 01 PID`) to `0x7DF`, one
   at a time. Nothing that clears codes, changes settings or writes.
-- **Key-on or idle only:** blocked above 900 rpm. The limit is fixed: no option changes it. Engine
-  speed is checked before and after every request, and any reading above 900 rpm between checks
-  stops it, scan or poll. With no RPM signal in the map, it reads RPM over OBD (one request) before
-  anything else. If engine speed isn't known, it doesn't scan.
-- **The transmit acknowledgement:** it needs PandaCapture firmware and you type `TRANSMIT`, as for
-  `send`.
+- **The scan runs key-on or at idle only:** it's blocked above 900 rpm, and no option changes
+  that. Engine speed is checked before and after every scan request, and any reading above 900 rpm
+  between checks stops it. With no RPM signal in the map (or through an ELM327), it reads RPM over
+  OBD (one request) before anything else. If engine speed isn't known, it doesn't scan.
+- **The poll runs at any engine speed:** it only asks for PIDs already known to answer, as a scan
+  tool or logger does. Set it up parked.
+- **An acknowledgement:** you type `TRANSMIT` after a warning about what it sends. Through a panda
+  it also needs PandaCapture firmware.
 - **Pause other OBD loggers** (a JB4's, a scan tool's) while it runs: they'd get the same answers.
 
 ## Transmitting
@@ -434,8 +457,10 @@ pandacapture dashboard [options]      live gauges in the browser
   --mode normal|high            the page's starting update rate
   --app                         a borderless app window (Edge or Chrome) instead of a browser tab
 
-pandacapture obd [options]      scan the standard OBD PIDs, then poll the ones that answer (key-on or idle)
-  --bus N                       bus to scan (repeatable; default: every bus with traffic)
+pandacapture obd [options]      scan the standard OBD PIDs (key-on or idle), then poll the ones that answer
+  --elm PORT                    through an ELM327: COM5, /dev/rfcomm0, socket://192.168.0.10:35000
+  --poll SCAN.json | --pids LIST   skip the scan: poll an earlier scan's PIDs, or these (0C,0D)
+  --bus N                       panda bus to use (repeatable; default: every bus with traffic)
   --map NAME|FILE, --rpm-key K  where the engine's broadcast RPM comes from (default: the built-in map's rpm)
   --scan-only                   don't poll
   --seconds N                   stop polling after N seconds

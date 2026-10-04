@@ -41,10 +41,10 @@ class TransmitRefused(Exception):
     pass
 
 
-def acknowledge(accept_flag: bool, details: str = "", ask=input, out=print) -> None:
+def acknowledge(accept_flag: bool, details: str = "", ask=input, out=print, warning=WARNING) -> None:
     """Shows the warning and what's about to be sent, and needs the user to type TRANSMIT unless
     the flag was given. Asked again on every run: nothing is remembered."""
-    out(WARNING)
+    out(warning)
     if details:
         out(details + "\n")
     if accept_flag:
