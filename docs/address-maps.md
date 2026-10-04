@@ -37,6 +37,7 @@ how to show each one: as a gauge, a number or a status light. Maps are JSON file
 |---|---|---|
 | `key` | required | Short unique name, e.g. `rpm` |
 | `label` | the key | What the dashboard shows |
+| `short` | the label | A shorter name for the tiles, when the label would be cut off (a phone tile fits about 20 characters). Tapping or hovering a tile still shows the full label |
 | `group` | `Signals` | Section heading; signals with the same group sit together |
 | `id` | required | CAN ID, as `"0x316"` or a number |
 | `bus` | any | Only frames from this panda bus (0, 1 or 2) |
@@ -57,7 +58,7 @@ how to show each one: as a gauge, a number or a status light. Maps are JSON file
 | `warn_above`, `alert_above`, `warn_below`, `alert_below` | | Gauges and numbers turn amber or red past these; gauges mark the zones |
 | `on_above`, `on_below` | | Lights: on past this value. Without either, a light is on when the value isn't 0 |
 | `color` | `red` | Light colour: `red`, `amber`, `green` or `blue` |
-| `source` | `unconfirmed` | Where the definition came from: `verified` (checked on the car), `dbc`, `observed` or `unconfirmed`. Shown on each tile |
+| `source` | `unconfirmed` | Where the definition came from: `verified` (checked on the car), `dbc`, `observed` or `unconfirmed`. Shown in each tile's description (tap or hover the tile) |
 | `note` | | Shown when you hover over the tile |
 
 ### Bit layout examples

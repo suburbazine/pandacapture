@@ -201,8 +201,9 @@
   .pin[aria-pressed="true"] { color: var(--amber); }
   .pin[aria-pressed="true"] svg { fill: currentColor; }
   .tile .label { min-width: 0; color: var(--muted); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .tile .src { flex: none; font-size: 10px; letter-spacing: .04em; color: var(--faint); text-transform: uppercase; text-align: right; }
-  .tile .hz { display: none; font-variant-numeric: tabular-nums; text-transform: none; letter-spacing: 0; }
+  .tile { cursor: help; }
+  /* The label gets the whole row: the signal's source is in its description (tap or hover the tile) */
+  .tile .hz { display: none; flex: none; font-size: 10px; color: var(--faint); font-variant-numeric: tabular-nums; }
   body.high .tile .hz { display: block; }
   .num { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0 6px; margin-top: 4px; }
   .num .v { font-size: var(--value); font-weight: 650; line-height: 1.2; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
@@ -236,17 +237,27 @@
 
   /* Stale and no-data tiles look different from live ones, not just dimmer: dashed edge, grey value, a tag */
   .tile.stale { border-style: dashed; }
-  .tile.stale .src { visibility: hidden; }
-  .tile.stale::after, .tile.nodata::after {
-    content: "stale"; position: absolute; top: 9px; right: 38px;
+  /* The stale tag: in the label's row (the label gives way while it shows), or a lamp's top corner */
+  .tile.stale .hz { display: none; }
+  .tile.stale .head::after, .tile.nodata .head::after, .light.stale::after, .light.nodata::after {
+    content: "stale"; flex: none; align-self: center;
     padding: 1px 7px; border-radius: 999px; font-size: 10px; letter-spacing: .04em; text-transform: uppercase;
     color: var(--muted); background: var(--panel-2);
   }
-  .tile.nodata::after { content: "no data"; color: var(--faint); }
+  .light.stale::after, .light.nodata::after { position: absolute; top: 9px; right: 38px; }
+  .tile.nodata .head::after, .light.nodata::after { content: "no data"; color: var(--faint); }
   .tile.stale .v, .tile.stale .gv, .tile.stale .label { color: var(--faint); fill: var(--faint); }
   .tile.stale .val { stroke: var(--faint); opacity: .5; }
   .tile.nodata .val { visibility: hidden; }
   .light.stale .lamp { border-style: dashed; background: transparent; box-shadow: none; }
+
+  /* A tile's description (full label, how it's decoded, its source and notes), on a tap or click */
+  .info {
+    position: absolute; z-index: 1; max-width: min(360px, calc(100vw - 24px)); padding: 10px 12px;
+    border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); color: var(--text);
+    font-size: 13px; line-height: 1.4; white-space: pre-line; box-shadow: 0 8px 24px rgb(0 0 0 / .35);
+  }
+  .info b { display: block; margin-bottom: 4px; }
 
   footer { color: var(--faint); font-size: 12px; padding: 0 var(--pad) 24px; max-width: 1400px; margin: 0 auto; }
 
@@ -401,7 +412,8 @@
     return out;
   }
 
-  const head = (s) => `<div class="head"><div class="label">${esc(s.label)}</div><div class="src">${esc(s.source)}<div class="hz">–</div></div></div>`;
+  const name = (s) => s.short || s.label;
+  const head = (s) => `<div class="head"><div class="label">${esc(name(s))}</div><div class="hz">–</div></div>`;
   const tileEl = (s, cls) => {
     const el = document.createElement("div");
     el.className = `tile ${cls} stale nodata`;   // every tile starts without data
@@ -445,7 +457,7 @@
     const el = tileEl(s, `light c-${s.color || "red"}`);
     const cond = s.on_above != null ? `on above ${s.on_above}${s.unit ? " " + s.unit : ""}` :
                  s.on_below != null ? `on below ${s.on_below}${s.unit ? " " + s.unit : ""}` : "";
-    el.innerHTML = `<div class="lamp"></div><div><div class="label">${esc(s.label)}</div>` +
+    el.innerHTML = `<div class="lamp"></div><div><div class="label">${esc(name(s))}</div>` +
       (cond ? `<div class="sub">${esc(cond)}</div>` : "") + `</div>`;
     const sub = el.querySelector(".sub");
     return { el, s, show(v) {
@@ -460,8 +472,31 @@
     b.title = on ? "Unpin from the top" : "Pin a copy to the top";
     b.setAttribute("aria-label", `${on ? "Unpin" : "Pin"} ${s.label}`);
   };
+  const info = document.createElement("div");
+  info.className = "info";
+  info.hidden = true;
+  document.body.appendChild(info);
+  const hideInfo = () => { info.hidden = true; info.owner = null; };
+  function showInfo(t) {
+    if (info.owner === t.el) return hideInfo();
+    const [first, ...rest] = describe(t.s).split("\n");
+    info.innerHTML = `<b>${esc(first)}</b>${esc(rest.join("\n"))}`;
+    info.hidden = false;
+    info.owner = t.el;
+    const r = t.el.getBoundingClientRect(), w = info.offsetWidth, h = info.offsetHeight;
+    let y = r.bottom + 6;                                   // below the tile, or above it if there's no room
+    if (y + h > innerHeight - 12 && r.top - h - 6 > 12) y = r.top - h - 6;
+    info.style.left = `${scrollX + Math.min(Math.max(12, r.left), innerWidth - w - 12)}px`;
+    info.style.top = `${scrollY + y}px`;
+  }
+  // It scrolls with the page, and closes on a tap elsewhere or when the width changes (a phone turned round)
+  document.addEventListener("click", (e) => { if (!info.hidden && !e.target.closest(".tile")) hideInfo(); });
+  let infoWidth = innerWidth;
+  addEventListener("resize", () => { if (innerWidth !== infoWidth) { infoWidth = innerWidth; hideInfo(); } });
+
   function makeTile(s, copy) {
     const t = s.display === "gauge" ? gaugeTile(s) : s.display === "light" ? lightTile(s) : numberTile(s);
+    t.el.addEventListener("click", (e) => { if (!e.target.closest(".pin")) showInfo(t); });
     const b = document.createElement("button");
     b.type = "button";
     b.className = "pin";
@@ -482,6 +517,7 @@
   function renderPins() {
     const box = $("pinned");
     const [gauges, small] = box.querySelectorAll(".grid");
+    if (info.owner?.closest("#pinned")) hideInfo();
     for (const g of [gauges, small]) g.innerHTML = "";
     for (const k of Object.keys(pins)) delete pins[k];
     for (const key of pinned) {

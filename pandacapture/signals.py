@@ -42,6 +42,7 @@ class MapError(ValueError):
 class Signal:
     key: str
     label: str
+    short: str = ""             # what tiles show when the label is too long for them; the label stays the description
     can_id: int = None          # None for derived signals
     byte: int = None
     bits: int = 8
@@ -346,7 +347,7 @@ def parse_signal(d: dict, index: int, known: set) -> Signal:
     if labels is not None and (not isinstance(labels, dict) or not all(isinstance(v, str) for v in labels.values())):
         raise MapError(f"{where}: labels must map values to text, e.g. {{\"0\": \"P\"}}")
     s = Signal(
-        key=str(d["key"]), label=str(d.get("label", d["key"])), can_id=can_id,
+        key=str(d["key"]), label=str(d.get("label", d["key"])), short=str(d.get("short", "")), can_id=can_id,
         byte=None if derived else _number(d, "byte", where, integer=True),
         bits=_number(d, "bits", where, 8, integer=True), bit=_number(d, "bit", where, 0, integer=True),
         order=d.get("order", "little"), signed=bool(d.get("signed", False)),

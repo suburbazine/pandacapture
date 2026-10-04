@@ -241,6 +241,9 @@ def test_shipped_maps_load():
         for s in m.signals:
             j = s.to_json()
             assert ("expr" in j) != ("id" in j) and ("id" not in j or j["id"].startswith("0x"))
+            # a gauge or number tile fits about 20 characters (111 px at the narrowest desktop column): longer
+            # labels need a short name. Lamps' labels wrap
+            assert s.display == "light" or len(s.short or s.label) <= 20, (s.key, s.short or s.label)
 
 
 def test_stinger_map_cam_conventions():
