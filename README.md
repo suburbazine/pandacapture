@@ -505,6 +505,30 @@ From every OBD module, it reads:
 Nothing is cleared or changed. It's read-only like `obd`: you type `TRANSMIT` after a warning, and
 it runs at any engine speed. The results are saved as `codes-….json` in the captures folder.
 
+### Clearing codes
+
+```bash
+pandacapture codes --clear
+```
+
+Reads and shows the codes first, then explains what clearing does:
+- it erases the codes and the freeze frame
+- it sets the emissions readiness monitors back to "not ready": an inspection fails until they've run
+  again, over several drive cycles
+- it may reset learned values (fuel trims, idle), so the engine can run oddly until it relearns
+- a fault that's still there sets its code again
+- permanent codes clear themselves later, not by this
+
+It clears only when you type `CLEAR`, and only with:
+- **the engine off** (key on): 0 rpm through the whole interval since the last check;
+- **the car stopped:** 0 km/h, which also covers a hybrid on its motor and stop-start at a light;
+- **Park,** when the map knows the gear.
+
+Engine speed and vehicle speed are read anew right before each clear request. That's the next
+broadcast, or an OBD answer when nothing broadcasts them (as through an ELM327). If the engine starts
+or the car moves, clearing stops. Afterwards it reads the codes again. `--uds` also clears each module's
+own codes (UDS `14`). The vehicle's state at each clear is in the transmit log.
+
 ### Each module's own codes and data (UDS)
 
 Beyond the standard OBD set, each module keeps its own codes and data, which dealer tools read with
@@ -603,6 +627,7 @@ pandacapture codes [options]    read stored, pending and permanent codes, freeze
   --elm PORT                    through an ELM327 instead of the panda
   --uds [--module ID]           also each module's own codes
   --vin                         also read the VIN
+  --clear                       then clear them: engine off, car stopped, CLEAR typed
 
 pandacapture modules [--find] [--module ID]     the modules that answer, and what they are
 pandacapture did --module ID DID... [--every S]  read data identifiers from one module

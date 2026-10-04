@@ -163,20 +163,122 @@ def report(modules) -> str:
     return "\n".join(lines)
 
 
+# ---------------------------------------------------------------- clearing
+
+CLEAR_WARNING = """\
+Clearing codes:
+- erases the stored and pending codes and the freeze frame in every OBD module that answers (with --uds, also
+  each listed module's own codes)
+- sets the emissions readiness monitors back to "not ready": an inspection fails until they've run again, which
+  takes several drive cycles
+- may reset learned values (fuel trims, idle, sometimes throttle): the engine can idle or run oddly until it
+  relearns
+- fixes nothing: a fault that's still there sets its code again
+- can't clear permanent codes: those clear themselves once the module has seen the fault gone
+It needs the engine off with the key on, the car stopped, and Park where the map knows the gear. That's checked
+right before each request, and clearing stops if it changes.
+"""
+
+
+def ensure_engine_off(client, buses, wait=0.3):
+    """New readings of engine speed and vehicle speed, taken after this call starts (the next broadcast, or an OBD
+    answer when nothing broadcasts them), then the engine-off check. A reading from before, however recent, isn't
+    enough: the engine may have started since. Raises EngineNotOff."""
+    import time
+    from .policy import EngineNotOff
+    state = client.state
+    t0 = state.clock()
+    if state.signals.get("rpm") is not None or state.signals.get("speed") is not None:
+        end = time.monotonic() + wait
+        while time.monotonic() < end and not (state.seen_since("rpm", t0) and state.seen_since("speed", t0)):
+            client.link.wait(0.01)
+    for bus in buses:
+        if not state.seen_since("rpm", t0):
+            client.request(0x01, b"\x0c", bus)
+        if not state.seen_since("speed", t0):
+            client.request(0x01, b"\x0d", bus)
+    missing = [label for name, label in (("rpm", "engine speed"), ("speed", "vehicle speed"))
+               if not state.seen_since(name, t0)]
+    if missing:
+        raise EngineNotOff(f"No new reading of {' or '.join(missing)} just now, so the engine counts as running.")
+    state.check_engine_off()
+
+
+def clear_codes(client, buses, modules, uds_targets=(), ask=input, log=print, note=lambda text: None):
+    """Clears the OBD modules' codes (mode 04) and each UDS target's own (14 FF FF FF), after the warning, the
+    engine-off check and CLEAR typed. Returns {(bus, module, kind): "cleared" or why not}, or None if nothing
+    was sent. Raises EngineNotOff if the engine starts or the car moves part way."""
+    from .policy import EngineNotOff
+    obd = {}
+    for m in modules:
+        obd.setdefault(m.bus, []).append(m.module)
+    if not obd and not uds_targets:
+        log("No module answered: nothing to clear.")
+        return None
+    log(CLEAR_WARNING)
+    check_buses = sorted(obd) or sorted({b for b, _ in uds_targets})
+    try:
+        ensure_engine_off(client, check_buses)
+    except EngineNotOff as e:
+        log(f"Not clearing: {e}")
+        return None
+    log(f"Now: {client.state.describe()}.")
+    try:
+        answer = ask("Type CLEAR to clear the codes, anything else to keep them: ")
+    except EOFError:
+        answer = ""
+    if answer.strip() != "CLEAR":
+        log("Nothing cleared.")
+        return None
+    client.sender.confirm("CLEAR")
+    results = {}
+    for bus, answering in sorted(obd.items()):
+        ensure_engine_off(client, [bus])
+        note(f"clearing OBD codes (mode 04) on bus {bus}; vehicle: {client.state.describe()}")
+        a = client.request(0x04, b"", bus, expect=tuple(answering))
+        for module in answering:
+            results[(bus, module, "OBD")] = _outcome(a, module)
+    for bus, target in uds_targets:
+        ensure_engine_off(client, [bus])
+        note(f"clearing module {target:03X}'s codes (UDS 14) on bus {bus}; vehicle: {client.state.describe()}")
+        a = client.request(0x14, b"\xff\xff\xff", bus, target, expect=(target + 8,))
+        results[(bus, target + 8, "UDS")] = _outcome(a, target + 8)
+    return results
+
+
+def _outcome(answers, module) -> str:
+    if module in answers.positive:
+        return "cleared"
+    if module in answers.negative:
+        return f"refused: {nrc_text(answers.negative[module])}"
+    return answers.broken.get(module, "no answer")
+
+
+def clear_report(results) -> str:
+    lines = ["Clearing:"]
+    for (bus, module, kind), outcome in sorted(results.items()):
+        lines.append(f"  bus {bus}, {MODULES.get(module, 'module')} ({module:03X}), {kind}: {outcome}")
+    return "\n".join(lines)
+
+
 # ---------------------------------------------------------------- the command
 
 def parser():
     from .diag_run import add_connection
     ap = argparse.ArgumentParser(prog="pandacapture codes", description=(
         "Reads the standard OBD codes (stored, pending, permanent), the check-engine light, the freeze frame "
-        "and vehicle information from every OBD module; with --uds, each module's own codes too. Reads only: "
-        "nothing is cleared. Through a panda with PandaCapture firmware, or an ELM327 (--elm)."))
+        "and vehicle information from every OBD module; with --uds, each module's own codes too. With --clear, "
+        "then clears them: engine off, car stopped, and CLEAR typed. Through a panda with PandaCapture firmware, "
+        "or an ELM327 (--elm)."))
     add_connection(ap)
     ap.add_argument("--uds", action="store_true",
                     help="also each module's own codes (UDS 19): the OBD modules and any --module")
     ap.add_argument("--module", action="append", metavar="ID",
                     help="with --uds: also this module's request id (hex, e.g. 7D1; see pandacapture modules --find)")
     ap.add_argument("--vin", action="store_true", help="also read the VIN (left out by default: it identifies the car)")
+    ap.add_argument("--clear", action="store_true", help=(
+        "after reading, clear the codes (and with --uds, each module's own): only with the engine off and the car "
+        "stopped, after a warning and CLEAR typed"))
     return ap
 
 
@@ -214,9 +316,23 @@ def run(argv) -> int:
                     for (b, t), r in sorted(uds.items())],
         }, indent=2), encoding="utf-8")
         print(f"\nSaved: {path}")
+        if args.clear:
+            print()
+            from .policy import EngineNotOff
+            try:
+                results = clear_codes(client, buses, modules, sorted(uds) if args.uds else (),
+                                      note=getattr(client, "note", lambda text: None))
+            except EngineNotOff as e:
+                print(f"Stopped clearing: {e}")
+                return
+            if results:
+                print(clear_report(results))
+                print("\nReading the codes again...")
+                print(report(read_codes(client, buses, with_vin=False)))
 
-    return run_client(args, "reading codes", WARNING if not args.uds else WARNING + UDS_NOTE,
-                      "read codes" + (" (and each module's own, with UDS)" if args.uds else ""), body)
+    return run_client(args, "clearing codes" if args.clear else "reading codes", WARNING if not args.uds else WARNING + UDS_NOTE,
+                      "read codes" + (" (and each module's own, with UDS)" if args.uds else "")
+                      + (", then, if you confirm, clear them" if args.clear else ""), body)
 
 
 UDS_NOTE = "- With --uds, each module is also asked for its own codes (UDS 19), one module at a time.\n"

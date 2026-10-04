@@ -44,9 +44,10 @@ def gear(value):
 
 # What the table allows today: the standard OBD reads, as (service, parameter length)
 READS = {(0x01, 1), (0x02, 2), (0x03, 0), (0x07, 0), (0x09, 1), (0x0A, 0), (0x22, 2)}   # (0x19: below)
+CLEARS = {(0x04, 0), (0x14, 3)}     # engine off, and CLEAR typed
 
 
-def test_only_the_standard_reads_are_in_the_table_today():
+def test_only_reads_and_clearing_codes_are_in_the_table_today():
     built = set()
     for sid in range(256):
         for params in (b"", b"\x0c", b"\x0c\x00", b"\x01\x02\x03"):
@@ -55,8 +56,9 @@ def test_only_the_standard_reads_are_in_the_table_today():
                 built.add((sid, len(params)))
             except PolicyRefused:
                 pass
-    assert built == READS
-    assert all(pol.SERVICES[sid].tier is Tier.READ for sid, _ in READS)
+    assert built == READS | CLEARS
+    assert all(pol.SERVICES[sid].tier is Tier.READ and not pol.SERVICES[sid].confirm for sid, _ in READS)
+    assert all(pol.SERVICES[sid].tier is Tier.ENGINE_OFF and pol.SERVICES[sid].confirm == "CLEAR" for sid, _ in CLEARS)
     with pytest.raises(PolicyRefused, match="freeze frame 00"):
         build(0x02, b"\x0c\x01")
 
@@ -65,8 +67,9 @@ def test_never_services_say_why():
     for sid in (0x27, 0x34, 0x35, 0x36, 0x37):
         with pytest.raises(PolicyRefused, match="never sent"):
             build(sid, b"\x01")
-    with pytest.raises(PolicyRefused, match="isn't in"):
-        build(0x04)            # clearing codes: planned, not in the table yet
+    for sid in (0x10, 0x11, 0x28, 0x2E, 0x2F, 0x31, 0x85):   # planned engine-off services: not in the table yet
+        with pytest.raises(PolicyRefused, match="isn't in"):
+            build(sid, b"\x01")
     with pytest.raises(PolicyRefused, match="one PID"):
         build(0x01, b"\x0c\x0d")
 

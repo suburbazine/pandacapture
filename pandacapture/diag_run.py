@@ -59,6 +59,7 @@ def run_client(args, title, warning, details, body) -> int:
 
         with session.link(received) as link:
             client = Client(link, state, on_sent=sent)
+            client.note = log.note   # e.g. the vehicle's state when codes are cleared
             body(client, session.buses, out_dir, stamp)
         print(f"  Requests logged in {log.path}; everything received in {rec.path}")
     except KeyboardInterrupt:

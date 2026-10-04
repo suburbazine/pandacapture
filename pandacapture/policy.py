@@ -11,8 +11,10 @@ any frame that doesn't parse back into a request the table allows. Each service 
 
 Some services are never in the table, whatever the engine is doing: NEVER says why.
 
-Today the table holds reads only: the standard OBD ones (live data, freeze frame, stored, pending and
-permanent codes, vehicle information) and the UDS ones (a module's own codes, data by identifier).
+Today the table holds:
+- reads: the standard OBD ones (live data, freeze frame, stored, pending and permanent codes, vehicle
+  information) and the UDS ones (a module's own codes, data by identifier)
+- clearing codes (OBD mode 04, UDS 14): engine off, and the user typed CLEAR (Sender.confirm)
 Requests go to 7DF (every OBD module) or one module's request id (700-7F7, answering at +8), never to
 an id the bus uses for ordinary traffic. The plan adds the rest one at a time. Besides requests, the only frame
 sent is ISO-TP flow control, which lets a module send the rest of a long answer (see flow_control).
@@ -113,6 +115,11 @@ def _dtc_report(params: bytes) -> str:
     return ""
 
 
+def _dtc_group(params: bytes) -> str:
+    """UDS 14: a group of codes, 3 bytes: FF FF FF for all of them, or one code."""
+    return "" if len(params) == 3 else "takes a 3-byte group of codes (FF FF FF for all)"
+
+
 def _data_ids(params: bytes) -> str:
     return "" if 2 <= len(params) <= 6 and len(params) % 2 == 0 else "takes one to three 2-byte identifiers"
 
@@ -126,6 +133,9 @@ SERVICES = {
     0x0A: Service(0x0A, "OBD permanent codes (mode 0A)", Tier.READ, _no_params),
     0x19: Service(0x19, "UDS read codes (19)", Tier.READ, _dtc_report),
     0x22: Service(0x22, "UDS read data by identifier (22)", Tier.READ, _data_ids),
+    # Clearing codes: engine off and car stopped, and the user typed CLEAR. No undo: what's cleared is gone.
+    0x04: Service(0x04, "OBD clear codes (mode 04)", Tier.ENGINE_OFF, _no_params, confirm="CLEAR"),
+    0x14: Service(0x14, "UDS clear codes (14)", Tier.ENGINE_OFF, _dtc_group, confirm="CLEAR"),
 }
 
 NEVER = {
@@ -238,6 +248,11 @@ class VehicleState:
         if name == "rpm":
             self.peak = value if self.peak is None else max(self.peak, value)
 
+    def seen_since(self, name, t) -> bool:
+        """A reading of this that arrived at or after time t (on this state's clock)."""
+        r = self.readings.get(name)
+        return r is not None and r[1] >= t
+
     def fresh(self, name="rpm") -> bool:
         r = self.readings.get(name)
         return r is not None and self.clock() - r[1] <= FRESH
@@ -315,6 +330,11 @@ class Sender:
         self.on_sent = on_sent
         self.table = SERVICES if table is None else table
         self.sent = 0
+        self.confirmed = set()    # confirmation words the user typed this session
+
+    def confirm(self, word):
+        """Records that the user typed this service's confirmation word (e.g. CLEAR) for this session."""
+        self.confirmed.add(word)
 
     def _free(self, can_id, bus):
         if can_id in self.state.traffic.get(bus, ()):
@@ -332,6 +352,8 @@ class Sender:
     def send(self, request: Request, bus=0):
         if self.table.get(request.service.sid) is not request.service:
             raise PolicyRefused(f"{request.service.name} isn't in this policy table.")
+        if request.service.confirm and request.service.confirm not in self.confirmed:
+            raise PolicyRefused(f"{request.service.name} needs {request.service.confirm} typed first.")
         self.state.require(request.service.tier)
         if request.target != FUNCTIONAL:
             self._free(request.target, bus)

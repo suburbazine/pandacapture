@@ -1,8 +1,8 @@
 # Plan: reading and clearing codes, and full diagnostics
 
-Status: steps 1 and 2 are built. The policy table, the vehicle-state checks and the sender are in
+Status: steps 1, 2 and 3 are built. The policy table, the vehicle-state checks and the sender are in
 `pandacapture/policy.py`. The table holds the standard OBD reads (`pandacapture obd`, `pandacapture
-codes`) and the UDS reads (`codes --uds`, `modules`, `did`). The rest is planned. `send` and `replay` are separate: they send the frames you give them.
+codes`), the UDS reads (`codes --uds`, `modules`, `did`), and clearing codes (`codes --clear`). The rest is planned. `send` and `replay` are separate: they send the frames you give them.
 
 The aim is an open source diagnostic tool: read and clear codes, read live data from any module, and
 the bidirectional functions a dealer tool has (actuator tests, routines, resets). The rule that makes
@@ -111,7 +111,10 @@ panda's transmit heartbeat.
      module. Modules are addressed 700-7F7, answering at +8. An id the bus uses for ordinary traffic (frames
      that don't look like diagnostics) is never sent to, nor is 7D7, whose answers would land on 7DF.
      An ELM327 is told to listen on the module's answer id (`ATCRA`) for modules outside 7E0-7E7.
-3. Clearing codes (OBD 04, UDS 14) behind the engine-off checks.
+3. **Done:** clearing codes (OBD 04, UDS `14 FF FF FF`) behind the engine-off checks.
+   - The sender refuses a service with a confirmation word until the user has typed it this session.
+   - Before each clear request, engine speed and vehicle speed must be read anew, after that moment: a
+     reading from before, however recent, doesn't count, since the engine may have started since.
 4. The other engine-off services, one by one, each with a test on a simulated module that checks it's
    refused when running and undone when the engine starts.
 5. A transmit path for the RP1210/J2534 bridge.

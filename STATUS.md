@@ -42,6 +42,9 @@
   - Stopping the heartbeats, after a refused request to disable heartbeat checks, disarmed it after 1.6 s.
 
 ## Not yet tested on hardware
+- Clearing codes (`codes --clear`, 2026-10-04): tested against a simulated car (tests/test_clear.py). Covered:
+  the engine running, the car moving at 0 rpm, the engine starting after CLEAR was typed, the wrong word, a
+  module refusing, and the sender refusing without the word or on stale readings. Not yet run on a car.
 - `pandacapture analyze` (2026-10-04): the local analysis was run on the real Stinger capture (60 ids,
   about 3,600 tokens of overview; 0x316 bytes 2-3 vs OBD RPM: r 0.9999, scale 0.250017). The conversation
   with Claude was tested with a scripted stand-in for the API (tests/test_ai.py), not yet against the
