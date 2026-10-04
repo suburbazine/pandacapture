@@ -12,7 +12,8 @@ from pathlib import Path
 from . import protocol as p
 from .capture import RollingLog, candump_line, default_out_dir
 from .keys import KeyReader
-from .obd import MAX_SCAN_RPM, PIDS, Found, RpmGuard, ScanBlocked, Scanner, describe, pid_name
+from .obd import MAX_SCAN_RPM, PIDS, Found, ScanBlocked, Scanner, describe, pid_name
+from .policy import VehicleState
 from .transmit import ArmedPanda, TransmitRefused, TxLog, acknowledge
 from .usbdev import UsbError
 
@@ -59,17 +60,20 @@ def parser():
     return ap
 
 
-def rpm_signal(args):
+def state_signals(args):
+    """The map's broadcast signals for the vehicle state: (rpm, speed, gear, map name)."""
     from .signals import MapError, builtin_maps, load_map
     name = args.map or (next(iter(builtin_maps())) if len(builtin_maps()) == 1 else None)
     if not name:
-        return None, ""
+        return None, None, None, ""
     try:
         m = load_map(name)
     except MapError as e:
         raise TransmitRefused(str(e)) from None
-    s = next((s for s in m.signals if s.key == args.rpm_key and not s.derived), None)
-    return s, m.name
+
+    def first(*keys):
+        return next((s for k in keys for s in m.signals if s.key == k and not s.derived), None)
+    return first(args.rpm_key), first("speed_kmh", "speed"), first("gear"), m.name
 
 
 def planned_poll(args):
@@ -174,7 +178,7 @@ class PandaSession:
         if self.guard.fresh():
             print(f"Engine speed: {self.guard.rpm:.0f} rpm ({map_name}'s {signal.key} signal).")
             if self.scanning:
-                self.guard.check()
+                self.guard.check_scan()
         elif self.scanning:
             print("No broadcast engine speed heard" + (f" ({map_name}'s {self.args.rpm_key} signal)" if signal else "")
                   + ": it will be read over OBD (one request) before anything else is asked.")
@@ -230,18 +234,18 @@ def run(argv) -> int:
     args = parser().parse_args(argv)
     try:
         planned = planned_poll(args)
-        signal, map_name = rpm_signal(args) if not args.elm else (None, "")
+        rpm_sig, speed_sig, gear_sig, map_name = state_signals(args) if not args.elm else (None, None, None, "")
     except TransmitRefused as e:
         print(f"ERROR: {e}")
         return 2
     scanning = planned is None
     out_dir = Path(args.out) if args.out else default_out_dir()
     stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
-    guard = RpmGuard(signal)
+    guard = VehicleState(rpm_sig, speed_sig, gear_sig)
     session = (ElmSession if args.elm else PandaSession)(args, guard, scanning)
     log = rec = None
     try:
-        session.open(signal, map_name)
+        session.open(rpm_sig, map_name)
         if planned is not None:
             planned = [Found(b, f.pid, f.modules) for f in planned
                        for b in ([f.bus] if f.bus is not None else session.buses[:1]) if b in session.buses]

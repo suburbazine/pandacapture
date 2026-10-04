@@ -186,3 +186,16 @@ def test_planned_poll(tmp_path):
     assert {(f.bus, f.pid, f.modules) for f in keep} == {(f.bus, f.pid, f.modules) for f in r.assess([0])[0]}
     with pytest.raises(Exception, match="hex PIDs"):
         planned_poll(types.SimpleNamespace(pids="RPM", poll=None))
+
+
+def test_elm_link_only_sends_what_the_policy_allows():
+    from pandacapture import protocol as p
+    from pandacapture.policy import build
+    fake = FakeElm()
+    link = ElmLink(open_elm(fake), lambda f: None)
+    with pytest.raises(ElmError, match="Refused"):
+        link.send([p.Frame(0, 0x7E0, bytes([2, 0x11, 0x01, 0, 0, 0, 0, 0]))])   # ECU reset
+    commands = []
+    fake._command = (lambda orig: lambda cmd: (commands.append(cmd), orig(cmd))[1])(fake._command)
+    link.send([build(0x01, b"\x0d", target=0x7E0).frame()])                    # one module: header switched
+    assert commands == ["ATSH7E0", "010D", "ATSH7DF"]

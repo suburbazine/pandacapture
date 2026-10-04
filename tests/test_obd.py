@@ -147,7 +147,7 @@ def test_a_brief_spike_still_stops_it(rpm_signal):
         raw = rpm * 4
         guard.frame(p.Frame(0, 0x316, bytes([0, 0x10, raw & 0xFF, raw >> 8, 0, 0, 0, 0])))
     with pytest.raises(ScanBlocked, match="950 rpm"):
-        guard.check()
+        guard.check_scan()
 
 
 def test_limit_is_900():

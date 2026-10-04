@@ -1,7 +1,8 @@
 # Plan: reading and clearing codes, and full diagnostics
 
-Status: plan, not built. Today PandaCapture only sends OBD mode 01 reads (`pandacapture obd`) and the
-frames you give `send` and `replay`.
+Status: step 1 is built: the policy table, the vehicle-state checks and the sender, in
+`pandacapture/policy.py`, with OBD mode 01 as the only entry (what `pandacapture obd` sends). The
+rest is planned. `send` and `replay` are separate: they send the frames you give them.
 
 The aim is an open source diagnostic tool: read and clear codes, read live data from any module, and
 the bidirectional functions a dealer tool has (actuator tests, routines, resets). The rule that makes
@@ -100,7 +101,8 @@ panda's transmit heartbeat.
 
 ## Order of work
 
-1. The policy table and the state checks, with today's mode 01 as its only entry.
+1. **Done:** the policy table and the state checks, with today's mode 01 as its only entry. The panda
+   path and the ELM327 link both send through it, and the ELM327 link refuses any other frame.
 2. Read tier: codes (03/07/0A), freeze frame, vehicle info. Then UDS `19` and `22` per module.
 3. Clearing codes (OBD 04, UDS 14) behind the engine-off checks.
 4. The other engine-off services, one by one, each with a test on a simulated module that checks it's

@@ -16,11 +16,9 @@ import time
 from dataclasses import dataclass, field
 
 from . import protocol as p
-
-MAX_SCAN_RPM = 900          # fixed on purpose: no option overrides it
-RPM_FRESH = 0.5             # s: an engine speed older than this doesn't count
+from .policy import FRESH as RPM_FRESH
+from .policy import MAX_SCAN_RPM, ScanBlocked, Sender, VehicleState, build
 ANSWER_WAIT = 0.2           # s to collect answers after each request (J1979 allows 50 ms per module)
-REQUEST_ID = 0x7DF          # functional request: every OBD module on the bus
 ANSWER_IDS = range(0x7E8, 0x7F0)
 SUPPORT_PIDS = (0x00, 0x20, 0x40, 0x60, 0x80, 0xA0, 0xC0)   # "which of the next 32 do you support?"
 MODULES = {0x7E8: "engine", 0x7E9: "transmission"}
@@ -162,50 +160,11 @@ def supported_from(base, data: bytes) -> set:
 
 
 def request_frame(pid, bus=0) -> p.Frame:
-    return p.Frame(bus, REQUEST_ID, bytes([0x02, 0x01, pid, 0, 0, 0, 0, 0]))
+    """A mode 01 request for one PID, built from the diagnostic policy (policy.py)."""
+    return build(0x01, bytes([pid])).frame(bus)
 
 
-class ScanBlocked(Exception):
-    """The engine is above MAX_SCAN_RPM, or its speed isn't known."""
-
-
-class RpmGuard:
-    """Engine speed for the interlock, from the map's broadcast RPM signal and from OBD RPM answers."""
-
-    def __init__(self, signal=None, clock=time.monotonic):
-        self.signal = signal
-        self.clock = clock
-        self.rpm = None
-        self.at = None
-        self.source = ""
-        self.peak = None   # highest engine speed seen since the last check
-
-    def frame(self, f):
-        s = self.signal
-        if s is not None and f.addr == s.can_id and (s.bus is None or s.bus == f.bus):
-            v = s.decode(f.data)
-            if v is not None:
-                self._seen(v, "broadcast")
-        elif f.addr in ANSWER_IDS and len(f.data) >= 5 and f.data[0] >= 4 and f.data[1:3] == b"\x41\x0C":
-            self._seen(_u16(f.data[3:5]) / 4, "OBD")
-
-    def _seen(self, rpm, source):
-        self.rpm, self.at, self.source = rpm, self.clock(), source
-        self.peak = rpm if self.peak is None else max(self.peak, rpm)
-
-    def fresh(self) -> bool:
-        return self.at is not None and self.clock() - self.at <= RPM_FRESH
-
-    def check(self):
-        """Raises ScanBlocked unless engine speed is known, and every reading since the last check
-        (not only the latest) was at or below the limit."""
-        if not self.fresh():
-            raise ScanBlocked("Engine speed isn't known, so the scan can't check it's below "
-                              f"{MAX_SCAN_RPM} rpm. Turn the key on (or idle the engine) and try again.")
-        worst, self.peak = max(self.peak, self.rpm), self.rpm
-        if worst > MAX_SCAN_RPM:
-            raise ScanBlocked(f"Engine at {worst:.0f} rpm: an OBD scan only runs key-on or at idle "
-                              f"(up to {MAX_SCAN_RPM} rpm).")
+RpmGuard = VehicleState   # the vehicle state the scan checks (engine speed, from broadcast or OBD)
 
 
 def meaningful(pid, data: bytes) -> str:
@@ -318,8 +277,9 @@ class Scanner:
     """Runs the scan and the poll over a link with send(frames) and wait(seconds); the link hands every
     frame it receives to Scanner.frame (ArmedPanda's on_frame)."""
 
-    def __init__(self, link, guard: RpmGuard, buses=(0,), log=print, on_sent=None):
+    def __init__(self, link, guard: VehicleState, buses=(0,), log=print, on_sent=None):
         self.link = link
+        self.sender = Sender(link, guard, on_sent)
         self.guard = guard
         self.buses = tuple(buses)
         self.log = log
@@ -342,11 +302,8 @@ class Scanner:
         """Sends one request and collects answers until every expected module has answered, or
         ANSWER_WAIT has passed."""
         self._answers, self._pid, self._bus = {}, pid, bus
-        frame = request_frame(pid, bus)
-        self.link.send([frame])
+        self.sender.send(build(0x01, bytes([pid])), bus)
         self.result.requests += 1
-        if self.on_sent:
-            self.on_sent(frame)
         end = time.monotonic() + ANSWER_WAIT
         while time.monotonic() < end:
             self.link.wait(0.005)
@@ -367,13 +324,13 @@ class Scanner:
             if self.guard.fresh():
                 break
             self._ask(bus, 0x0C)
-        self.guard.check()
+        self.guard.check_scan()
         self.result.max_rpm = max(self.result.max_rpm, self.guard.rpm)
 
     def query(self, bus, pid, expect=()) -> dict:
         self._ensure_rpm()
         answers = self._ask(bus, pid, expect)
-        self.guard.check()   # stop if the engine sped up while we waited
+        self.guard.check_scan()   # stop if the engine sped up while we waited
         return answers
 
     def scan(self) -> ScanResult:

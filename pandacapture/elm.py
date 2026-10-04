@@ -186,13 +186,19 @@ class ElmLink:
         self.answers_complete = False
 
     def send(self, frames):
+        from .policy import FUNCTIONAL, PolicyRefused, recognise
         for f in frames:
-            n = f.data[0]
-            if f.addr != 0x7DF or not 1 <= n <= 7 or f.data[1] != 0x01:
-                raise ElmError("Only OBD mode 01 requests go through the ELM327 link.")
+            try:
+                request = recognise(f)        # only what the diagnostic policy allows
+            except PolicyRefused as ex:
+                raise ElmError(f"Refused: {ex}") from None
+            if request.target != FUNCTIONAL:
+                self.elm.command(f"ATSH{request.target:03X}")
             self.answers_complete = False
-            self.pending += [p.Frame(0, can_id, data) for can_id, data in self.elm.request(f.data[1:1 + n])]
+            self.pending += [p.Frame(0, can_id, data) for can_id, data in self.elm.request(request.payload)]
             self.answers_complete = True
+            if request.target != FUNCTIONAL:
+                self.elm.command("ATSH7DF")
 
     def wait(self, seconds):
         frames, self.pending = self.pending, []
