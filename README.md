@@ -481,6 +481,7 @@ pandacapture list | info | dashboard | maps | match | obd | flash | backup | res
 | [docs/wiring.md](docs/wiring.md) | The panda's OBD-C pinout, the comma harness's 26-pin, OBD-II, breakouts, termination |
 | [docs/address-maps.md](docs/address-maps.md) | Writing an address map for the dashboard |
 | [docs/protocol.md](docs/protocol.md) | The panda's USB protocol as PandaCapture uses it, for porting (e.g. to Android) |
+| [docs/diagnostics-plan.md](docs/diagnostics-plan.md) | Plan: reading and clearing codes, and full diagnostics with the engine off |
 | [STATUS.md](STATUS.md) | What's been tested on real hardware, and what hasn't |
 
 ## Privacy
