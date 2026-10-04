@@ -42,6 +42,10 @@
   - Stopping the heartbeats, after a refused request to disable heartbeat checks, disarmed it after 1.6 s.
 
 ## Not yet tested on hardware
+- `pandacapture codes` and the diagnostic policy (2026-10-04): tested against a simulated car
+  (tests/test_codes.py, tests/test_policy.py). Covered: long answers with flow control, a module that
+  needs time (response pending), refusals, broken long answers, through a panda-style link and an
+  ELM327. Not yet run on a car.
 - `pandacapture obd` (2026-10-04): tested against a simulated car (tests/test_obd.py). Covered:
   supported-PID discovery across modules and buses, discarding with reasons, polling, and the
   900 rpm interlock on the scan (blocked before any request, stopped mid-scan, a brief spike), and

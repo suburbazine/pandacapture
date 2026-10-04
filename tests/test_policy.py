@@ -42,16 +42,23 @@ def gear(value):
 
 # ---- the table ----
 
-def test_only_mode_01_is_in_the_table_today():
+# What the table allows today: the standard OBD reads, as (service, parameter length)
+READS = {(0x01, 1), (0x02, 2), (0x03, 0), (0x07, 0), (0x09, 1), (0x0A, 0)}
+
+
+def test_only_the_standard_reads_are_in_the_table_today():
     built = set()
     for sid in range(256):
-        for params in (b"", b"\x0c", b"\x01\x02", b"\x01\x02\x03"):
+        for params in (b"", b"\x0c", b"\x0c\x00", b"\x01\x02\x03"):
             try:
                 build(sid, params)
                 built.add((sid, len(params)))
             except PolicyRefused:
                 pass
-    assert built == {(0x01, 1)}
+    assert built == READS
+    assert all(pol.SERVICES[sid].tier is Tier.READ for sid, _ in READS)
+    with pytest.raises(PolicyRefused, match="freeze frame 00"):
+        build(0x02, b"\x0c\x01")
 
 
 def test_never_services_say_why():
@@ -87,7 +94,7 @@ def test_links_refuse_everything_else():
             r = recognise(f)
         except PolicyRefused:
             continue
-        assert r.payload[0] == 0x01 and len(r.payload) == 2 and f.addr in (0x7DF, 0x7E0)
+        assert (r.payload[0], len(r.payload) - 1) in READS and f.addr in (0x7DF, 0x7E0)
     for refused in (p.Frame(0, 0x7DF, bytes([0x10, 0x14, 0x2E, 0xF1, 0x90, 1, 2, 3])),    # a multi-frame write
                     p.Frame(0, 0x7E0, bytes([2, 0x11, 0x01, 0, 0, 0, 0, 0])),              # ECU reset
                     p.Frame(0, 0x7E0, bytes([2, 0x10, 0x02, 0, 0, 0, 0, 0])),              # programming session
@@ -189,3 +196,16 @@ def test_sender_refuses_requests_not_from_its_table():
     with pytest.raises(PolicyRefused):
         Sender(link, s).send(build(0x04, b"", table=TABLE))   # an entry the real table doesn't have
     assert link.frames == []
+
+
+def test_flow_control_is_the_only_other_frame():
+    f = pol.flow_control(0x7E9, bus=2)
+    assert (f.bus, f.addr, f.data) == (2, 0x7E1, bytes([0x30, 0, 0, 0, 0, 0, 0, 0])) and pol.is_flow_control(f)
+    with pytest.raises(PolicyRefused):
+        pol.flow_control(0x7E0)                      # a request address, not an answer
+    for not_fc in (p.Frame(0, 0x7E0, bytes([0x30, 0x08, 0x14, 0, 0, 0, 0, 0])),     # a block limit
+                   p.Frame(0, 0x316, bytes([0x30, 0, 0, 0, 0, 0, 0, 0])),
+                   p.Frame(0, 0x7DF, bytes([0x30, 0, 0, 0, 0, 0, 0, 0]))):
+        assert not pol.is_flow_control(not_fc)
+        with pytest.raises(PolicyRefused):
+            recognise(not_fc)

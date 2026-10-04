@@ -179,6 +179,8 @@ class ElmLink:
     """The scanner's link over an ELM327: send() makes the request and waits for the prompt, wait() hands
     the answers over as CAN frames (bus 0) and says they're complete."""
 
+    handles_flow_control = True   # an ELM327 does ISO-TP itself and prints every frame of a long answer
+
     def __init__(self, elm: Elm, on_frame):
         self.elm = elm
         self.on_frame = on_frame

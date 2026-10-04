@@ -188,7 +188,7 @@ class PandaSession:
                                   "Flash it with: pandacapture flash")
         self.rate_text = ", ".join(f"bus {b} at {rates[b]} kbit/s" for b in self.buses)
         self.description = f"{pd.serial}, firmware {version}, {self.rate_text}"
-        self.header = [f"# source: {pd.serial}, firmware {version}, acknowledging frames, sending OBD mode 01 requests",
+        self.header = [f"# source: {pd.serial}, firmware {version}, acknowledging frames, sending OBD requests",
                        *[f"# bus {b} (can{b}): {rates[b]} kbit/s" for b in self.buses]]
 
     def link(self, on_frame):
@@ -213,7 +213,7 @@ class ElmSession:
         self.elm = Elm(self.args.elm, self.args.elm_protocol)
         self.rate_text = self.elm.description
         self.description = self.elm.description
-        self.header = [f"# source: {self.elm.description}, OBD mode 01 requests and answers only "
+        self.header = [f"# source: {self.elm.description}, OBD requests and answers only "
                        "(an ELM327 doesn't record the bus)"]
         if self.scanning:
             print("Engine speed will be read over OBD (one request) before anything else is asked.")

@@ -401,6 +401,27 @@ Rules it keeps to:
   it also needs PandaCapture firmware.
 - **Pause other OBD loggers** (a JB4's, a scan tool's) while it runs: they'd get the same answers.
 
+## 8. Read the codes
+
+```bash
+pandacapture codes
+```
+
+```bash
+pandacapture codes --elm COM5
+```
+
+From every OBD module, it reads:
+- the check-engine light, and how many codes it counts
+- **stored, pending and permanent** codes. Each is marked **generic** (its meaning is the same on every
+  car) or **manufacturer** (look it up for the make).
+- the **freeze frame**: the code that stored it, and the engine's values at that moment
+- **vehicle information:** calibration IDs and numbers, and the module's name. The VIN only with
+  `--vin`, since it identifies the car.
+
+Nothing is cleared or changed. It's read-only like `obd`: you type `TRANSMIT` after a warning, and
+it runs at any engine speed. The results are saved as `codes-….json` in the captures folder.
+
 ## Transmitting
 
 ```bash
@@ -465,13 +486,17 @@ pandacapture obd [options]      scan the standard OBD PIDs (key-on or idle), the
   --scan-only                   don't poll
   --seconds N                   stop polling after N seconds
 
+pandacapture codes [options]    read stored, pending and permanent codes, freeze frame, vehicle info
+  --elm PORT                    through an ELM327 instead of the panda
+  --vin                         also read the VIN
+
 pandacapture match CAPTURE [REFERENCE.csv | --obd] [options]     find which fields carry which values
   --map NAME|FILE               map with the RPM signal used to line the logs up
   --ref-rpm COLUMN              the reference's RPM column (default RPM)
   --column NAME                 match only this column (repeatable)
   --top N, --min-r R            how many matches to show, and the weakest to show
 
-pandacapture list | info | dashboard | maps | match | obd | flash | backup | restore | send | replay | selftest      (each has --help)
+pandacapture list | info | dashboard | maps | match | obd | codes | flash | backup | restore | send | replay | selftest      (each has --help)
 ```
 
 ## Documentation

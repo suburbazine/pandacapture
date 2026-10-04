@@ -11,7 +11,9 @@ any frame that doesn't parse back into a request the table allows. Each service 
 
 Some services are never in the table, whatever the engine is doing: NEVER says why.
 
-Today the table holds OBD mode 01 only (pandacapture obd); the plan adds the rest one at a time.
+Today the table holds the standard OBD reads: live data, freeze frame, stored, pending and permanent
+codes, and vehicle information. The plan adds the rest one at a time. Besides requests, the only frame
+sent is ISO-TP flow control, which lets a module send the rest of a long answer (see flow_control).
 """
 
 import enum
@@ -58,11 +60,28 @@ class Service:
 
 
 def _one_pid(params: bytes) -> str:
-    return "" if len(params) == 1 else "mode 01 takes one PID"
+    return "" if len(params) == 1 else "takes one PID"
+
+
+def _pid_and_frame(params: bytes) -> str:
+    return "" if len(params) == 2 and params[1] == 0 else "takes a PID and freeze frame 00"
+
+
+def _no_params(params: bytes) -> str:
+    return "" if not params else "takes no parameters"
+
+
+def _info_type(params: bytes) -> str:
+    return "" if len(params) == 1 else "takes one info type"
 
 
 SERVICES = {
     0x01: Service(0x01, "OBD current data (mode 01)", Tier.READ, _one_pid),
+    0x02: Service(0x02, "OBD freeze frame (mode 02)", Tier.READ, _pid_and_frame),
+    0x03: Service(0x03, "OBD stored codes (mode 03)", Tier.READ, _no_params),
+    0x07: Service(0x07, "OBD pending codes (mode 07)", Tier.READ, _no_params),
+    0x09: Service(0x09, "OBD vehicle information (mode 09)", Tier.READ, _info_type),
+    0x0A: Service(0x0A, "OBD permanent codes (mode 0A)", Tier.READ, _no_params),
 }
 
 NEVER = {
@@ -110,6 +129,23 @@ def recognise(frame, table=None) -> Request:
     if frame.extended or len(d) < 2 or not 1 <= d[0] <= 7 or len(d) < 1 + d[0]:
         raise PolicyRefused("Not a single-frame diagnostic request.")
     return build(d[1], d[2:1 + d[0]], frame.addr, table)
+
+
+# ISO-TP flow control: the one transport frame a tester sends. When a module starts a long answer (a
+# first frame), the tester tells it to send the rest: "continue, no block limit, no gap". It carries no
+# request, so it's allowed on its own terms: exactly this frame, to the module that's answering.
+FLOW_CONTROL = bytes([0x30, 0x00, 0x00, 0, 0, 0, 0, 0])
+
+
+def flow_control(answer_id, bus=0) -> p.Frame:
+    """The flow control for a long answer from answer_id (7E8-7EF): to that module's request id."""
+    if not 0x7E8 <= answer_id <= 0x7EF:
+        raise PolicyRefused(f"{answer_id:03X} isn't an OBD answer address (7E8-7EF).")
+    return p.Frame(bus, answer_id - 8, FLOW_CONTROL)
+
+
+def is_flow_control(frame) -> bool:
+    return not frame.extended and frame.addr in PHYSICAL and bytes(frame.data) == FLOW_CONTROL
 
 
 class VehicleState:
@@ -221,6 +257,13 @@ class Sender:
         self.on_sent = on_sent
         self.table = SERVICES if table is None else table
         self.sent = 0
+
+    def flow_control(self, answer_id, bus=0):
+        """Lets a module send the rest of a long answer (ISO-TP). Not a request: no state needed."""
+        frame = flow_control(answer_id, bus)
+        self.link.send([frame])
+        if self.on_sent:
+            self.on_sent(frame)
 
     def send(self, request: Request, bus=0):
         if self.table.get(request.service.sid) is not request.service:
