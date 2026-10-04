@@ -115,3 +115,24 @@ def test_only_read_tools(a):
         with pytest.raises(ValueError, match="no tool"):
             call(a, name, {})
     assert {t["name"] for t in an.TOOLS} == an.READ_TOOLS and len(an.TOOLS) == 13
+
+
+def test_one_answer_per_row_log(tmp_path):
+    # pandacapture obd writes one answer per row, so each column is mostly blank. Every column keeps only its
+    # own rows: otherwise the gaps leave no neighbouring pairs, and r_changes and r_with_rpm_held come out None
+    cap, _ = build(tmp_path)
+    rows = ["time,RPM,Coolant"]
+    for i in range(0, 600, 10):
+        t = T0 + i * 0.01
+        rpm = int(800 + 1200 * math.sin(math.pi * (i - 160) / 120)) if 160 <= i < 280 else 800
+        rows += [f"{t:.3f},{rpm},", f"{t + 0.005:.3f},,{80 + i // 60}"]
+    ref = tmp_path / "obd-one-per-row.csv"
+    ref.write_text("\n".join(rows) + "\n", encoding="utf-8")
+    a = Analysis(cap, load_map("kia-stinger-33t-pcan"), ref_path=ref, log=lambda s: None)
+    assert len(a.columns["RPM"].times) == 60 and None not in a.columns["RPM"].values
+    r = call(a, "test_field", {**fld("0x3A0", 1, 16), "reference": "RPM"})
+    assert r["r"] > 0.999 and r["r_changes"] > 0.99
+    r = call(a, "test_field", {**fld("0x2C0", 1), "reference": "Coolant"})
+    assert "r_with_rpm_held" in r
+    top = call(a, "search_references", {"reference": "RPM", "top": 1})["results"][0]
+    assert top["r_changes"] is not None

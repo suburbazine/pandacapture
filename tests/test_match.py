@@ -101,3 +101,20 @@ def test_dedupe_keeps_one_per_byte():
     ms = [match.Match("x", c(1, 8), 0.99, 0.9, 0.9, 1, 0, ""), match.Match("x", c(0, 16), 0.99, 0.9, 0.9, 1, 0, ""),
           match.Match("x", c(3, 8), 0.95, 0.9, 0.9, 1, 0, "")]
     assert [m.candidate.byte for m in match.dedupe(ms, 5)] == [1, 3]
+
+
+def test_one_answer_per_row_log(tmp_path):
+    # pandacapture obd writes one answer per row: each column is matched on its own rows, with RPM carried
+    # forward, so the change correlation and "with RPM held" still come out
+    write_capture(tmp_path / "c.log")
+    rows = ["time,RPM,Boost kPa"]
+    for k in range(240):
+        s = 3.0 + k / 8
+        rpm = 800 + 2500 * max(0.0, math.sin(s / 3)) + 300 * math.sin(s * 1.7)
+        boost = 100 + 60 * max(0.0, math.sin(s / 3 + 0.4)) + 10 * math.sin(s * 2.3)
+        rows.append(f"{s:.4f},{rpm:.0f}," if k % 2 == 0 else f"{s:.4f},,{boost:.1f}")
+    (tmp_path / "obd.csv").write_text("\n".join(rows) + "\n")
+    results, _ = match.run(tmp_path / "c.log", tmp_path / "obd.csv", MAP, log=lambda s: None)
+    best = results["Boost kPa"][0]
+    assert (best.candidate.can_id, best.candidate.byte) == (0x123, 1)
+    assert best.r_changes is not None and best.r_changes > 0.9 and best.r_partial is not None

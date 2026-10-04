@@ -362,7 +362,11 @@ def run(capture_path, ref_path, address_map, ref_rpm="RPM", rpm_key="rpm", colum
     if skipped and not columns:
         log(f"  (constant or nearly so in this log, so not matchable: {', '.join(skipped)})")
 
-    rpm_ref = ref.values[ref_rpm]
+    # RPM at every row, carried forward from its last answer: a pandacapture obd CSV has one answer per row
+    rpm_at, last = [], None
+    for v in ref.values[ref_rpm]:
+        last = v if v is not None else last
+        rpm_at.append(last)
     known = {(s.can_id, s.byte, s.bit, s.bits, s.order): s.key for s in address_map.signals if not s.derived}
     series = []
     for cand in candidates(capture):
@@ -370,23 +374,29 @@ def run(capture_path, ref_path, address_map, ref_rpm="RPM", rpm_key="rpm", colum
         present = [v for v in vals if v is not None]
         if len(set(present)) < 3:
             continue
-        r_rpm, _ = pearson(vals, rpm_ref)
-        series.append((cand, vals, r_rpm))
+        series.append((cand, vals))
     log(f"Testing {len(series)} candidate fields on {len(capture.by_id)} IDs against {len(ref.times)} reference rows")
 
     results = {}
     for c in wanted:
-        col = ref.values[c]
-        r_col_rpm, _ = pearson(col, rpm_ref)
+        # Only this column's own rows, so the changes from one answer to the next have neighbours to compare
+        rows = [i for i, v in enumerate(ref.values[c]) if v is not None]
+        col = [ref.values[c][i] for i in rows]
+        rpm_c = [rpm_at[i] for i in rows]
+        r_col_rpm, _ = pearson(col, rpm_c)
         found = []
-        for cand, vals, r_rpm in series:
+        for cand, all_vals in series:
+            vals = [all_vals[i] for i in rows]
             r, n = pearson(vals, col)
             if r is None or abs(r) < min_r:
                 continue
             a, b = fit(vals, col)
             key = known.get((cand.can_id, cand.byte, cand.bit, cand.bits, cand.order), "")
-            found.append(Match(c, cand, r, pearson_changes(vals, col),
-                               partial(r, r_rpm, r_col_rpm) if c != ref_rpm else None, a, b, key))
+            held = None
+            if c != ref_rpm:
+                r_rpm, _ = pearson(vals, rpm_c)
+                held = partial(r, r_rpm, r_col_rpm)
+            found.append(Match(c, cand, r, pearson_changes(vals, col), held, a, b, key))
         # Strongest first. Near-ties (within 0.001) go to a field the map already has, then the simplest
         # layout: byte-aligned, 8 bits, little-endian, unsigned. A wider field that merely contains the
         # real byte correlates just as well, so it mustn't win.

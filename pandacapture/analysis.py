@@ -222,7 +222,11 @@ class Analysis:
         keys = {c: (c if c not in self.columns else f"{c} ({name})") for c in ref.columns}
         rpm = keys.get(ref_rpm, "")
         for c in ref.columns:
-            self.columns[keys[c]] = Column(keys[c], name, times, ref.values[c], rpm)
+            # Each column keeps only its own rows: a pandacapture obd CSV has one answer per row, and the
+            # blanks between would leave r_changes and "with RPM held" no neighbouring pairs to work with
+            vals = ref.values[c]
+            keep = [i for i, v in enumerate(vals) if v is not None]
+            self.columns[keys[c]] = Column(keys[c], name, [times[i] for i in keep], [vals[i] for i in keep], rpm)
 
     def column(self, name) -> Column:
         if name in self.columns:
