@@ -341,6 +341,43 @@ That's how the Stinger map's lambda, fuel trims, OBD throttle and fuel rail pres
 against the ECU's own answers. A match is evidence, not proof: add it to a map as `observed` until
 it's checked.
 
+## 7. Scan the OBD PIDs
+
+The panda can ask the car's modules for standard OBD data itself, like a scan tool, with no other
+hardware:
+
+```bash
+pandacapture obd
+```
+
+1. **Listens first:** finds the bit rates and which buses have traffic, and reads the engine speed
+   from the address map's RPM signal.
+2. **Scans:** asks every module on each bus which standard (mode 01) PIDs it supports, and reads
+   each one once.
+3. **Sorts them:** a PID is kept on each bus where a module answered with a real value. PIDs that
+   gave nothing real on any bus (no answer, `FF` "not available", an answer too long to read) are
+   discarded, and the scan's report lists each one with the reason.
+4. **Polls** the kept PIDs one after another until you press `Q` (or after `--seconds N`;
+   `--scan-only` skips it).
+
+It saves three files in the captures folder:
+- **`obd-scan-….json`:** what each module supports, the values read, and the discarded PIDs with
+  their reasons.
+- **`capture-….log`:** everything received, OBD answers included, so `match --obd` works on it.
+- **`obd-….csv`:** the decoded answers, with engine speed as `RPM`, ready to use as a Find signals
+  reference.
+
+Rules it keeps to:
+- **Read-only:** the only request it sends is mode 01 "current data" (`02 01 PID`) to `0x7DF`, one
+  at a time. Nothing that clears codes, changes settings or writes.
+- **Key-on or idle only:** blocked above 900 rpm. The limit is fixed: no option changes it. Engine
+  speed is checked before and after every request, and any reading above 900 rpm between checks
+  stops it, scan or poll. With no RPM signal in the map, it reads RPM over OBD (one request) before
+  anything else. If engine speed isn't known, it doesn't scan.
+- **The transmit acknowledgement:** it needs PandaCapture firmware and you type `TRANSMIT`, as for
+  `send`.
+- **Pause other OBD loggers** (a JB4's, a scan tool's) while it runs: they'd get the same answers.
+
 ## Transmitting
 
 ```bash
@@ -397,13 +434,19 @@ pandacapture dashboard [options]      live gauges in the browser
   --mode normal|high            the page's starting update rate
   --app                         a borderless app window (Edge or Chrome) instead of a browser tab
 
+pandacapture obd [options]      scan the standard OBD PIDs, then poll the ones that answer (key-on or idle)
+  --bus N                       bus to scan (repeatable; default: every bus with traffic)
+  --map NAME|FILE, --rpm-key K  where the engine's broadcast RPM comes from (default: the built-in map's rpm)
+  --scan-only                   don't poll
+  --seconds N                   stop polling after N seconds
+
 pandacapture match CAPTURE [REFERENCE.csv | --obd] [options]     find which fields carry which values
   --map NAME|FILE               map with the RPM signal used to line the logs up
   --ref-rpm COLUMN              the reference's RPM column (default RPM)
   --column NAME                 match only this column (repeatable)
   --top N, --min-r R            how many matches to show, and the weakest to show
 
-pandacapture list | info | dashboard | maps | match | flash | backup | restore | send | replay | selftest      (each has --help)
+pandacapture list | info | dashboard | maps | match | obd | flash | backup | restore | send | replay | selftest      (each has --help)
 ```
 
 ## Documentation

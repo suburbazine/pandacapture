@@ -83,8 +83,9 @@ class TxLog:
 class ArmedPanda:
     """Context manager: arms transmit on entry, disarms on exit (even after an error)."""
 
-    def __init__(self, panda):
+    def __init__(self, panda, on_frame=None):
         self.panda = panda
+        self.on_frame = on_frame   # called with each frame received from the bus while armed
         self._last_beat = 0.0
         self.returned = 0
         self.rejected = 0
@@ -134,12 +135,15 @@ class ArmedPanda:
         self.drain()
 
     def drain(self):
-        """Counts the panda's echoes: 'returned' = went out on the bus, 'rejected' = refused."""
+        """Counts the panda's echoes ('returned' = went out on the bus, 'rejected' = refused), and hands
+        everything else received to on_frame."""
         for f in self._unpacker.feed(self.panda.read_can(5)):
             if f.returned:
                 self.returned += 1
             elif f.rejected:
                 self.rejected += 1
+            elif self.on_frame:
+                self.on_frame(f)
 
     def wait(self, seconds):
         """Sleeps, keeping the heartbeat going."""

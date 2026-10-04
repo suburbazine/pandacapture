@@ -42,6 +42,10 @@
   - Stopping the heartbeats, after a refused request to disable heartbeat checks, disarmed it after 1.6 s.
 
 ## Not yet tested on hardware
+- `pandacapture obd` (2026-10-04): tested against a simulated car (tests/test_obd.py). Covered:
+  supported-PID discovery across modules and buses, discarding with reasons, polling, and the
+  900 rpm interlock (blocked before any request, stopped mid-scan, a brief spike). Not yet run on
+  a car.
 - RP1210 and J2534 adapters (2026-10-03). Tested against a fake driver DLL (tests/fake_driver.c),
   64-bit, for both APIs: frames, transmit echoes skipped, lost-adapter errors, refused bit rates.
   NEXIQ's real 32-bit RP1210 and J2534 drivers load in the 32-bit bridge and report
