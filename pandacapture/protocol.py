@@ -1,7 +1,7 @@
 """The panda's USB protocol, as far as PandaCapture uses it.
 
-Constants and pure functions with no USB access, so they can be tested anywhere and ported to the
-FrostBYTE Android app (docs/protocol.md describes the same things). They follow comma's panda
+Constants and pure functions with no USB access, so they can be tested anywhere and ported to other
+apps (docs/protocol.md describes the same things). They follow comma's panda
 firmware and Python library (MIT licence), pinned in firmware/panda.
 """
 

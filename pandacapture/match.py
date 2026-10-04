@@ -1,6 +1,6 @@
 """Matches unknown CAN fields against a reference recorded at the same time, to find which bytes
-carry which values and how they're scaled. The reference is either a log from another tool (a JB4
-log, or any CSV with a time column), or the OBD answers in the capture itself: when a JB4 or scan
+carry which values and how they're scaled. The reference is either a log from another tool (a
+logger's CSV with a time column), or the OBD answers in the capture itself: when a logger or scan
 tool polls the ECU on the same bus, its requests and the ECU's replies are in the capture.
 
 1. Align: the reference log's clock is fitted to the capture's, by finding the time unit and offset
@@ -42,7 +42,7 @@ class Reference:
 
 
 def read_reference(path, time_column=None) -> Reference:
-    """A CSV whose header row starts with a time column (a JB4 log's settings rows come first)."""
+    """A CSV whose header row starts with a time column (some loggers put settings rows first)."""
     with open(path, encoding="utf-8", errors="replace", newline="") as f:
         rows = list(csv.reader(f))
     names = (time_column,) if time_column else ("timestamp", "time", "time_s", "t")

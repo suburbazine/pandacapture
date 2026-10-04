@@ -25,7 +25,7 @@ MODULES = ("analysis.py", "match.py", "logs.py", "signals.py", "protocol.py", "f
 
 class Mode01Filter:
     """Keeps OBD mode 01 exchanges (live values: what serves as references) and nothing else diagnostic.
-    Requests may ask for several PIDs (a JB4 does), so answers can be long: a first frame starting 41, its
+    Requests may ask for several PIDs (some loggers do), so answers can be long: a first frame starting 41, its
     consecutive frames, and the tester's flow control are kept with it. Mode 09 (the VIN), UDS reads and the
     rest are dropped."""
 
@@ -273,7 +273,7 @@ def main(argv) -> int:
         "Packs a capture for another agent (your own Claude account, Claude Code, a colleague): scrubbed, with "
         "the reference log, the address map, and PandaCapture's analysis tools as a small Python program."))
     ap.add_argument("capture")
-    ap.add_argument("reference", nargs="?", help="a log recorded alongside (JB4 CSV, pandacapture obd CSV)")
+    ap.add_argument("reference", nargs="?", help="a log recorded alongside (a logger's CSV, pandacapture obd CSV)")
     ap.add_argument("--map", help="the vehicle's address map (default: the built-in one, if there's one)")
     ap.add_argument("--bus", type=int, default=0, help="the bus the tools analyse (default 0)")
     ap.add_argument("--ref-rpm", default="RPM", help="the reference's RPM column (default RPM)")

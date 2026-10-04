@@ -8,7 +8,7 @@ lines (which name the panda's serial number) are never read out, only its marker
 
 References, all on the capture's clock (seconds from its first frame):
 - the engine computer's OBD answers in the capture ("OBD ..." columns, as pandacapture match --obd)
-- a log recorded alongside: a JB4 or other CSV (lined up by RPM), or a pandacapture obd CSV (by clock time)
+- a log recorded alongside: a logger's CSV (lined up by RPM), or a pandacapture obd CSV (by clock time)
 - any frame signal of the address map, decoded from the capture ("map:<key>")
 """
 
@@ -28,7 +28,7 @@ TEXT_SHARE = 0.2       # an id is withheld when this share of its frames carry t
 MAX_POINTS = 120       # most points a series tool returns
 MAX_FRAMES = 200       # most frames frames_window returns
 MAP_GRID = 0.1         # s between samples of a map signal used as a reference
-COUNTER_CHANGE_RATE = 0.5   # fields changing on more than this share of frames are counters/checksums (FrostBYTE)
+COUNTER_CHANGE_RATE = 0.5   # fields changing on more than this share of frames are counters/checksums
 
 EVENT = re.compile(r"^#\s*(marker\s+\S+|stall ended|stall|adapter error|reconnected|panda dropped|dropped)\b(.*?)\(?"
                    r"(\d{9,}\.\d+)\)?", re.I)
@@ -390,7 +390,7 @@ class Analysis:
              "scale": _sig(m.scale), "offset": _sig(m.offset)} for m in dedupe(found, top)]}
 
     def what_moved(self, a) -> dict:
-        """FrostBYTE's "What moved?": fields that moved between start and end, scored against a still baseline
+        """What moved: fields that moved between start and end, scored against a still baseline
         (the start of the capture up to baseline_end_s; -1 for none). Counters and checksums are left out."""
         start, end = float(a["start_s"]), float(a["end_s"])
         base_end = float(a["baseline_end_s"])
