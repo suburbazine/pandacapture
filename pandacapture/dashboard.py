@@ -347,7 +347,7 @@ class MatchJob:
         self.lock = threading.Lock()
         self.state = {"state": "idle"}
 
-    def start(self, capture, reference, address_map, label):
+    def start(self, capture, reference, address_map, label, keep=False):
         from . import match
         with self.lock:
             if self.state.get("state") == "running":
@@ -383,7 +383,7 @@ class MatchJob:
                     self.state = {"state": "error", "capture": capture.name, "reference": label, "log": lines,
                                   "error": str(e)}
             finally:
-                if label != "obd" and reference:
+                if label != "obd" and reference and not keep:
                     Path(reference).unlink(missing_ok=True)
 
         threading.Thread(target=work, daemon=True, name="pandacapture-match").start()
@@ -405,9 +405,13 @@ def list_captures(folder: Path, recording: str):
     return out
 
 
+LOCAL = ("127.0.0.1", "::1", "::ffff:127.0.0.1")
+
+
 def make_handler(dash):
     state, reader, stopping = dash.state, dash.reader, dash.stopping
     page = (web_dir() / "dashboard.html").read_bytes()
+    captures_page = (web_dir() / "captures.html").read_bytes()
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args):
@@ -424,11 +428,54 @@ def make_handler(dash):
         def _json(self, payload, code=200):
             self._send(json.dumps(payload).encode("utf-8"), "application/json", code)
 
+        def _local(self) -> bool:
+            """Claude runs (they spend money on your key) and bundles only from this computer, not --lan devices."""
+            if self.client_address[0] in LOCAL:
+                return True
+            self._json({"error": "Only from the computer running PandaCapture."}, 403)
+            return False
+
+        def _capture(self, name):
+            names = {c["name"] for c in list_captures(reader.record_dir, state.recording)}
+            if name not in names:
+                raise ValueError("Pick a capture from the list.")
+            return reader.record_dir / name
+
         def do_GET(self):
             url = urlsplit(self.path)
             path = url.path
             if path in ("/", "/index.html"):
                 self._send(page, "text/html; charset=utf-8")
+            elif path == "/captures.html":
+                self._send(captures_page, "text/html; charset=utf-8")
+            elif path == "/references":
+                self._json({"references": dash.references.listing()})
+            elif path == "/claude":
+                from .ai import MODELS
+                from .workbench import key_status
+                self._json({**dash.claude.snapshot(), "key": key_status(), "models": MODELS,
+                            "local": self.client_address[0] in LOCAL})
+            elif path == "/bundle":
+                if not self._local():
+                    return
+                q = parse_qs(url.query)
+                try:
+                    capture = self._capture((q.get("capture") or [""])[0])
+                    ref, ref_name = dash.references.get((q.get("ref") or [""])[0])
+                    from .workbench import bundle_bytes
+                    with state.lock:
+                        current = state.map
+                    data = bundle_bytes(capture, current, ref, ref_name)
+                except (ValueError, OSError) as e:
+                    self._json({"error": str(e)}, 400)
+                    return
+                self.send_response(200)
+                self.send_header("Content-Type", "application/zip")
+                self.send_header("Content-Disposition", f'attachment; filename="{capture.stem}-bundle.zip"')
+                self.send_header("Content-Length", str(len(data)))
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(data)
             elif path == "/map":
                 with state.lock:
                     self._json(state.map.to_json())
@@ -493,16 +540,36 @@ def make_handler(dash):
                         return
                     state.set_map(load_map(name))
                     self._json({"map": state.map.name})
+                elif url.path == "/reference":
+                    if not body:
+                        raise ValueError("Choose a CSV file.")
+                    name = (parse_qs(url.query).get("filename") or ["reference.csv"])[0]
+                    self._json({"id": dash.references.add(body, name), "name": name})
+                elif url.path in ("/claude/prepare", "/claude/start", "/claude/cancel"):
+                    if not self._local():
+                        return
+                    if url.path == "/claude/prepare":
+                        req = json.loads(body or b"{}")
+                        capture = self._capture(req.get("capture", ""))
+                        ref, ref_name = dash.references.get(req.get("ref", ""))
+                        with state.lock:
+                            current = state.map
+                        dash.claude.prepare(capture, ref, ref_name, current, req.get("model", "opus"),
+                                            req.get("effort", "high"), float(req.get("max_cost", 2.0)))
+                    elif url.path == "/claude/start":
+                        dash.claude.start()
+                    else:
+                        dash.claude.cancel()
+                    self._json(dash.claude.snapshot())
                 elif url.path == "/match":
                     q = parse_qs(url.query)
-                    name = (q.get("capture") or [""])[0]
-                    names = {c["name"] for c in list_captures(reader.record_dir, state.recording)}
-                    if name not in names:
-                        self._json({"error": "Pick a capture from the list."}, 400)
-                        return
-                    capture = reader.record_dir / name
-                    if (q.get("ref") or ["obd"])[0] == "obd":
+                    capture = self._capture((q.get("capture") or [""])[0])
+                    rid = (q.get("ref") or ["obd"])[0]
+                    if rid == "obd":
                         dash.match.start(capture, None, state.map, "obd")
+                    elif rid in {r["id"] for r in dash.references.listing()}:
+                        path, name = dash.references.get(rid)
+                        dash.match.start(capture, str(path), state.map, name, keep=True)
                     else:
                         if not body:
                             self._json({"error": "Choose the reference CSV (e.g. the JB4 log)."}, 400)
@@ -514,7 +581,7 @@ def make_handler(dash):
                     self._json({"started": True})
                 else:
                     self.send_error(404)
-            except (ValueError, MapError, OSError) as e:
+            except (ValueError, MapError, OSError, json.JSONDecodeError) as e:
                 self._json({"error": str(e)}, 400)
 
         def _event(self, kind, payload):
@@ -548,6 +615,9 @@ class Dashboard:
         self.reader = Reader(open_source, self.state, record_dir=record_dir, record=record, split_mb=split_mb,
                              log=log)
         self.match = MatchJob()
+        from .workbench import ClaudeJob, References
+        self.references = References()
+        self.claude = ClaudeJob(self.reader.record_dir)
         self.server = ThreadingHTTPServer((host, port), make_handler(self))
         self.server.daemon_threads = True
         # 127.0.0.1, not localhost: the server is IPv4-only, and Windows tries IPv6 first for localhost
@@ -563,3 +633,5 @@ class Dashboard:
         self.server.shutdown()
         self.server.server_close()
         self.reader.join(timeout=3)
+        self.claude.cancel()
+        self.references.close()

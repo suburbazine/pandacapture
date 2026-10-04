@@ -165,7 +165,8 @@ def apikey_main(argv) -> int:
 class Session:
     """One analysis: the requests, the tool calls, the proposals, and what it cost."""
 
-    def __init__(self, client, model, analysis: Analysis, log=print, max_turns=20, max_cost=2.0, effort="high"):
+    def __init__(self, client, model, analysis: Analysis, log=print, max_turns=20, max_cost=2.0, effort="high",
+                 cancelled=lambda: False):
         if model not in PRICES:
             raise AnalyzeError(f"{model} isn't one of the models PandaCapture uses ({', '.join(MODELS.values())}).")
         self.client = client
@@ -175,6 +176,7 @@ class Session:
         self.max_turns = max_turns
         self.max_cost = max_cost
         self.effort = effort
+        self.cancelled = cancelled     # checked between turns (the dashboard's Cancel)
         self.proposals = []
         self.rejected = []
         self.tool_calls = 0
@@ -206,6 +208,9 @@ class Session:
     def run(self):
         messages = self.first_message()
         for turn in range(self.max_turns):
+            if self.cancelled():
+                self.stopped = "Cancelled."
+                break
             response = self.client.messages.create(**self.request_params(messages))
             self._count(response.usage)
             messages.append({"role": "assistant", "content": response.content})

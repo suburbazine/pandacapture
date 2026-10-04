@@ -235,12 +235,12 @@ if __name__ == "__main__":
 '''
 
 
-def write_bundle(capture, address_map, out_path, reference=None, bus=0, ref_rpm="RPM") -> dict:
+def write_bundle(capture, address_map, out_path, reference=None, bus=0, ref_rpm="RPM", ref_name=None) -> dict:
     """Writes the zip; returns what went in."""
     text, summary = scrub(capture)
     stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
     root = f"pandacapture-bundle-{stamp}"
-    ref_name = Path(reference).name if reference else None
+    ref_name = (ref_name or Path(reference).name) if reference else None
     info = {"made": dt.datetime.now().isoformat(timespec="seconds"), "pandacapture": __version__,
             "capture": Path(capture).name, "bus": bus, "reference": ref_name, "ref_rpm": ref_rpm,
             "map": address_map.name, **summary}

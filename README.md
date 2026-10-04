@@ -288,9 +288,27 @@ The bar at the top of the page:
 | **Record / Stop** | records a capture while you watch, with the elapsed time. It rolls over to a new file every 100 MB, as above |
 | **Marker** | drops a numbered marker into the recording. The `M` key does the same |
 | **Map** | switches address map. Every open page reloads with it |
-| **Find signals** | runs [`match`](#6-find-unknown-signals) on a recorded capture. The reference is the ECU's OBD answers in it, or an uploaded JB4 log. It lists the ranked fields, and **Copy entry** copies a ready-made map entry |
+| **Captures** | opens the Captures & Claude page in its own window (below); the gauges keep running |
 | **Normal / High resolution** | Normal updates each value 10 times a second. High resolution streams every sample as fast as the bus sends it, with a 10-second trace and the update rate on each tile |
 | **Theme, Full screen** | light or dark, and the whole screen for the car |
+
+The gauge page holds only what's needed while driving. Everything else is on the **Captures & Claude**
+page:
+- **Captures:** the captures folder, newest first.
+- **Reference:** the OBD answers in the capture, or a JB4 or `obd` log you add. Logs you add are kept
+  until the dashboard stops.
+- **Find signals:** runs [`match`](#6-find-unknown-signals) on this computer and lists the ranked fields;
+  **Copy entry** copies a ready-made map entry.
+- **Download bundle:** the capture packed with the analysis tools for another agent ([below](#hand-a-capture-to-another-agent)).
+- **Analyze with Claude:** the same as [`analyze`](#let-claude-study-a-capture), with your API key. It
+  shows what would be sent and what the first request costs, and nothing goes out until you press
+  **Send**. Proposals come back checked against the capture, with **Copy entry** and **Download map
+  entries**.
+
+![The Captures & Claude page: Find signals on a Stinger capture](docs/images/captures-page.png)
+
+Claude runs and bundle downloads only work from the computer running PandaCapture, not from devices
+reaching the page through `--lan`.
 
 The page only listens on this computer unless you start it with `--lan`. The controls reach as far
 as the page does.
@@ -325,9 +343,8 @@ pandacapture match captures/capture-20261003-035135.log jb4-log.csv --map kia-st
    checks against coincidences. **changes** catches two values that merely drift together.
    **RPM held** catches two that both just follow engine speed.
 
-The dashboard's **Find signals** button runs the same match on a capture it recorded:
-
-![Find signals ranking CAN fields against the ECU's own OBD answers](docs/images/find-signals.png)
+The dashboard's Captures & Claude page runs the same match on a capture it recorded (screenshot
+[above](#5-watch-it-live)).
 
 **The capture can calibrate itself:** if a JB4 or scan tool polls the ECU over OBD on the same bus,
 its requests and the ECU's answers are in the capture. `--obd` uses those answers as the reference,
@@ -372,7 +389,11 @@ capture before you see it. It uses **your own Anthropic API key**, billed to you
    saved as `analysis-….json`, with `map_entries` ready to paste into a map, marked `observed`. No map is
    changed.
 
-It stops at about $2 or 20 turns (`--max-cost`, `--max-turns`) and prints what it used. A short capture
+It stops at about $2 or 20 turns (`--max-cost`, `--max-turns`) and prints what it used. The dashboard's
+Captures & Claude page does the same from the browser:
+
+![Analyze with Claude on the Captures & Claude page](docs/images/claude-panel.png)
+ A short capture
 with the engine computer's OBD answers in it (a JB4 or `pandacapture obd` polling meanwhile) gives it
 the most to work with.
 

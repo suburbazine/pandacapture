@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>PandaCapture Captures</title>
+<style>
+  /* The same tokens as the gauge page, so both pages read as one tool */
+  :root {
+    --bg: #0b0e13; --panel: #141922; --panel-2: #1b2230; --line: #2a3344;
+    --text: #e8edf5; --muted: #8b97ab; --faint: #556074; --accent: #4fb3ff;
+    --warn: #ffb020; --alert: #ff4d4f; --green: #35d07f;
+    --radius: 12px; --pad: 16px; --ctl: 40px;
+    color-scheme: dark;
+  }
+  :root[data-theme="light"] {
+    --bg: #f3f5f9; --panel: #ffffff; --panel-2: #e9edf3; --line: #d8dee8;
+    --text: #141a24; --muted: #5c6779; --faint: #9aa3b2; --accent: #0b74d1;
+    --warn: #c77700; --alert: #d92d2f; --green: #148a4b;
+    color-scheme: light;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { margin: 0; }
+  body { background: var(--bg); color: var(--text); font: 15px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+         -webkit-font-smoothing: antialiased; overflow-x: hidden; }
+
+  header { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+           padding: 10px var(--pad); background: color-mix(in srgb, var(--bg) 90%, transparent);
+           backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
+  .title { display: flex; flex-direction: column; min-width: 0; flex: 1 1 200px; }
+  .title strong { font-size: 16px; }
+  .title span { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ctl { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: var(--ctl);
+         padding: 0 14px; border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 10px;
+         font: inherit; font-size: 14px; white-space: nowrap; cursor: pointer; text-decoration: none; }
+  .ctl:hover:not(:disabled) { border-color: var(--accent); }
+  .ctl:disabled { opacity: .45; cursor: default; }
+  .ctl.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .ctl.danger { border-color: color-mix(in srgb, var(--alert) 60%, var(--line)); }
+  .ctl svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .ctl.small { min-height: 32px; padding: 0 10px; font-size: 12px; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .seg button { min-height: calc(var(--ctl) - 2px); padding: 0 12px; border: 0; background: var(--panel); color: var(--muted);
+                font: inherit; font-size: 14px; cursor: pointer; }
+  .seg button + button { border-left: 1px solid var(--line); }
+  .seg button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+
+  main { max-width: 1100px; margin: 0 auto; padding: 16px var(--pad) 40px; display: grid; gap: 16px; }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; min-width: 0; }
+  section > h2 { margin: 0 0 4px; font-size: 16px; }
+  .hint { color: var(--muted); font-size: 13px; margin: 0 0 12px; }
+  .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .grow { flex: 1 1 auto; }
+  label.lbl { display: block; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .06em; margin: 12px 0 6px; }
+  select, input[type=number], input[type=file] { min-height: var(--ctl); background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; font: inherit; max-width: 100%; }
+  .radio { display: block; margin: 8px 0; }
+  .radio small { color: var(--muted); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; }
+  tbody tr.pick { cursor: pointer; }
+  tbody tr.pick:hover { background: var(--panel-2); }
+  tbody tr.sel { background: color-mix(in srgb, var(--accent) 14%, var(--panel)); }
+  .scroll { overflow-x: auto; }
+  .tag { display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 11px; background: var(--panel-2); color: var(--muted); }
+  .tag.rec { color: var(--alert); }
+  .tag.warn { color: var(--warn); }
+  .tag.ok, .tag.known { color: var(--green); }
+  .empty { color: var(--muted); padding: 12px 0; }
+
+  pre.log { background: var(--panel-2); border-radius: 8px; padding: 10px; font-size: 12px; white-space: pre-wrap;
+            max-height: 180px; overflow: auto; margin: 12px 0 0; }
+  .res { margin-top: 16px; }
+  .res h3 { margin: 0 0 6px; font-size: 14px; }
+  .state { margin: 12px 0 0; font-size: 14px; }
+  .state.err { color: var(--alert); }
+  .card { background: var(--panel-2); border-radius: 10px; padding: 12px 14px; margin-top: 12px; }
+  .card ul { margin: 6px 0 10px; padding-left: 20px; }
+  .card li { margin: 3px 0; }
+  .summary { white-space: pre-wrap; margin: 12px 0 0; }
+  .key-ok { color: var(--green); }
+  .key-no { color: var(--warn); }
+  code { background: var(--panel-2); padding: 1px 5px; border-radius: 5px; font-size: 13px; }
+  .card code { background: var(--panel); }
+
+  .banner { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 3; max-width: calc(100vw - 32px);
+            padding: 10px 14px; border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); display: none; }
+  .banner.show { display: block; }
+
+  @media (max-width: 720px) {
+    .ctl .txt { display: none; }
+    :root { --pad: 12px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="title"><strong>Captures &amp; Claude</strong><span id="sub">PandaCapture</span></div>
+  <a class="ctl" href="/" target="pandacapture-gauges" title="The gauges (their own window)">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 16a8 8 0 1 1 16 0M12 16l4-5"/></svg><span class="txt">Gauges</span></a>
+  <button class="ctl" id="theme" type="button" title="Switch light/dark" aria-label="Switch light/dark theme">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9c0-.5 0-1-.1-1.4A6 6 0 0 1 13.4 3.1C13 3 12.5 3 12 3z"/></svg></button>
+</header>
+
+<main>
+  <section>
+    <div class="row"><h2 class="grow">Captures</h2>
+      <button class="ctl small" id="refresh" type="button">Refresh</button></div>
+    <p class="hint" id="folder">Recordings from this computer's captures folder, newest first. Pick one.</p>
+    <div class="scroll"><table><thead><tr><th>Capture</th><th>Size</th><th>Recorded</th><th></th></tr></thead>
+      <tbody id="capList"></tbody></table></div>
+  </section>
+
+  <section>
+    <h2>Reference</h2>
+    <p class="hint">Values recorded at the same time, to line fields up against.</p>
+    <label class="radio"><input type="radio" name="ref" value="obd" checked> The engine computer's OBD answers in the capture
+      <small>(a JB4, scan tool or <code>pandacapture obd</code> polling while it was recorded)</small></label>
+    <label class="radio"><input type="radio" name="ref" value="log"> A log recorded alongside
+      <small>(a JB4 CSV, or a <code>pandacapture obd</code> CSV)</small></label>
+    <div class="row" id="logRow" hidden>
+      <select id="refSel" aria-label="Reference log"></select>
+      <input type="file" id="refFile" accept=".csv,.CSV,text/csv" aria-label="Add a reference log">
+    </div>
+  </section>
+
+  <section>
+    <h2>Find signals</h2>
+    <p class="hint">Ranks every CAN field of the capture against each value in the reference, on this computer.
+      Nothing is sent anywhere.</p>
+    <div class="row"><button class="ctl primary" id="runFind" type="button">Find signals</button>
+      <span class="hint" id="findState" style="margin:0"></span></div>
+    <pre class="log" id="findLog" hidden></pre>
+    <div id="findResults"></div>
+  </section>
+
+  <section>
+    <h2>Bundle for another agent</h2>
+    <p class="hint">The capture, the reference and the map, with PandaCapture's analysis tools, for your own Claude
+      account, Claude Code or a colleague. The capture is scrubbed: no header (it names the panda), no ids whose frames
+      carry text (which can include the VIN), and of the diagnostics only OBD live values.</p>
+    <button class="ctl" id="bundle" type="button">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>Download bundle</button>
+  </section>
+
+  <section id="claude">
+    <h2>Analyze with Claude</h2>
+    <p class="hint">Claude studies the capture's statistics with read-only tools and proposes address-map entries, each
+      checked against the capture before you see it. It never sees the capture itself, nothing it does can reach the
+      car's bus, and no map is changed. Billed to your own Anthropic API key.</p>
+    <p id="keyLine"></p>
+    <div id="claudeForm">
+      <label class="lbl">Model</label>
+      <span class="seg" role="group" aria-label="Model">
+        <button type="button" data-model="opus" aria-pressed="true">Claude Opus 5.5</button>
+        <button type="button" data-model="fable" aria-pressed="false">Claude Fable 5.1 <small>(≈2.5× price)</small></button>
+      </span>
+      <div class="row">
+        <div><label class="lbl" for="effort">Effort</label>
+          <select id="effort"><option value="medium">Medium</option><option value="high" selected>High</option>
+            <option value="xhigh">Extra high</option><option value="max">Max</option></select></div>
+        <div><label class="lbl" for="maxCost">Stop at about ($)</label>
+          <input type="number" id="maxCost" min="0.1" max="50" step="0.5" value="2"></div>
+      </div>
+      <div class="row" style="margin-top:14px"><button class="ctl primary" id="prepare" type="button">Prepare</button>
+        <span class="hint" style="margin:0">Shows what would be sent and what the first request costs. Nothing is
+          sent until you confirm.</span></div>
+    </div>
+    <p class="state" id="claudeState"></p>
+    <div class="card" id="confirm" hidden></div>
+    <pre class="log" id="claudeLog" hidden></pre>
+    <div class="row" id="runningRow" hidden style="margin-top:12px">
+      <button class="ctl danger" id="cancel" type="button">Cancel</button>
+      <span class="hint" style="margin:0">Stops after the current turn.</span></div>
+    <div id="claudeResults"></div>
+  </section>
+</main>
+<div class="banner" id="banner"></div>
+
+<script>
+(() => {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+  const root = document.documentElement;
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+  const post = (path, body, raw) => fetch(path, raw ? { method: "POST", body } :
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) })
+    .then(async (r) => { const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || r.statusText); return j; });
+  const flash = (text) => {
+    const b = $("banner"); b.textContent = text; b.classList.add("show");
+    clearTimeout(flash.t); flash.t = setTimeout(() => b.classList.remove("show"), 4000);
+  };
+  const remember = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
+  const recall = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+  const copy = (text) => (navigator.clipboard?.writeText(text) ?? Promise.reject())
+    .then(() => flash("Map entry copied"), () => { prompt("Copy this map entry:", text); });
+  const money = (x) => `$${Number(x).toFixed(x < 0.1 ? 3 : 2)}`;
+
+  // ---- theme, shared with the gauge page ----
+  if (recall("pc-theme")) root.dataset.theme = recall("pc-theme");
+  $("theme").onclick = () => {
+    root.dataset.theme = root.dataset.theme === "light" ? "dark" : "light";
+    remember("pc-theme", root.dataset.theme);
+  };
+  fetch("/maps").then((r) => r.json()).then((m) => { $("sub").textContent = `Address map: ${m.current}`; });
+
+  // ---- captures ----
+  let capture = recall("pc-capture") || "";
+  function loadCaptures() {
+    fetch("/captures").then((r) => r.json()).then((c) => {
+      $("folder").textContent = `Recordings in ${c.folder}, newest first. Pick one.`;
+      if (!c.captures.some((x) => x.name === capture)) capture = c.captures.find((x) => !x.recording)?.name || "";
+      $("capList").innerHTML = c.captures.length ? c.captures.map((x) => `
+        <tr class="pick${x.name === capture ? " sel" : ""}" data-name="${esc(x.name)}">
+          <td><label><input type="radio" name="cap" value="${esc(x.name)}"${x.name === capture ? " checked" : ""}> ${esc(x.name)}</label></td>
+          <td>${(x.size / 1048576).toFixed(1)} MB</td><td>${esc(x.modified)}</td>
+          <td>${x.recording ? '<span class="tag rec">recording now</span>' : ""}</td></tr>`).join("")
+        : `<tr><td colspan="4" class="empty">No captures yet: record one from the gauges (Record).</td></tr>`;
+      $("capList").querySelectorAll("tr.pick").forEach((tr) => tr.onclick = () => pick(tr.dataset.name));
+    });
+  }
+  function pick(name) {
+    capture = name; remember("pc-capture", name);
+    $("capList").querySelectorAll("tr.pick").forEach((tr) => {
+      const on = tr.dataset.name === name;
+      tr.classList.toggle("sel", on); tr.querySelector("input").checked = on;
+    });
+  }
+  $("refresh").onclick = loadCaptures;
+
+  // ---- reference: the capture's OBD answers, or an uploaded log kept for the session ----
+  const refKind = () => document.querySelector("input[name=ref]:checked").value;
+  const refId = () => refKind() === "obd" ? "obd" : $("refSel").value;
+  function loadRefs(select) {
+    return fetch("/references").then((r) => r.json()).then((j) => {
+      $("refSel").innerHTML = j.references.length
+        ? j.references.map((x) => `<option value="${x.id}">${esc(x.name)}</option>`).join("")
+        : `<option value="" disabled selected>Add a log →</option>`;
+      if (select) $("refSel").value = select;
+    });
+  }
+  document.querySelectorAll("input[name=ref]").forEach((r) => r.onchange = () => { $("logRow").hidden = refKind() !== "log"; });
+  $("refFile").onchange = async () => {
+    const f = $("refFile").files[0];
+    if (!f) return;
+    try {
+      const j = await post(`/reference?filename=${encodeURIComponent(f.name)}`, await f.arrayBuffer(), true);
+      await loadRefs(j.id); flash(`${f.name} added`);
+    } catch (e) { flash(e.message); }
+    $("refFile").value = "";
+  };
+  function needs() {
+    if (!capture) { flash("Pick a capture first."); return false; }
+    if (refKind() === "log" && !$("refSel").value) { flash("Add the reference log first."); return false; }
+    return true;
+  }
+
+  // ---- find signals (pandacapture match, on this computer) ----
+  let findPoll = null;
+  $("runFind").onclick = async () => {
+    if (!needs()) return;
+    try {
+      await post(`/match?capture=${encodeURIComponent(capture)}&ref=${encodeURIComponent(refId())}`);
+      watchFind();
+    } catch (e) { $("findState").textContent = e.message; }
+  };
+  function watchFind() {
+    clearInterval(findPoll);
+    findPoll = setInterval(() => fetch("/match").then((r) => r.json()).then((m) => {
+      showFind(m); if (m.state !== "running") clearInterval(findPoll);
+    }), 500);
+  }
+  function showFind(m) {
+    const out = $("findResults");
+    $("runFind").disabled = m.state === "running";
+    $("findState").textContent = m.state === "running" ? `Searching ${m.capture}…` : m.state === "error" ? `Couldn't finish: ${m.error}` :
+      m.state === "done" ? `${m.capture} against ${m.reference === "obd" ? "the OBD answers" : m.reference}` : "";
+    $("findLog").hidden = !(m.log && m.log.length);
+    $("findLog").textContent = (m.log || []).join("\n");
+    if (m.state !== "done") { if (m.state === "running") out.innerHTML = ""; return; }
+    out.innerHTML = m.results.map((c, ci) => `<div class="res"><h3>${esc(c.column)}</h3>` + (c.matches.length ? `
+      <div class="scroll"><table><thead><tr><th>r</th><th title="Correlation of changes: low means maybe just a shared drift">changes</th>
+      <th title="With RPM held fixed: low means maybe both just follow RPM">RPM held</th><th>field</th>
+      <th>value = raw ×</th><th>+</th><th></th><th></th></tr></thead><tbody>` +
+      c.matches.map((x, xi) => `<tr><td>${x.r.toFixed(3)}</td><td>${x.changes ?? ""}</td><td>${x.rpm_held ?? ""}</td>
+        <td>${esc(x.field)}</td><td>${x.scale}</td><td>${x.offset}</td>
+        <td>${x.known ? `<span class="tag known">map: ${esc(x.known)}</span> ` : ""}${x.verdict ? `<span class="tag warn">${esc(x.verdict)}</span>` : ""}</td>
+        <td><button class="ctl small" type="button" data-c="${ci}" data-x="${xi}">Copy entry</button></td></tr>`).join("") +
+      `</tbody></table></div>` : `<p class="hint">No field tracks it: it may not be broadcast on this bus.</p>`) + `</div>`).join("");
+    out.querySelectorAll("button[data-c]").forEach((b) => b.onclick = () =>
+      copy(JSON.stringify(m.results[+b.dataset.c].matches[+b.dataset.x].entry)));
+  }
+
+  // ---- bundle ----
+  $("bundle").onclick = () => {
+    if (!needs()) return;
+    const a = document.createElement("a");
+    a.href = `/bundle?capture=${encodeURIComponent(capture)}&ref=${encodeURIComponent(refKind() === "obd" ? "" : refId())}`;
+    a.download = "";
+    document.body.appendChild(a); a.click(); a.remove();
+    flash("Building the bundle…");
+  };
+
+  // ---- Claude ----
+  let model = recall("pc-claude-model") === "fable" ? "fable" : "opus";
+  let claudePoll = null, last = null;
+  const modelButtons = document.querySelectorAll("[data-model]");
+  const showModel = () => modelButtons.forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.model === model)));
+  modelButtons.forEach((b) => b.onclick = () => { model = b.dataset.model; remember("pc-claude-model", model); showModel(); });
+  showModel();
+
+  $("prepare").onclick = async () => {
+    if (!needs()) return;
+    try {
+      showClaude(await post("/claude/prepare", { capture, ref: refKind() === "obd" ? "" : refId(), model,
+        effort: $("effort").value, max_cost: Number($("maxCost").value) || 2 }));
+      watchClaude();
+    } catch (e) { flash(e.message); }
+  };
+  $("cancel").onclick = () => post("/claude/cancel").then(showClaude).catch((e) => flash(e.message));
+
+  function watchClaude() {
+    clearInterval(claudePoll);
+    claudePoll = setInterval(() => fetch("/claude").then((r) => r.json()).then((c) => {
+      showClaude(c); if (!["preparing", "running"].includes(c.state)) clearInterval(claudePoll);
+    }), 1000);
+  }
+
+  function showClaude(c) {
+    last = { ...last, ...c };
+    c = last;
+    const key = c.key || {};
+    $("keyLine").innerHTML = c.local === false ? `<span class="key-no">Claude runs only from the computer running PandaCapture.</span>`
+      : key.ready ? `<span class="key-ok">API key ready</span> <span class="hint">(from ${key.env ? "ANTHROPIC_API_KEY" : "the system credential store"})</span>`
+      : `<span class="key-no">No API key yet.</span> In a terminal on this computer: <code>pandacapture apikey set</code>
+         (it's kept in the system's credential store, never in PandaCapture's files). Then reload this page.`;
+    const busy = ["preparing", "running"].includes(c.state);
+    $("prepare").disabled = busy || c.state === "confirm" || !key.ready || c.local === false;
+    const st = $("claudeState");
+    st.className = "state" + (c.state === "error" ? " err" : "");
+    st.textContent = {
+      preparing: `Preparing ${c.capture}: analysing it on this computer, then asking the API how big the first request is…`,
+      running: `Claude is working on ${c.capture}…`,
+      error: `Couldn't finish: ${c.error || ""}`,
+      cancelled: "Cancelled.",
+      done: c.stopped || "",
+    }[c.state] || "";
+    $("claudeLog").hidden = !(busy || c.state === "done" || c.state === "cancelled") || !(c.log && c.log.length);
+    $("claudeLog").textContent = (c.log || []).join("\n");
+    $("runningRow").hidden = c.state !== "running";
+
+    const confirm = $("confirm");
+    confirm.hidden = c.state !== "confirm";
+    if (c.state === "confirm") {
+      confirm.innerHTML = `<strong>About to send to Anthropic</strong> (${esc(c.model)}, key from ${esc(c.key_source)}):
+        <ul><li>statistics of ${c.ids} broadcast ids over ${c.duration} s${c.markers ? `, ${c.markers} markers` : ""}, the map's signals,
+          and the ranges of ${c.references.length} references (${esc(c.reference)})</li>
+        ${c.withheld.length ? `<li>withheld: ${esc(c.withheld.join(", "))} (their frames carry text, which can include the VIN)</li>` : ""}
+        <li>then whatever its tools return: byte statistics, sample frames, value series and correlations</li></ul>
+        The first request is ${Number(c.first_tokens).toLocaleString()} tokens (about ${money(c.first_cost)}).
+        It stops by about ${money(c.max_cost)} or 20 turns.
+        <div class="row" style="margin-top:12px"><button class="ctl primary" id="send" type="button">Send</button>
+          <button class="ctl" id="dont" type="button">Don't send</button></div>`;
+      $("send").onclick = () => post("/claude/start").then((j) => { showClaude(j); watchClaude(); }).catch((e) => flash(e.message));
+      $("dont").onclick = () => post("/claude/cancel").then(showClaude).catch((e) => flash(e.message));
+    }
+
+    const out = $("claudeResults");
+    if (!["done", "cancelled", "error"].includes(c.state) || !c.proposals) { if (busy) out.innerHTML = ""; return; }
+    const props = c.proposals;
+    out.innerHTML = `<div class="res">
+      <h3>${props.length} proposal${props.length === 1 ? "" : "s"}, each checked against the capture</h3>` +
+      (props.length ? `<div class="scroll"><table><thead><tr><th>key</th><th>field</th><th>value = raw ×</th><th>+</th><th>unit</th>
+        <th>confidence</th><th>check</th><th>evidence</th><th></th></tr></thead><tbody>` +
+        props.map((p, i) => { const e = p.entry, k = p.check;
+          return `<tr><td>${esc(e.key)}</td><td>${esc(e.id)} byte ${e.byte}${e.bit ? ` bit ${e.bit}` : ""}, ${e.bits} bits${e.order === "big" ? " big-endian" : ""}${e.signed ? ", signed" : ""}</td>
+            <td>${e.scale}</td><td>${e.offset}</td><td>${esc(e.unit)}</td>
+            <td><span class="tag ${p.confidence === "high" ? "ok" : p.confidence === "low" ? "warn" : ""}">${esc(p.confidence)}</span></td>
+            <td>${k && k.r != null ? `r ${k.r} vs ${esc(k.reference)}` : '<span class="hint">no reference</span>'}</td>
+            <td>${esc(p.reasoning)}</td>
+            <td><button class="ctl small" type="button" data-p="${i}">Copy entry</button></td></tr>`; }).join("") +
+        `</tbody></table></div>
+        <div class="row" style="margin-top:10px"><button class="ctl" id="dlEntries" type="button">Download map entries</button>
+          <span class="hint" style="margin:0">Marked "observed": check each on the car before relying on it.</span></div>` : "") +
+      (c.summary ? `<p class="summary">${esc(c.summary)}</p>` : "") +
+      `<p class="hint" style="margin-top:12px">Used about ${money(c.cost || 0)}${c.saved ? ` · saved ${esc(c.saved)}` : ""}</p></div>`;
+    out.querySelectorAll("button[data-p]").forEach((b) => b.onclick = () => copy(JSON.stringify(props[+b.dataset.p].entry)));
+    const dl = $("dlEntries");
+    if (dl) dl.onclick = () => {
+      const blob = new Blob([JSON.stringify(props.map((p) => p.entry), null, 2)], { type: "application/json" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob); a.download = "map-entries.json";
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    };
+  }
+
+  // ---- start ----
+  loadCaptures();
+  loadRefs();
+  fetch("/match").then((r) => r.json()).then((m) => { showFind(m); if (m.state === "running") watchFind(); });
+  fetch("/claude").then((r) => r.json()).then((c) => { showClaude(c); if (["preparing", "running"].includes(c.state)) watchClaude(); });
+})();
+</script>
+</body>
+</html>
