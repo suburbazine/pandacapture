@@ -43,7 +43,7 @@ def gear(value):
 # ---- the table ----
 
 # What the table allows today: the standard OBD reads, as (service, parameter length)
-READS = {(0x01, 1), (0x02, 2), (0x03, 0), (0x07, 0), (0x09, 1), (0x0A, 0)}
+READS = {(0x01, 1), (0x02, 2), (0x03, 0), (0x07, 0), (0x09, 1), (0x0A, 0), (0x22, 2)}   # (0x19: below)
 
 
 def test_only_the_standard_reads_are_in_the_table_today():
@@ -94,7 +94,7 @@ def test_links_refuse_everything_else():
             r = recognise(f)
         except PolicyRefused:
             continue
-        assert (r.payload[0], len(r.payload) - 1) in READS and f.addr in (0x7DF, 0x7E0)
+        assert r.payload[0] in pol.SERVICES and f.addr in (0x7DF, 0x7E0)
     for refused in (p.Frame(0, 0x7DF, bytes([0x10, 0x14, 0x2E, 0xF1, 0x90, 1, 2, 3])),    # a multi-frame write
                     p.Frame(0, 0x7E0, bytes([2, 0x11, 0x01, 0, 0, 0, 0, 0])),              # ECU reset
                     p.Frame(0, 0x7E0, bytes([2, 0x10, 0x02, 0, 0, 0, 0, 0])),              # programming session
@@ -202,10 +202,50 @@ def test_flow_control_is_the_only_other_frame():
     f = pol.flow_control(0x7E9, bus=2)
     assert (f.bus, f.addr, f.data) == (2, 0x7E1, bytes([0x30, 0, 0, 0, 0, 0, 0, 0])) and pol.is_flow_control(f)
     with pytest.raises(PolicyRefused):
-        pol.flow_control(0x7E0)                      # a request address, not an answer
+        pol.flow_control(0x7DF)                      # its request id would be 7D7, which answers on 7DF
     for not_fc in (p.Frame(0, 0x7E0, bytes([0x30, 0x08, 0x14, 0, 0, 0, 0, 0])),     # a block limit
                    p.Frame(0, 0x316, bytes([0x30, 0, 0, 0, 0, 0, 0, 0])),
                    p.Frame(0, 0x7DF, bytes([0x30, 0, 0, 0, 0, 0, 0, 0]))):
         assert not pol.is_flow_control(not_fc)
         with pytest.raises(PolicyRefused):
             recognise(not_fc)
+
+
+def test_uds_reads():
+    assert build(0x19, b"\x02\xff", target=0x7D1).payload == b"\x19\x02\xff"
+    assert build(0x19, b"\x04\x01\x23\x45\x01", target=0x7E0).payload[:2] == b"\x19\x04"
+    assert build(0x19, b"\x0a").payload == b"\x19\x0a"
+    for bad, why in ((b"", "report type"), (b"\x14", "isn't one"), (b"\x82\xff", "isn't one"),   # 0x82: suppress answer
+                     (b"\x02", "takes 1"), (b"\x04\x01\x23", "takes 4")):
+        with pytest.raises(PolicyRefused, match=why):
+            build(0x19, bad)
+    assert build(0x22, b"\xf1\x90\xe0\x01\xe0\x02", target=0x7A0).payload == b"\x22\xf1\x90\xe0\x01\xe0\x02"
+    for bad in (b"", b"\xf1", b"\xf1\x90\xe0", b"\x01\x02\x03\x04\x05\x06\x07\x08"):
+        with pytest.raises(PolicyRefused):
+            build(0x22, bad)
+
+
+def test_module_addresses():
+    for ok in (0x700, 0x7A0, 0x7D1, 0x7E0, 0x7E7, 0x7F7):
+        assert pol.is_physical(ok) and build(0x22, b"\xf1\x87", target=ok).target == ok
+    assert not pol.is_physical(0x7DF)       # everyone's address, not one module's (build allows it as that)
+    for bad in (0x6FF, 0x7D7, 0x7E8, 0x7EF, 0x7F8, 0x7FF):
+        assert not pol.is_physical(bad)
+        with pytest.raises(PolicyRefused):
+            build(0x22, b"\xf1\x87", target=bad)
+    assert pol.flow_control(0x7D9).addr == 0x7D1
+
+
+def test_ids_carrying_ordinary_traffic_are_never_sent_to():
+    s, _ = state()
+    link = Link()
+    sender = Sender(link, s)
+    s.frame(p.Frame(0, 0x7A0, bytes([0x88, 0x13, 0, 0x5A, 0, 0, 0, 0])))   # a broadcast that happens to use 7A0
+    s.frame(p.Frame(0, 0x7E0, bytes([0x02, 0x01, 0x0C, 0, 0, 0, 0, 0])))   # another tester's request: fine
+    with pytest.raises(PolicyRefused, match="carries other traffic"):
+        sender.send(build(0x22, b"\xf1\x87", target=0x7A0))
+    with pytest.raises(PolicyRefused, match="carries other traffic"):
+        sender.flow_control(0x7A8)
+    sender.send(build(0x22, b"\xf1\x87", target=0x7A0), bus=1)              # other buses are separate
+    sender.send(build(0x22, b"\xf1\x87", target=0x7E0))
+    assert [f.addr for f in link.frames] == [0x7A0, 0x7E0]

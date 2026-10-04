@@ -8,7 +8,7 @@ itself, as an ELM327 does) and the module sends the rest as consecutive frames.
 import time
 from dataclasses import dataclass, field
 
-from .policy import FUNCTIONAL, Sender, build
+from .policy import FUNCTIONAL, Sender, answer_id, build
 
 ANSWER_WAIT = 0.25    # s for answers to a request to start arriving
 LONG_WAIT = 0.5       # s a long answer may pause between frames before it's given up
@@ -47,7 +47,7 @@ class Client:
         self.state = state
         self.sender = Sender(link, state, on_sent, table)
         self.table = table
-        self._want = None             # (bus, service id) of the request in progress
+        self._want = None             # (bus, service id, answer ids) of the request in progress
         self._reset()
 
     def _reset(self):
@@ -59,7 +59,7 @@ class Client:
 
     def frame(self, f):
         self.state.frame(f)
-        if self._want is None or f.extended or f.bus != self._want[0] or not 0x7E8 <= f.addr <= 0x7EF:
+        if self._want is None or f.extended or f.bus != self._want[0] or f.addr not in self._want[2]:
             return
         d = bytes(f.data)
         if not d:
@@ -97,14 +97,15 @@ class Client:
         elif payload[:1] == bytes([(sid + 0x40) & 0xFF]):
             self._answers.positive[module] = payload
 
-    def request(self, sid, params=b"", bus=0, target=FUNCTIONAL, expect=()) -> Answers:
-        """One request; the answers once every expected module has answered, or nothing more comes."""
+    def request(self, sid, params=b"", bus=0, target=FUNCTIONAL, expect=(), wait=None) -> Answers:
+        """One request; the answers once every expected module has answered, or nothing more comes
+        (after wait seconds, ANSWER_WAIT by default, for answers to start)."""
         req = build(sid, params, target, self.table)
         self._reset()
-        self._want = (bus, sid)
+        self._want = (bus, sid, range(0x7E8, 0x7F0) if target == FUNCTIONAL else (answer_id(target),))
         try:
             self.sender.send(req, bus)
-            deadline = time.monotonic() + ANSWER_WAIT
+            deadline = time.monotonic() + (ANSWER_WAIT if wait is None else wait)
             while True:
                 self.link.wait(0.005)
                 while self._flow:

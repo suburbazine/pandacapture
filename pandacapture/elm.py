@@ -194,13 +194,20 @@ class ElmLink:
                 request = recognise(f)        # only what the diagnostic policy allows
             except PolicyRefused as ex:
                 raise ElmError(f"Refused: {ex}") from None
+            other = request.target != FUNCTIONAL and not 0x7E0 <= request.target <= 0x7E7
             if request.target != FUNCTIONAL:
                 self.elm.command(f"ATSH{request.target:03X}")
+            if other:   # an ELM327 only listens to 7E8-7EF by itself
+                self.elm.command(f"ATCRA{request.target + 8:03X}")
             self.answers_complete = False
-            self.pending += [p.Frame(0, can_id, data) for can_id, data in self.elm.request(request.payload)]
-            self.answers_complete = True
-            if request.target != FUNCTIONAL:
-                self.elm.command("ATSH7DF")
+            try:
+                self.pending += [p.Frame(0, can_id, data) for can_id, data in self.elm.request(request.payload)]
+            finally:
+                self.answers_complete = True
+                if other:
+                    self.elm.command("ATAR")
+                if request.target != FUNCTIONAL:
+                    self.elm.command("ATSH7DF")
 
     def wait(self, seconds):
         frames, self.pending = self.pending, []

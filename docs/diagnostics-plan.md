@@ -1,8 +1,8 @@
 # Plan: reading and clearing codes, and full diagnostics
 
-Status: steps 1 and 2a are built. The policy table, the vehicle-state checks and the sender are in
+Status: steps 1 and 2 are built. The policy table, the vehicle-state checks and the sender are in
 `pandacapture/policy.py`. The table holds the standard OBD reads (`pandacapture obd`, `pandacapture
-codes`). The rest is planned. `send` and `replay` are separate: they send the frames you give them.
+codes`) and the UDS reads (`codes --uds`, `modules`, `did`). The rest is planned. `send` and `replay` are separate: they send the frames you give them.
 
 The aim is an open source diagnostic tool: read and clear codes, read live data from any module, and
 the bidirectional functions a dealer tool has (actuator tests, routines, resets). The rule that makes
@@ -107,7 +107,10 @@ panda's transmit heartbeat.
    - **Done (2a):** codes (03/07/0A), the check-engine light, freeze frame, vehicle info, with ISO-TP for
      long answers. ISO-TP flow control is in the policy as the one transport frame: exactly `30 00 00`,
      to the module that's answering.
-   - **Next (2b):** UDS `19` and `22` per module.
+   - **Done (2b):** UDS `19` (its reporting sub-functions only) and `22` (one to three identifiers), per
+     module. Modules are addressed 700-7F7, answering at +8. An id the bus uses for ordinary traffic (frames
+     that don't look like diagnostics) is never sent to, nor is 7D7, whose answers would land on 7DF.
+     An ELM327 is told to listen on the module's answer id (`ATCRA`) for modules outside 7E0-7E7.
 3. Clearing codes (OBD 04, UDS 14) behind the engine-off checks.
 4. The other engine-off services, one by one, each with a test on a simulated module that checks it's
    refused when running and undone when the engine starts.

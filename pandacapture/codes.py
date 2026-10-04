@@ -5,17 +5,10 @@ Through a panda (PandaCapture firmware) or an ELM327."""
 import argparse
 import datetime as dt
 import json
-import time
 from dataclasses import dataclass, field
-from pathlib import Path
 
-from . import protocol as p
-from .capture import RollingLog, candump_line, default_out_dir
 from .diag import Client, nrc_text
 from .obd import MODULES, describe, pid_name, supported_from
-from .policy import VehicleState
-from .transmit import TransmitRefused, TxLog, acknowledge
-from .usbdev import UsbError
 
 CODE_MODES = {0x03: "stored", 0x07: "pending", 0x0A: "permanent"}
 INFO_TYPES = {0x04: "Calibration ID", 0x06: "Calibration verification number", 0x0A: "ECU name"}
@@ -173,75 +166,57 @@ def report(modules) -> str:
 # ---------------------------------------------------------------- the command
 
 def parser():
+    from .diag_run import add_connection
     ap = argparse.ArgumentParser(prog="pandacapture codes", description=(
         "Reads the standard OBD codes (stored, pending, permanent), the check-engine light, the freeze frame "
-        "and vehicle information from every OBD module. Reads only: nothing is cleared. Through a panda with "
-        "PandaCapture firmware, or an ELM327 (--elm)."))
-    ap.add_argument("--elm", metavar="PORT", help="use an ELM327: COM5, /dev/rfcomm0, socket://192.168.0.10:35000")
-    ap.add_argument("--elm-protocol", default="0", metavar="N", help="ELM327 OBD protocol (0 = automatic)")
-    ap.add_argument("--serial", help="which panda, when several are connected")
-    ap.add_argument("--bus", type=int, action="append", choices=range(p.CAN_BUSES),
-                    help="panda bus to read (repeatable); default: every bus with traffic")
-    ap.add_argument("--bitrate", type=int, help="kbit/s for the panda's buses; default: detected by listening")
+        "and vehicle information from every OBD module; with --uds, each module's own codes too. Reads only: "
+        "nothing is cleared. Through a panda with PandaCapture firmware, or an ELM327 (--elm)."))
+    add_connection(ap)
+    ap.add_argument("--uds", action="store_true",
+                    help="also each module's own codes (UDS 19): the OBD modules and any --module")
+    ap.add_argument("--module", action="append", metavar="ID",
+                    help="with --uds: also this module's request id (hex, e.g. 7D1; see pandacapture modules --find)")
     ap.add_argument("--vin", action="store_true", help="also read the VIN (left out by default: it identifies the car)")
-    ap.add_argument("--out", help="folder for the results (default: captures next to the program)")
-    ap.add_argument("--i-accept-transmit-risk", action="store_true",
-                    help="skip typing TRANSMIT (the warning is still shown); for scripts")
     return ap
 
 
 def run(argv) -> int:
-    from .elm import ElmError
-    from .obd_run import ElmSession, PandaSession, state_signals
+    from .diag_run import run_client
+    from .policy import PolicyRefused
+    from .uds import codes_report, module_ids, read_module_codes
     args = parser().parse_args(argv)
-    args.map, args.rpm_key = None, "rpm"
     try:
-        rpm_sig, speed_sig, gear_sig, map_name = state_signals(args) if not args.elm else (None, None, None, "")
-    except TransmitRefused as e:
+        extra = module_ids(args.module)
+    except PolicyRefused as e:
         print(f"ERROR: {e}")
         return 2
-    state = VehicleState(rpm_sig, speed_sig, gear_sig)
-    session = (ElmSession if args.elm else PandaSession)(args, state, False)
-    out_dir = Path(args.out) if args.out else default_out_dir()
-    stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
-    log = rec = None
-    try:
-        session.open(rpm_sig, map_name)
-        acknowledge(args.i_accept_transmit_risk,
-                    f"About to read codes through {session.kind}: {session.rate_text}.", warning=WARNING)
-        log = TxLog(out_dir, f"{session.kind}: {session.description}")
-        rec = RollingLog(out_dir, ["# PandaCapture candump log (reading codes)", *session.header], stamp=stamp)
-        client = None
 
-        def received(f):
-            rec.write(candump_line(time.time(), f) + "\n")
-            client.frame(f)
-
-        def sent(f):
-            log.sent(f)
-            rec.write(candump_line(time.time(), f) + "\n")
-
-        with session.link(received) as link:
-            client = Client(link, state, on_sent=sent)
-            print("Reading codes...")
-            modules = read_codes(client, session.buses, with_vin=args.vin)
+    def body(client, buses, out_dir, stamp):
+        print("Reading codes...")
+        modules = read_codes(client, buses, with_vin=args.vin)
+        uds = {}
+        if args.uds:
+            for bus in buses:
+                targets = {m.module - 8 for m in modules if m.bus == bus} | set(extra)
+                for target in sorted(targets):
+                    uds[(bus, target)] = read_module_codes(client, bus, target)
         print()
         print(report(modules))
+        if uds:
+            print()
+            print(codes_report(uds))
         path = out_dir / f"codes-{stamp}.json"
-        path.write_text(json.dumps({"read": dt.datetime.now().isoformat(timespec="seconds"),
-                                    "through": f"{session.kind}: {session.description}",
-                                    "modules": [m.to_json() for m in modules]}, indent=2), encoding="utf-8")
+        path.write_text(json.dumps({
+            "read": dt.datetime.now().isoformat(timespec="seconds"),
+            "modules": [m.to_json() for m in modules],
+            "uds": [{"bus": b, "module": f"{t:03X}", **({"codes": [{"code": c, "status": f"{st:02X}"} for c, st in r["codes"]]}
+                                                         if "codes" in r else {"refused": r["refused"]})}
+                    for (b, t), r in sorted(uds.items())],
+        }, indent=2), encoding="utf-8")
         print(f"\nSaved: {path}")
-        print(f"  Requests logged in {log.path}; everything received in {rec.path}")
-    except KeyboardInterrupt:
-        print("\nStopped.")
-        return 130
-    except (TransmitRefused, UsbError, ElmError) as e:
-        print(f"ERROR: {e}")
-        return 1
-    finally:
-        for f in (log, rec):
-            if f:
-                f.close()
-        session.close()
-    return 0
+
+    return run_client(args, "reading codes", WARNING if not args.uds else WARNING + UDS_NOTE,
+                      "read codes" + (" (and each module's own, with UDS)" if args.uds else ""), body)
+
+
+UDS_NOTE = "- With --uds, each module is also asked for its own codes (UDS 19), one module at a time.\n"

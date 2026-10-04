@@ -422,6 +422,36 @@ From every OBD module, it reads:
 Nothing is cleared or changed. It's read-only like `obd`: you type `TRANSMIT` after a warning, and
 it runs at any engine speed. The results are saved as `codes-….json` in the captures folder.
 
+### Each module's own codes and data (UDS)
+
+Beyond the standard OBD set, each module keeps its own codes and data, which dealer tools read with
+UDS. These are reads too:
+
+```bash
+pandacapture modules --find
+```
+
+Finds every module that answers. It asks each id from 700 to 7F7 for its part number (about 240
+requests), then lists each module found with its system name, part, hardware and software numbers.
+Without `--find`, only the OBD modules are listed.
+
+```bash
+pandacapture codes --uds --module 7D1
+```
+
+Adds each module's own codes, with their status: confirmed, pending, failing now, warning light.
+It reads the OBD modules plus any module you name with `--module`.
+
+```bash
+pandacapture did --module 7E0 E001 E002 --every 0.5
+```
+
+Reads data identifiers from one module, such as the `22 E0xx` reads a JB4 makes, once or repeatedly
+until `Q`. Results go to `did-….json`, and the answers are in the capture too.
+
+Modules are addressed by request id (700-7F7), answering on id + 8, the usual convention. PandaCapture
+never sends to an id the bus is already using for ordinary traffic.
+
 ## Transmitting
 
 ```bash
@@ -488,7 +518,11 @@ pandacapture obd [options]      scan the standard OBD PIDs (key-on or idle), the
 
 pandacapture codes [options]    read stored, pending and permanent codes, freeze frame, vehicle info
   --elm PORT                    through an ELM327 instead of the panda
+  --uds [--module ID]           also each module's own codes
   --vin                         also read the VIN
+
+pandacapture modules [--find] [--module ID]     the modules that answer, and what they are
+pandacapture did --module ID DID... [--every S]  read data identifiers from one module
 
 pandacapture match CAPTURE [REFERENCE.csv | --obd] [options]     find which fields carry which values
   --map NAME|FILE               map with the RPM signal used to line the logs up
@@ -496,7 +530,7 @@ pandacapture match CAPTURE [REFERENCE.csv | --obd] [options]     find which fiel
   --column NAME                 match only this column (repeatable)
   --top N, --min-r R            how many matches to show, and the weakest to show
 
-pandacapture list | info | dashboard | maps | match | obd | codes | flash | backup | restore | send | replay | selftest      (each has --help)
+pandacapture list | info | dashboard | maps | match | obd | codes | modules | did | flash | backup | restore | send | replay | selftest      (each has --help)
 ```
 
 ## Documentation
