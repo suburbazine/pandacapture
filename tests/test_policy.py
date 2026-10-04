@@ -45,9 +45,10 @@ def gear(value):
 # What the table allows today: the standard OBD reads, as (service, parameter length)
 READS = {(0x01, 1), (0x02, 2), (0x03, 0), (0x07, 0), (0x09, 1), (0x0A, 0), (0x22, 2)}   # (0x19: below)
 CLEARS = {(0x04, 0), (0x14, 3)}     # engine off, and CLEAR typed
+ENGINE_OFF_SAMPLE = {(0x31, 3)}     # of the step-4 services, the only one the sample parameters below happen to fit
 
 
-def test_only_reads_and_clearing_codes_are_in_the_table_today():
+def test_what_the_table_allows():
     built = set()
     for sid in range(256):
         for params in (b"", b"\x0c", b"\x0c\x00", b"\x01\x02\x03"):
@@ -56,7 +57,7 @@ def test_only_reads_and_clearing_codes_are_in_the_table_today():
                 built.add((sid, len(params)))
             except PolicyRefused:
                 pass
-    assert built == READS | CLEARS
+    assert built == READS | CLEARS | ENGINE_OFF_SAMPLE
     assert all(pol.SERVICES[sid].tier is Tier.READ and not pol.SERVICES[sid].confirm for sid, _ in READS)
     assert all(pol.SERVICES[sid].tier is Tier.ENGINE_OFF and pol.SERVICES[sid].confirm == "CLEAR" for sid, _ in CLEARS)
     with pytest.raises(PolicyRefused, match="freeze frame 00"):
@@ -67,9 +68,13 @@ def test_never_services_say_why():
     for sid in (0x27, 0x34, 0x35, 0x36, 0x37):
         with pytest.raises(PolicyRefused, match="never sent"):
             build(sid, b"\x01")
-    for sid in (0x10, 0x11, 0x28, 0x2E, 0x2F, 0x31, 0x85):   # planned engine-off services: not in the table yet
+    for sid in (0x2E, 0x3D, 0x86, 0x87):   # writing data, writing memory, events, link control: not in the table
         with pytest.raises(PolicyRefused, match="isn't in"):
             build(sid, b"\x01")
+    with pytest.raises(PolicyRefused, match="programming session is never"):
+        build(0x10, b"\x02")
+    with pytest.raises(PolicyRefused, match="rapid power shutdown"):
+        build(0x11, b"\x04")
     with pytest.raises(PolicyRefused, match="one PID"):
         build(0x01, b"\x0c\x0d")
 
@@ -99,7 +104,7 @@ def test_links_refuse_everything_else():
             continue
         assert r.payload[0] in pol.SERVICES and f.addr in (0x7DF, 0x7E0)
     for refused in (p.Frame(0, 0x7DF, bytes([0x10, 0x14, 0x2E, 0xF1, 0x90, 1, 2, 3])),    # a multi-frame write
-                    p.Frame(0, 0x7E0, bytes([2, 0x11, 0x01, 0, 0, 0, 0, 0])),              # ECU reset
+                    p.Frame(0, 0x7E0, bytes([4, 0x2E, 0xF1, 0x90, 0x01, 0, 0, 0])),        # a write
                     p.Frame(0, 0x7E0, bytes([2, 0x10, 0x02, 0, 0, 0, 0, 0])),              # programming session
                     p.Frame(0, 0x18DB33F1, bytes([2, 1, 0x0C, 0, 0, 0, 0, 0]), extended=True)):
         with pytest.raises(PolicyRefused):

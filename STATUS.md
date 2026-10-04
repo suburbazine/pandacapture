@@ -42,6 +42,10 @@
   - Stopping the heartbeats, after a refused request to disable heartbeat checks, disarmed it after 1.6 s.
 
 ## Not yet tested on hardware
+- Engine-off diagnostic sessions (`pandacapture diag`, 2026-10-04): tested against a simulated module with real
+  session behaviour (tests/test_diagsession.py): refused while running, ENGINE OFF needed, tester present only
+  while the state holds, everything undone newest first when the engine starts or the car moves, the module's
+  own timeout. Not yet run on a car.
 - Clearing codes (`codes --clear`, 2026-10-04): tested against a simulated car (tests/test_clear.py). Covered:
   the engine running, the car moving at 0 rpm, the engine starting after CLEAR was typed, the wrong word, a
   module refusing, and the sender refusing without the word or on stale readings. Not yet run on a car.

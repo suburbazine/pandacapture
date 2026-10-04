@@ -1,6 +1,6 @@
 # Plan: reading and clearing codes, and full diagnostics
 
-Status: steps 1, 2 and 3 are built. The policy table, the vehicle-state checks and the sender are in
+Status: steps 1, 2 and 3 are built, and step 4 apart from writing data (2E). The policy table, the vehicle-state checks and the sender are in
 `pandacapture/policy.py`. The table holds the standard OBD reads (`pandacapture obd`, `pandacapture
 codes`), the UDS reads (`codes --uds`, `modules`, `did`), and clearing codes (`codes --clear`). The rest is planned. `send` and `replay` are separate: they send the frames you give them.
 
@@ -115,8 +115,15 @@ panda's transmit heartbeat.
    - The sender refuses a service with a confirmation word until the user has typed it this session.
    - Before each clear request, engine speed and vehicle speed must be read anew, after that moment: a
      reading from before, however recent, doesn't count, since the engine may have started since.
-4. The other engine-off services, one by one, each with a test on a simulated module that checks it's
-   refused when running and undone when the engine starts.
+4. **Done, apart from 2E:** the other engine-off services (`pandacapture diag`, `diagsession.py`).
+   - Per-request tiers: `10 03`, `85 02`, `28 01-03`, `11`, `2F … 01-03` and `31 01` are ENGINE_OFF with
+     `ENGINE OFF` typed. What undoes them (`10 01`, `85 01`, `28 00`, `2F … 00`, `31 02`/`03`) is a READ, so
+     it goes out even after the engine has started.
+   - One worker thread owns the link: it checks the state every 0.25 s and sends tester present (`3E 80`,
+     itself ENGINE_OFF) every 2 s only while the state holds. It undoes newest first when the state fails.
+   - It tracks explicit stops and resets.
+   - **Still to do: `2E`** (writing data). It changes a module permanently, with no natural undo, so it needs a
+     read-back of the old value first, kept as the undo, and its own confirmation.
 5. A transmit path for the RP1210/J2534 bridge.
 
 Each step is tested on a simulated car before a real one, as the OBD scan was.

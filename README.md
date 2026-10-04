@@ -529,6 +529,36 @@ broadcast, or an OBD answer when nothing broadcasts them (as through an ELM327).
 or the car moves, clearing stops. Afterwards it reads the codes again. `--uds` also clears each module's
 own codes (UDS `14`). The vehicle's state at each clear is in the transmit log.
 
+### Engine-off diagnostics
+
+```bash
+pandacapture diag --module 7E0
+```
+
+An interactive session with a module, for what a dealer tool does with the engine off. Type `help` in it
+for the full list:
+- `session extended` and `session default`
+- `dtc-setting off` and `on`
+- `comm disable` and `enable`
+- `reset hard`, `keyoff` or `soft`
+- actuator tests: `io DID adjust HEX`, then `io DID return`
+- routines: `routine start`, `stop` or `result RID`
+- `read DID`, `status`, `end`
+
+The first command that changes something shows a warning and needs `ENGINE OFF` typed. Then:
+- **Checked all session long:** engine off (key on), the car stopped, and Park where the map knows the
+  gear. Checked before each request, and several times a second for the whole session.
+- **Undone at once:** if the engine starts, the car moves or a reading goes missing, everything active is
+  undone, newest first: actuators handed back, routines stopped, code setting and communication back
+  on. Then the modules return to their default session.
+- **Tester present only while that holds.** It's what keeps a module in its extended session. If
+  PandaCapture stops, the modules drop back to their default session by themselves within about 5 s.
+- **Never sent:** programming sessions, flashing and security access. Writing settings (`2E`) isn't
+  available yet.
+
+Actuator tests and routines can move parts (fans, pumps, the throttle, injectors): keep hands and tools
+clear, and know what each one does before starting it.
+
 ### Each module's own codes and data (UDS)
 
 Beyond the standard OBD set, each module keeps its own codes and data, which dealer tools read with
@@ -630,6 +660,7 @@ pandacapture codes [options]    read stored, pending and permanent codes, freeze
   --clear                       then clear them: engine off, car stopped, CLEAR typed
 
 pandacapture modules [--find] [--module ID]     the modules that answer, and what they are
+pandacapture diag --module ID                   an engine-off diagnostic session (type help in it)
 pandacapture did --module ID DID... [--every S]  read data identifiers from one module
 
 pandacapture analyze CAPTURE [REFERENCE.csv] [options]     Claude proposes map entries (your API key)

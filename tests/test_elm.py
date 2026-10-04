@@ -194,7 +194,7 @@ def test_elm_link_only_sends_what_the_policy_allows():
     fake = FakeElm()
     link = ElmLink(open_elm(fake), lambda f: None)
     with pytest.raises(ElmError, match="Refused"):
-        link.send([p.Frame(0, 0x7E0, bytes([2, 0x11, 0x01, 0, 0, 0, 0, 0]))])   # ECU reset
+        link.send([p.Frame(0, 0x7E0, bytes([2, 0x10, 0x02, 0, 0, 0, 0, 0]))])   # a programming session
     commands = []
     fake._command = (lambda orig: lambda cmd: (commands.append(cmd), orig(cmd))[1])(fake._command)
     link.send([build(0x01, b"\x0d", target=0x7E0).frame()])                    # one module: header switched

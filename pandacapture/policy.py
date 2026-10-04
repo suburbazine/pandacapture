@@ -15,6 +15,8 @@ Today the table holds:
 - reads: the standard OBD ones (live data, freeze frame, stored, pending and permanent codes, vehicle
   information) and the UDS ones (a module's own codes, data by identifier)
 - clearing codes (OBD mode 04, UDS 14): engine off, and the user typed CLEAR (Sender.confirm)
+- the engine-off services (UDS 10 03, 85, 28, 11, 2F, 31): engine off, ENGINE OFF typed, held for the whole
+  diagnostic session (diagsession.py), with the request that undoes each one always allowed
 Requests go to 7DF (every OBD module) or one module's request id (700-7F7, answering at +8), never to
 an id the bus uses for ordinary traffic. The plan adds the rest one at a time. Besides requests, the only frame
 sent is ISO-TP flow control, which lets a module send the rest of a long answer (see flow_control).
@@ -76,6 +78,13 @@ class Service:
     check: object                 # params (bytes) -> "" if allowed, else why not
     confirm: str = ""             # word the user types before the first request of a session
     undo: object = None           # params -> the payload that undoes it, sent if the state changes
+    classify: object = None       # params -> (tier, confirm, undo payload): when it depends on the sub-function
+
+    def effect(self, params: bytes):
+        """(tier, confirmation word, undo payload or None) of a request with these parameters."""
+        if self.classify is not None:
+            return self.classify(params)
+        return self.tier, self.confirm, (self.undo(params) if self.undo else None)
 
 
 def _one_pid(params: bytes) -> str:
@@ -124,6 +133,79 @@ def _data_ids(params: bytes) -> str:
     return "" if 2 <= len(params) <= 6 and len(params) % 2 == 0 else "takes one to three 2-byte identifiers"
 
 
+# ---- the engine-off services (step 4 of docs/diagnostics-plan.md) ----
+# Each changes something in a module for as long as a diagnostic session lasts. Starting one needs the engine
+# off and the car stopped, and ENGINE OFF typed; the request that undoes it is a READ, so it can always go out,
+# even after the engine has started: that's when it's needed.
+
+ENGINE_OFF_WORD = "ENGINE OFF"
+_UNDO = (Tier.READ, "", None)
+
+
+def _session(params: bytes) -> str:
+    if len(params) != 1:
+        return "takes one session type"
+    if params[0] == 0x02:
+        return "a programming session is never started: it's for flashing, which PandaCapture doesn't do"
+    if params[0] not in (0x01, 0x03):
+        return f"session {params[0]:02X} isn't one PandaCapture starts (01 default, 03 extended)"
+    return ""
+
+
+def _session_effect(params):
+    return _UNDO if params[0] == 0x01 else (Tier.ENGINE_OFF, ENGINE_OFF_WORD, b"\x10\x01")
+
+
+def _tester_present(params: bytes) -> str:
+    return "" if params in (b"\x00", b"\x80") else "takes 00 (answer) or 80 (no answer)"
+
+
+def _dtc_setting(params: bytes) -> str:
+    return "" if params in (b"\x01", b"\x02") else "takes 01 (on) or 02 (off)"
+
+
+def _dtc_setting_effect(params):
+    return _UNDO if params[0] == 0x01 else (Tier.ENGINE_OFF, ENGINE_OFF_WORD, b"\x85\x01")
+
+
+def _comm(params: bytes) -> str:
+    if len(params) != 2 or params[0] not in (0x00, 0x01, 0x02, 0x03) or params[1] not in (0x01, 0x02, 0x03):
+        return "takes a control type (00 enable, 01-03 disable) and a message type (01 normal, 02 network, 03 both)"
+    return ""
+
+
+def _comm_effect(params):
+    return _UNDO if params[0] == 0x00 else (Tier.ENGINE_OFF, ENGINE_OFF_WORD, bytes([0x28, 0x00, params[1]]))
+
+
+def _reset(params: bytes) -> str:
+    if params in (b"\x04", b"\x05"):
+        return "rapid power shutdown isn't one PandaCapture sends"
+    return "" if params in (b"\x01", b"\x02", b"\x03") else "takes 01 (hard), 02 (key off/on) or 03 (soft)"
+
+
+def _io(params: bytes) -> str:
+    if len(params) < 3 or params[2] not in (0x00, 0x01, 0x02, 0x03):
+        return "takes an identifier and a control (00 return to the module, 01 default, 02 freeze, 03 adjust)"
+    if params[2] == 0x03 and len(params) < 4:
+        return "an adjustment (03) needs the value to set"
+    return ""
+
+
+def _io_effect(params):
+    return _UNDO if params[2] == 0x00 else (Tier.ENGINE_OFF, ENGINE_OFF_WORD, bytes([0x2F, params[0], params[1], 0x00]))
+
+
+def _routine(params: bytes) -> str:
+    if len(params) < 3 or params[0] not in (0x01, 0x02, 0x03):
+        return "takes 01 (start), 02 (stop) or 03 (results) and a 2-byte routine identifier"
+    return ""
+
+
+def _routine_effect(params):
+    return _UNDO if params[0] != 0x01 else (Tier.ENGINE_OFF, ENGINE_OFF_WORD, bytes([0x31, 0x02, params[1], params[2]]))
+
+
 SERVICES = {
     0x01: Service(0x01, "OBD current data (mode 01)", Tier.READ, _one_pid),
     0x02: Service(0x02, "OBD freeze frame (mode 02)", Tier.READ, _pid_and_frame),
@@ -136,6 +218,14 @@ SERVICES = {
     # Clearing codes: engine off and car stopped, and the user typed CLEAR. No undo: what's cleared is gone.
     0x04: Service(0x04, "OBD clear codes (mode 04)", Tier.ENGINE_OFF, _no_params, confirm="CLEAR"),
     0x14: Service(0x14, "UDS clear codes (14)", Tier.ENGINE_OFF, _dtc_group, confirm="CLEAR"),
+    # Engine-off services: what starts something is ENGINE_OFF with ENGINE OFF typed, what stops it is a READ
+    0x10: Service(0x10, "UDS session control (10)", Tier.ENGINE_OFF, _session, classify=_session_effect),
+    0x3E: Service(0x3E, "UDS tester present (3E)", Tier.ENGINE_OFF, _tester_present),   # keeps a session alive
+    0x85: Service(0x85, "UDS code setting on/off (85)", Tier.ENGINE_OFF, _dtc_setting, classify=_dtc_setting_effect),
+    0x28: Service(0x28, "UDS communication control (28)", Tier.ENGINE_OFF, _comm, classify=_comm_effect),
+    0x11: Service(0x11, "UDS module reset (11)", Tier.ENGINE_OFF, _reset, confirm=ENGINE_OFF_WORD),
+    0x2F: Service(0x2F, "UDS input/output control (2F)", Tier.ENGINE_OFF, _io, classify=_io_effect),
+    0x31: Service(0x31, "UDS routine control (31)", Tier.ENGINE_OFF, _routine, classify=_routine_effect),
 }
 
 NEVER = {
@@ -152,6 +242,9 @@ class Request:
     service: Service
     payload: bytes                # service id, then its parameters
     target: int = FUNCTIONAL
+    tier: Tier = Tier.READ        # from the service and its parameters (Service.effect)
+    confirm: str = ""
+    undo: bytes = None            # the payload that undoes it, if anything does
 
     def frame(self, bus=0) -> p.Frame:
         """One ISO-TP single frame: length, payload, zero padding."""
@@ -174,7 +267,8 @@ def build(sid, params=b"", target=FUNCTIONAL, table=None) -> Request:
         raise PolicyRefused(f"{target:03X} isn't a diagnostic request address (7DF, or 700-7F7 answering at +8).")
     if 1 + len(params) > 7:
         raise PolicyRefused(f"{service.name}: longer than one frame.")
-    return Request(service, bytes([sid]) + params, target)
+    tier, confirm, undo = service.effect(params)
+    return Request(service, bytes([sid]) + params, target, tier, confirm, undo)
 
 
 def recognise(frame, table=None) -> Request:
@@ -353,9 +447,9 @@ class Sender:
     def send(self, request: Request, bus=0):
         if self.table.get(request.service.sid) is not request.service:
             raise PolicyRefused(f"{request.service.name} isn't in this policy table.")
-        if request.service.confirm and request.service.confirm not in self.confirmed:
-            raise PolicyRefused(f"{request.service.name} needs {request.service.confirm} typed first.")
-        self.state.require(request.service.tier)
+        if request.confirm and request.confirm not in self.confirmed:
+            raise PolicyRefused(f"{request.service.name} needs {request.confirm} typed first.")
+        self.state.require(request.tier)
         if request.target != FUNCTIONAL:
             self._free(request.target, bus)
         frame = request.frame(bus)
