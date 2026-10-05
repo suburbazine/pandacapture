@@ -7,9 +7,9 @@ them live as gauges, numbers and status lights.
 
 ![The live dashboard replaying a Kia Stinger 3.3T's powertrain bus](docs/images/dashboard.png)
 
-- **Captures** are candump logs, for finding the signals a FrostBYTE water/methanol controller
-  should read (RPM, MAP/boost, intake temperature). The FrostBYTE Android app's signal finder,
-  SavvyCAN and can-utils all read them.
+- **Captures** are candump logs, for finding which CAN fields carry the values a gauge, logger or
+  controller needs (RPM, MAP/boost, intake temperature). PandaCapture's own signal finder, SavvyCAN
+  and can-utils all read them.
 - **The live dashboard** decodes the traffic in your browser with an address map for your vehicle.
   A Kia Stinger 3.3T map is built in.
 - **The panda's firmware:** PandaCapture flashes its own onto the panda, backing up what was there
@@ -23,8 +23,8 @@ them live as gauges, numbers and status lights.
 - **All three buses at once.** The log names them `can0`, `can1` and `can2`, and the status line
   shows which ones carry traffic. The Red Panda also receives CAN FD; the Black Panda is classic
   CAN only.
-- **Windows and Linux** now. macOS and the FrostBYTE Android app over USB OTG are planned; see
-  [docs/protocol.md](docs/protocol.md).
+- **Windows and Linux** now; macOS is planned. On Android, see PandaCapture Android. The USB
+  protocol is in [docs/protocol.md](docs/protocol.md).
 - **Transmitting is gated.** You type `TRANSMIT` after a warning. Only PandaCapture's firmware can
   transmit at all, and it stops by itself within about 2 seconds if this program goes away.
 - **Other adapters too (Windows):** RP1210 and J2534 tools such as a NEXIQ USB-Link 2, a Tactrix
@@ -173,7 +173,7 @@ The STM32 bootloader (USB `0483:DF11`) doesn't install a driver by itself. If `f
 
 ## 3. Connect to the bus
 
-Record the bus your FrostBYTE is (or will be) wired to. On many modern cars, the OBD-II port sits
+Record the bus your gauge, logger or controller reads (or will read). On many modern cars, the OBD-II port sits
 behind a gateway and only carries diagnostic traffic, so tap the powertrain CAN wires directly.
 
 **[docs/wiring.md](docs/wiring.md)** has the pinouts and three ways to connect:
@@ -228,11 +228,11 @@ Drop a marker before each step:
 1. **Key on, engine off** (`1`), about 10 s.
 2. **Idle** (`2`), about 10 s.
 3. **A few throttle blips** (`3`).
-4. **Optional: a pull into boost** (`4`), with a reference log running, such as the FrostBYTE
-   app's logger, a JB4 or an ECU log.
+4. **Optional: a pull into boost** (`4`), with a reference log running, such as a tuner's
+   datalog, `pandacapture obd` or an ECU log.
 
-Then copy the log to your phone and open it in the FrostBYTE app: **CAN → Find signals → Open
-capture…**.
+Then find the signals in it with `pandacapture match` or the dashboard's Find signals
+([6. Find unknown signals](#6-find-unknown-signals)).
 
 ### Bench (ECU on a bench cable)
 
@@ -300,7 +300,7 @@ The bar at the top of the page:
 The gauge page holds only what's needed while driving. Everything else is on the **Captures & Claude**
 page:
 - **Captures:** the captures folder, newest first.
-- **Reference:** the OBD answers in the capture, or a JB4 or `obd` log you add. Logs you add are kept
+- **Reference:** the OBD answers in the capture, or a logger's or `obd` log you add. Logs you add are kept
   until the dashboard stops.
 - **Find signals:** runs [`match`](#6-find-unknown-signals) on this computer and lists the ranked fields;
   **Copy entry** copies a ready-made map entry.
@@ -338,11 +338,11 @@ Record a capture while another tool logs the same drive, then let PandaCapture w
 fields carry which values:
 
 ```bash
-pandacapture match captures/capture-20261003-035135.log jb4-log.csv --map kia-stinger-33t-pcan
+pandacapture match captures/capture-20261003-035135.log logger.csv --map kia-stinger-33t-pcan
 ```
 
 1. **Lines the logs up:** it fits the other log's clock to the capture's by RPM. Any CSV with a
-   time column and an RPM column works; a JB4 log's settings rows are skipped.
+   time column and an RPM column works; settings rows some loggers put first are skipped.
 2. **Tests every field:** each 8-, 12- and 16-bit field of every broadcast ID, against each column
    that changes.
 3. **Ranks the results:** each field gets a correlation and a fitted scale and offset, plus two
@@ -352,7 +352,7 @@ pandacapture match captures/capture-20261003-035135.log jb4-log.csv --map kia-st
 The dashboard's Captures & Claude page runs the same match on a capture it recorded (screenshot
 [above](#5-watch-it-live)).
 
-**The capture can calibrate itself:** if a JB4 or scan tool polls the ECU over OBD on the same bus,
+**The capture can calibrate itself:** if a logger or scan tool polls the ECU over OBD on the same bus,
 its requests and the ECU's answers are in the capture. `--obd` uses those answers as the reference,
 with no second log:
 
@@ -384,7 +384,7 @@ capture before you see it. It uses **your own Anthropic API key**, billed to you
    Or set `ANTHROPIC_API_KEY`. PandaCapture uses an API key only, never any other login.
 2. **The local part runs first.** It works out statistics for every broadcast id, and the reference
    values: the engine computer's OBD answers in the capture, or a log you give alongside it
-   (`analyze CAPTURE jb4-log.csv`).
+   (`analyze CAPTURE logger.csv`).
 3. **It asks before sending,** and says what goes out and what the first request costs:
    - statistics, not the capture itself
    - ids whose frames carry text (which can include the VIN) are withheld
@@ -403,13 +403,13 @@ Captures & Claude page does the same from the browser:
 
 ![Analyze with Claude on the Captures & Claude page](docs/images/claude-panel.png)
  A short capture
-with the engine computer's OBD answers in it (a JB4 or `pandacapture obd` polling meanwhile) gives it
+with the engine computer's OBD answers in it (a logger or `pandacapture obd` polling meanwhile) gives it
 the most to work with.
 
 ### Hand a capture to another agent
 
 ```bash
-pandacapture bundle captures/capture-20261003-035135.log jb4-log.csv
+pandacapture bundle captures/capture-20261003-035135.log logger.csv
 ```
 
 Writes `capture-…-bundle.zip` for your own Claude account, Claude Code, or anyone else. It holds the
@@ -491,7 +491,7 @@ Rules it keeps to:
   tool or logger does. Set it up parked.
 - **An acknowledgement:** you type `TRANSMIT` after a warning about what it sends. Through a panda
   it also needs PandaCapture firmware.
-- **Pause other OBD loggers** (a JB4's, a scan tool's) while it runs: they'd get the same answers.
+- **Pause other OBD loggers** (a tuner's datalogger, a scan tool) while it runs: they'd get the same answers.
 
 ## 8. Read the codes
 
@@ -592,7 +592,7 @@ It reads the OBD modules plus any module you name with `--module`.
 pandacapture did --module 7E0 E001 E002 --every 0.5
 ```
 
-Reads data identifiers from one module, such as the `22 E0xx` reads a JB4 makes, once or repeatedly
+Reads data identifiers from one module, such as the `22 E0xx` reads some tuning tools make, once or repeatedly
 until `Q`. Results go to `did-….json`, and the answers are in the capture too.
 
 Modules are addressed by request id (700-7F7), answering on id + 8, the usual convention. PandaCapture
