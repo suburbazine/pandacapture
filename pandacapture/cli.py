@@ -641,10 +641,10 @@ def cmd_match(argv) -> int:
     ap = argparse.ArgumentParser(prog="pandacapture match", description=(
         "Finds which CAN fields carry which values: lines a capture up with a reference recorded at the same "
         "time and ranks every candidate field against each reference column. The reference is a CSV from "
-        "another tool (e.g. a JB4 log), or with --obd, the ECU's OBD answers inside the capture (when a JB4 or "
+        "another tool (e.g. a tuner's datalog), or with --obd, the ECU's OBD answers inside the capture (when a logger or "
         "scan tool was polling during the capture)."))
     ap.add_argument("capture", help="the PandaCapture candump log")
-    ap.add_argument("reference", nargs="?", help="CSV recorded at the same time (e.g. a JB4 log)")
+    ap.add_argument("reference", nargs="?", help="CSV recorded at the same time (e.g. a tuner's datalog)")
     ap.add_argument("--obd", action="store_true", help="use the OBD answers in the capture as the reference")
     ap.add_argument("--map", help="address map with an RPM signal for lining the logs up, and to label known fields")
     ap.add_argument("--rpm-key", default="rpm", help="the map's RPM signal (default rpm)")

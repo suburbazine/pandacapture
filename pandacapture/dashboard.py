@@ -584,7 +584,7 @@ def make_handler(dash):
                         dash.match.start(capture, str(path), state.map, name, keep=True)
                     else:
                         if not body:
-                            self._json({"error": "Choose the reference CSV (e.g. the JB4 log)."}, 400)
+                            self._json({"error": "Choose the reference CSV (e.g. a tuner's datalog)."}, 400)
                             return
                         fd, tmp = tempfile.mkstemp(prefix="pandacapture-ref-", suffix=".csv")
                         with open(fd, "wb") as f:

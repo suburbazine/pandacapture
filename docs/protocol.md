@@ -1,7 +1,7 @@
 # Red Panda USB protocol (for the Android OTG port)
 
-What PandaCapture says to a Red Panda over USB, and everything the FrostBYTE Android app would need
-to capture from one over USB OTG. `pandacapture/protocol.py` holds the same constants and the packet
+What PandaCapture says to a Red Panda over USB, and everything an Android app needs to capture from
+one over USB OTG. `pandacapture/protocol.py` holds the same constants and the packet
 code in a form that ports line for line to Kotlin.
 
 ## Device
@@ -97,5 +97,5 @@ An app should only arm after its own warning and acknowledgement, the way `panda
     USB A-to-A cable, or a USB-C OTG hub.
 - Check how the Red Panda is powered before relying on a phone: it isn't verified yet whether a
   phone's OTG port can power it alone. A powered OTG hub avoids the question.
-- The FrostBYTE app's CAN log parsers already read PandaCapture's candump output. For multi-bus
-  logs they would need to keep the `canN` interface, which they currently ignore.
+- An app reading PandaCapture's candump output should keep the `canN` interface for multi-bus logs,
+  not just the id and data.

@@ -96,12 +96,12 @@ any code from the file. A derived signal has no value until all its inputs have 
 
 ## Finding signals
 
-- **Against another tool's log:** record a capture while a JB4 or another logger records the same
+- **Against another tool's log:** record a capture while another logger (a tuner's datalog, say) records the same
   drive, then run `pandacapture match capture.log other-log.csv`. It ranks every field against
   every column of the other log.
 - **Against the ECU's own answers:** if anything was polling the ECU over OBD during the capture,
   `pandacapture match capture.log --obd` uses those answers as the reference instead.
-- **Other tools:** the FrostBYTE Android app's signal finder, SavvyCAN, or a DBC from
+- **Other tools:** PandaCapture Android's signal finder, SavvyCAN, or a DBC from
   [opendbc](https://github.com/commaai/opendbc).
 
 Mark what you've checked against a real gauge or the ECU's own answers as `verified`.

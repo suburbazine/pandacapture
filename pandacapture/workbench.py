@@ -10,7 +10,7 @@ from pathlib import Path
 
 
 class References:
-    """Reference logs (JB4 CSVs, obd CSVs) uploaded from the page, kept until the dashboard stops."""
+    """Reference logs (loggers' CSVs, obd CSVs) uploaded from the page, kept until the dashboard stops."""
 
     def __init__(self):
         self.dir = Path(tempfile.mkdtemp(prefix="pandacapture-refs-"))

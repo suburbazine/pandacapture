@@ -77,15 +77,15 @@ def test_pages(dash):
 
 def test_references_find_and_bundle(dash, tmp_path):
     csv = "time,RPM\n" + "\n".join(f"{1000 + i * 0.1:.1f},{800 + i}" for i in range(30))
-    up = post(dash.url + "reference?filename=jb4.csv", csv.encode(), raw=True)
-    assert up["name"] == "jb4.csv" and get(dash.url + "references")["references"] == [{"id": up["id"], "name": "jb4.csv"}]
+    up = post(dash.url + "reference?filename=datalog.csv", csv.encode(), raw=True)
+    assert up["name"] == "datalog.csv" and get(dash.url + "references")["references"] == [{"id": up["id"], "name": "datalog.csv"}]
     assert post(dash.url + "match?capture=capture-20261004-101500.log&ref=obd") == {"started": True}
     m = wait(dash.url + "match", lambda s: s["state"] in ("done", "error"))
     assert m["state"] == "done" and [r["column"] for r in m["results"]] == ["OBD coolant C"]
     assert post(dash.url + "match?capture=nope.log&ref=obd")["status"] == 400
     data = get(dash.url + "bundle?capture=capture-20261004-101500.log&ref=" + up["id"], raw=True)
     names = zipfile.ZipFile(io.BytesIO(data)).namelist()
-    assert any(n.endswith("/tools.py") for n in names) and any(n.endswith("/jb4.csv") for n in names)
+    assert any(n.endswith("/tools.py") for n in names) and any(n.endswith("/datalog.csv") for n in names)
     assert ta.VIN.encode() not in data
 
 

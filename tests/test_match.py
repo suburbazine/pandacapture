@@ -31,8 +31,8 @@ def write_capture(path, seconds=40, rate=50, with_obd=False):
     return t0
 
 
-def write_jb4(path, offset=3.0, unit=0.1, seconds=30):
-    """A JB4-style CSV: settings rows, then a header with timestamp in tenths of a second."""
+def write_datalog(path, offset=3.0, unit=0.1, seconds=30):
+    """A tuner-datalog-style CSV: settings rows, then a header with timestamp in tenths of a second."""
     rows = ["Firmware,Interface,VIN", "21/36,Android,", "", "timestamp,RPM,Boost kPa,Temp,Flat"]
     for k in range(int(seconds * 8)):
         tr = k / 8  # reference seconds
@@ -45,9 +45,9 @@ def write_jb4(path, offset=3.0, unit=0.1, seconds=30):
 
 def test_aligns_and_finds_field(tmp_path):
     write_capture(tmp_path / "c.log")
-    write_jb4(tmp_path / "jb4.csv", offset=3.0)
+    write_datalog(tmp_path / "datalog.csv", offset=3.0)
     out = []
-    results, (unit, off) = match.run(tmp_path / "c.log", tmp_path / "jb4.csv", MAP, log=out.append)
+    results, (unit, off) = match.run(tmp_path / "c.log", tmp_path / "datalog.csv", MAP, log=out.append)
     assert unit == 0.1 and off == pytest.approx(3.0, abs=0.05)
     best = results["Boost kPa"][0]
     assert (best.candidate.can_id, best.candidate.byte, best.candidate.bits) == (0x123, 1, 8)
@@ -58,8 +58,8 @@ def test_aligns_and_finds_field(tmp_path):
 
 def test_drift_is_flagged(tmp_path):
     write_capture(tmp_path / "c.log")
-    write_jb4(tmp_path / "jb4.csv")
-    results, _ = match.run(tmp_path / "c.log", tmp_path / "jb4.csv", MAP, log=lambda s: None, min_r=0.5)
+    write_datalog(tmp_path / "datalog.csv")
+    results, _ = match.run(tmp_path / "c.log", tmp_path / "datalog.csv", MAP, log=lambda s: None, min_r=0.5)
     temp = results["Temp"][0]
     assert temp.candidate.can_id == 0x200  # the real one is found
     # a field that only shares a slow drift with the column shows weak change correlation
@@ -70,9 +70,9 @@ def test_drift_is_flagged(tmp_path):
 
 def test_unaligned_logs_are_refused(tmp_path):
     write_capture(tmp_path / "c.log")
-    (tmp_path / "jb4.csv").write_text("timestamp,RPM\n" + "\n".join(f"{i},{(i * 7919) % 5000}" for i in range(200)))
+    (tmp_path / "datalog.csv").write_text("timestamp,RPM\n" + "\n".join(f"{i},{(i * 7919) % 5000}" for i in range(200)))
     with pytest.raises(match.MatchError, match="line the logs up"):
-        match.run(tmp_path / "c.log", tmp_path / "jb4.csv", MAP, log=lambda s: None)
+        match.run(tmp_path / "c.log", tmp_path / "datalog.csv", MAP, log=lambda s: None)
 
 
 def test_obd_answers_single_and_multi_frame():

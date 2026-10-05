@@ -18,7 +18,7 @@ This sends standard OBD-II read requests onto the vehicle's bus, the same ones a
 codes (stored, pending, permanent), the check-engine light, the freeze frame and vehicle information.
 Nothing is cleared or changed.
 
-- Modules answer every request: pause other OBD tools (a JB4's logging, a scan tool) meanwhile.
+- Modules answer every request: pause other OBD tools (a tuner's datalogger, a scan tool) meanwhile.
 - Key on (engine running or not).
 """
 

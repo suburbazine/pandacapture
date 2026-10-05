@@ -291,17 +291,17 @@ def test_controls_record_marker_map(tmp_path):
 
 
 def test_find_signals_from_the_page(tmp_path):
-    from tests.test_match import write_capture, write_jb4
+    from tests.test_match import write_capture, write_datalog
     write_capture(tmp_path / "capture-x.log", with_obd=True)
-    write_jb4(tmp_path / "jb4.csv")
+    write_datalog(tmp_path / "datalog.csv")
     m = parse_map({"signals": [{"key": "rpm", "id": "0x316", "byte": 2, "bits": 16, "scale": 0.25}]})
     dash = Dashboard(SimulatedSource, m, port=0, record_dir=tmp_path)
     dash.start()
     try:
         assert post(dash.url + "match?capture=../secret.log&ref=obd")[0] == 400   # only listed captures
         for ref, body, ctype in (("obd", b"", "application/json"),
-                                 ("csv", (tmp_path / "jb4.csv").read_bytes(), "text/csv")):
-            code, _ = post(dash.url + f"match?capture=capture-x.log&ref={ref}&filename=jb4.csv", body, ctype)
+                                 ("csv", (tmp_path / "datalog.csv").read_bytes(), "text/csv")):
+            code, _ = post(dash.url + f"match?capture=capture-x.log&ref={ref}&filename=datalog.csv", body, ctype)
             assert code == 200
             for _ in range(100):
                 state = json.loads(get(dash.url + "match"))

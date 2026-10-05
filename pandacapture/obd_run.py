@@ -23,7 +23,7 @@ OBD_WARNING = """\
 This sends standard OBD-II requests (mode 01, "show current data") onto the vehicle's bus, the same
 requests a scan tool or a logger sends. They read values; they can't change anything in the car.
 
-- Modules answer every request: pause other OBD tools (a JB4's logging, a scan tool) meanwhile, or
+- Modules answer every request: pause other OBD tools (a tuner's datalogger, a scan tool) meanwhile, or
   both may get confused answers.
 - Set it up with the vehicle parked. The scan (finding what's supported) only runs key-on or at idle,
   up to 900 rpm. The poll that follows keeps reading at any engine speed.

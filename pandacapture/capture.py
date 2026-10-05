@@ -1,7 +1,6 @@
 """Records CAN traffic to a candump log, with markers, stall and dropout marks, and a summary.
 
-The log format matches the NEXIQ FrostCapture's (in the FrostBYTE Android repository), so the FrostBYTE Android signal finder, SavvyCAN and
-can-utils read it: `(unix time) canN ID#DATA`, and `#` comment lines for markers and events.
+The log format is candump's, so PandaCapture Android's signal finder, SavvyCAN and can-utils read it: `(unix time) canN ID#DATA`, and `#` comment lines for markers and events.
 """
 
 import datetime as dt

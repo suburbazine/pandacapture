@@ -3,7 +3,7 @@
 ## Verified
 - Unit tests (`python -m pytest`):
   - Packet encoding and decoding, including packets split across USB transfers and corrupted ones.
-  - The candump output matches the FrostBYTE Android parser's patterns.
+  - The candump output matches the patterns an Android CAN log parser uses.
   - The flash workflow against a simulated panda: first install through DFU, update, resuming from
     DFU, refusing comma-device and F4 pandas.
   - The transmit gate: acknowledgement, firmware check, arm, heartbeat, disarm after errors.
@@ -69,22 +69,23 @@
   64-bit, for both APIs: frames, transmit echoes skipped, lost-adapter errors, refused bit rates.
   NEXIQ's real 32-bit RP1210 and J2534 drivers load in the 32-bit bridge and report
   ERR_OPENING_PORT with the adapter unplugged. Not yet tried with an adapter on a bus. The RP1210
-  frame decoding is FrostCapture's, which recorded the Stinger's P-CAN through a USB-Link 2.
+  frame decoding comes from an earlier RP1210 capture tool that recorded the Stinger's P-CAN through a
+  USB-Link 2.
 - No Red Panda has been flashed or captured from yet. The protocol follows comma's library for the
   pinned firmware, but these are unconfirmed:
   - auto bit rate detection on a real bus
   - DFU on Windows with Zadig's WinUSB driver
   - the green LED while armed, on a panda that has status LEDs (the oneclone mini blackpanda has none)
   - the heartbeat timeout
-- First real-bus capture (reported by the user's tuning session, 2026-10-03): Kia Stinger 3.3T
+- First real-bus capture (2026-10-03): Kia Stinger 3.3T
   P-CAN at 500k through the oneclone board's 26-pin, on PandaCapture firmware.
   - 400,330 frames in 164.9 s (about 2,430 frames/s), 64 IDs, no dropouts or stalls.
   - Bit rate auto-detected on bus 0 (980 frames during detection), recorded silent / listen-only.
-  - For comparison, the NEXIQ USB-Link 2 FrostCapture managed about 1,870 frames/s, with an
+  - For comparison, an RP1210 capture through a NEXIQ USB-Link 2 managed about 1,870 frames/s, with an
     adapter dropout and a 10.3 s stall.
-- Signal matching (2026-10-03): a panda capture and a JB4 log of the same short drive (no boost).
-  - The logs lined up at RPM r = 0.9998, which shows the JB4's timestamp counts tenths of a second.
-  - The JB4 had been polling the ECU over OBD, and the ECU's answers in the capture confirmed these
+- Signal matching (2026-10-03): a panda capture and a tuner's datalog of the same short drive (no boost).
+  - The logs lined up at RPM r = 0.9998, which shows the datalog's timestamp counts tenths of a second.
+  - The datalogger had been polling the ECU over OBD, and the ECU's answers in the capture confirmed these
     against the ECU's own values:
     - lambda per bank (0x5CF b0/b2, 0.5 + raw/128)
     - short-term trims (0x557 b0/b2, OBD encoding)

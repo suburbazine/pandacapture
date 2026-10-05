@@ -36,7 +36,7 @@ WARNING = """\
 This sends UDS read requests onto the vehicle's bus, one module at a time, the same ones a dealer tool
 uses to read a module's codes and data. Nothing is cleared or changed.
 
-- Modules answer every request: pause other diagnostic tools (a JB4's logging, a scan tool) meanwhile.
+- Modules answer every request: pause other diagnostic tools (a tuner's datalogger, a scan tool) meanwhile.
 - Key on (engine running or not).
 """
 

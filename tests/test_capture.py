@@ -4,7 +4,7 @@ from pandacapture import protocol as p
 from pandacapture.capture import CaptureOptions, Console, capture
 from pandacapture.sources import SimulatedSource, SourceError
 
-# The FrostBYTE Android signal finder's patterns (canlog/LogParsers.kt)
+# The patterns an Android CAN log parser uses
 ANDROID_CANDUMP = re.compile(r"\(\s*([0-9.]+)\)\s+\S+\s+([0-9A-Fa-f]{3,8})#(R?[0-9A-Fa-f]*)")
 ANDROID_MARKER = re.compile(r"^#\s*marker\s+(\S+)\s+\(\s*([0-9.]+)\)")
 
