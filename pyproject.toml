@@ -3,6 +3,8 @@ name = "pandacapture"
 dynamic = ["version"]
 description = "CAN capture, firmware flashing and gated transmit for comma Red and Black Pandas"
 readme = "README.md"
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md"]
 requires-python = ">=3.10"
 dependencies = [
   "libusb1>=3.1",
@@ -20,7 +22,7 @@ package = ["pyinstaller>=6.10"]
 pandacapture = "pandacapture.cli:main"
 
 [build-system]
-requires = ["setuptools>=61", "wheel"]
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]

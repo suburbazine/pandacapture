@@ -750,3 +750,17 @@ The firmware is comma's panda firmware at pinned commits, plus the patches in
   (`e462c34d`, June 2025), with the opendbc commit it pinned. comma no longer maintains that firmware.
 
 PandaCapture isn't made or endorsed by comma.ai. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+## License
+
+Copyright (C) 2026 Xtremission LLC.
+
+PandaCapture is free software: you can redistribute it and/or modify it under the terms of the GNU
+General Public License as published by the Free Software Foundation, either version 3 of the License,
+or (at your option) any later version. It is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+PURPOSE. See [LICENSE](LICENSE) for the full terms.
+
+Releases up to and including 0.9.0 were published under the MIT License, and those copies keep it.
+The parts PandaCapture builds on keep their own licenses: see
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

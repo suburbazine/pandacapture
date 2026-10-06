@@ -87,6 +87,7 @@ jobs:
           New-Item -ItemType Directory bundle | Out-Null
           Copy-Item dist/${{ matrix.asset }} bundle/pandacapture.exe
           Copy-Item launchers/windows/* bundle/
+          Copy-Item LICENSE, THIRD_PARTY_NOTICES.md bundle/
           Compress-Archive -Path bundle/* -DestinationPath dist/pandacapture-windows-x64.zip
       - uses: actions/upload-artifact@v4
         with:
