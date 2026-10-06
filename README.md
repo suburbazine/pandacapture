@@ -454,8 +454,9 @@ python tools.py search_references "reference=OBD RPM" top=5
 The capture in the bundle is scrubbed:
 - **no header lines,** which name the panda's serial number
 - **no ids whose frames carry text,** which can include the VIN
-- **of the diagnostic ids, only OBD mode 01 live-value exchanges.** VIN reads (mode 09) and UDS reads
-  are dropped.
+- **of the diagnostic ids, only OBD mode 01 live-value exchanges and UDS reads of data by
+  identifier** (22, e.g. a tuning tool's reads of E019). VIN reads (mode 09), fault codes,
+  identification data (F1xx) and any identifier whose answers carry text are dropped.
 
 Markers and events stay. The reference log goes in as you gave it, so check it before sharing.
 

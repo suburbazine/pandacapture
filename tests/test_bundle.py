@@ -1,7 +1,8 @@
 """Capture bundles: what's scrubbed (the header, text-carrying ids, the VIN in diagnostic answers), what's
-kept (frames, markers, OBD mode 01 exchanges, long ones included), and that the bundled tools run on their own."""
+kept (frames, markers, OBD mode 01 exchanges and UDS data reads, long ones included), and that the bundled tools run on their own."""
 
 import json
+import re
 import subprocess
 import sys
 import zipfile
@@ -55,6 +56,20 @@ def capture(path):
             add(0x7E0, bytes([3, 0x22, 0xF1, 0x90, 0, 0, 0, 0]))
             for can_id, data in isotp(0x7E8, b"\x62\xf1\x90" + VIN.encode()):           # the VIN, UDS
                 add(can_id, data)
+            add(0x7E0, bytes([3, 0x22, 0x01, 0x01, 0, 0, 0, 0]))
+            for can_id, data in isotp(0x7E8, b"\x62\x01\x01" + VIN.encode()):           # the VIN under a maker's number
+                add(can_id, data)
+            add(0x7A0, bytes([3, 0x22, 0xF1, 0x87, 0, 0, 0, 0]))
+            add(0x7A8, bytes([3, 0x7F, 0x22, 0x31, 0, 0, 0, 0]))                        # a refusal carries no data: kept
+            add(0x7E0, bytes([3, 0x19, 0x02, 0xFF, 0, 0, 0, 0]))                        # codes: dropped
+        if i % 20 == 5:
+            add(0x7E0, bytes([3, 0x22, 0xE0, 0x19, 0, 0, 0, 0]))                       # a data read, kept whole
+            for can_id, data in isotp(0x7E8, b"\x62\xe0\x19" + bytes([0xFF] * 72)):
+                add(can_id, data)
+                if data[0] >> 4 == 1:
+                    add(0x7E0, bytes([0x30, 0, 0, 0, 0, 0, 0, 0]))
+            add(0x7E1, bytes([3, 0x22, 0x01, 0xA0, 0, 0, 0, 0]))
+            add(0x7E9, bytes([5, 0x62, 0x01, 0xA0, 0x12, 0x34, 0, 0]))
     lines.append(f"# summary: 0x5B0 last data {VIN.encode()[:7].hex()} from {SERIAL}")
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return path
@@ -67,7 +82,13 @@ def test_scrub(tmp_path):
     assert summary["withheld_ids"] == ["0x5B0"] and summary["markers_and_events"] == 1
     assert "# marker 1 (" in text and text.count(" 316#") == 300
     assert "7E8#10" in text and "7E0#30" in text                     # the long mode 01 answer and its flow control
-    assert "09020000" not in text and "22F190" not in text
+    for gone in ("09020000", "22F190", "22F187", "220101", "1902FF"):
+        assert gone not in text, gone
+    assert "7A8#037F2231" in text
+    # UDS data reads stay, long answers whole
+    assert text.count(" 7E0#0322E019") == 15 and text.count(" 7E8#104B62E019") == 15
+    assert len(re.findall(r" 7E8#2[0-9A-F]FFFF", text)) == 15 * 10
+    assert text.count(" 7E9#056201A01234") == 15
 
 
 def test_bundle_runs_on_its_own(tmp_path):

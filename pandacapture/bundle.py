@@ -3,7 +3,8 @@
 The zip holds:
 - capture.log, scrubbed: no header lines (they name the panda's serial number), no frames of ids that carry
   text (a VIN, part numbers), and of the diagnostic ids (700-7FF) only OBD mode 01 requests and answers (the
-  live values that serve as references). Markers and events stay.
+  live values that serve as references) and UDS reads of data by identifier (22, e.g. a tuning tool's reads of
+  E019), never identification data (F1xx) or an identifier whose answers carry text. Markers and events stay.
 - the reference log, if one is given, as it is, and the address map (map.json)
 - tools.py and the pure-Python analysis modules it needs (no USB, no network): the same read-only tools
   pandacapture analyze gives Claude, run from a command line
@@ -23,38 +24,102 @@ from .analysis import EVENT, TEXT_SHARE, TOOLS, _texty
 MODULES = ("analysis.py", "match.py", "logs.py", "signals.py", "protocol.py", "firmware.py")
 
 
-class Mode01Filter:
-    """Keeps OBD mode 01 exchanges (live values: what serves as references) and nothing else diagnostic.
-    Requests may ask for several PIDs (some loggers do), so answers can be long: a first frame starting 41, its
-    consecutive frames, and the tester's flow control are kept with it. Mode 09 (the VIN), UDS reads and the
-    rest are dropped."""
+def is_identification(did) -> bool:
+    """Identification data (F100-F1FF: part, serial and software numbers, the VIN): never kept."""
+    return 0xF100 <= did <= 0xF1FF
 
-    def __init__(self):
-        self.long = {}                # answer id -> inside a long mode 01 answer
+
+class DiagnosticFilter:
+    """Keeps OBD mode 01 exchanges (live values: what serves as references) and UDS reads of data by identifier
+    (22 requests, their 62 answers, refusals and flow control), and nothing else diagnostic: mode 09 (the VIN),
+    UDS identification data, codes, and any identifier in text_dids (its answers carry text) are dropped.
+    Requests may ask for several PIDs or identifiers, so answers can be long: a first frame, its consecutive
+    frames, and the tester's flow control are kept with it."""
+
+    def __init__(self, text_dids=()):
+        self.text_dids = set(text_dids)
+        self.long = {}                # answer id -> inside a long answer that's kept
+
+    def _data(self, did) -> bool:
+        return not is_identification(did) and did not in self.text_dids
 
     def keep(self, can_id, data) -> bool:
         if len(data) < 2:
             return False
+        obd_request = can_id == 0x7DF or 0x7E0 <= can_id <= 0x7E7
+        obd_answer = 0x7E8 <= can_id <= 0x7EF
         kind = data[0] >> 4
-        if can_id == 0x7DF or 0x7E0 <= can_id <= 0x7E7:
-            if kind == 0:
-                return 2 <= data[0] <= 7 and data[1] == 0x01
-            return kind == 3                                  # flow control: carries no data
-        if 0x7E8 <= can_id <= 0x7EF:
-            if kind == 0:
-                self.long[can_id] = False
-                return 3 <= data[0] <= 7 and data[1] == 0x41
-            if kind == 1:
-                self.long[can_id] = len(data) > 2 and data[2] == 0x41
-                return self.long[can_id]
-            if kind == 2:
-                return self.long.get(can_id, False)
-        return False
+        if kind == 0:
+            self.long[can_id] = False
+            n = data[0]
+            if not 1 <= n <= 7 or len(data) < 1 + n:
+                return False
+            sid = data[1]
+            if sid == 0x01:
+                return obd_request and n >= 2
+            if sid == 0x41:
+                return obd_answer and n >= 3
+            if sid == 0x22:
+                return n >= 3 and n % 2 == 1 and all(self._data(data[i] << 8 | data[i + 1]) for i in range(2, 1 + n, 2))
+            if sid == 0x62:
+                return n >= 3 and self._data(data[2] << 8 | data[3])
+            if sid == 0x7F:
+                return n >= 3 and data[2] == 0x22                # a refused read: no data
+            return False
+        if kind == 1:
+            self.long[can_id] = len(data) >= 5 and ((data[2] == 0x41 and obd_answer)
+                                                    or (data[2] == 0x62 and self._data(data[3] << 8 | data[4])))
+            return self.long[can_id]
+        if kind == 2:
+            return self.long.get(can_id, False)
+        return kind == 3                                          # flow control: carries no data
+
+
+class TextDids:
+    """The identifiers whose UDS answers (62, single- or multi-frame) carry text: a run of TEXT_RUN letters and
+    digits, as a VIN or a part number would be, whatever number a manufacturer gives it."""
+
+    TEXT_RUN = 10                     # a VIN is 17; data reads seen in real captures (E019, 01A0, B00D) reach 6
+
+    def __init__(self):
+        self.found = set()
+        self.partial = {}             # answer id -> (total length, bytes so far) of a long answer
+
+    def frame(self, can_id, data):
+        if len(data) < 2:
+            return
+        b0, kind = data[0], data[0] >> 4
+        if kind == 0:
+            self.partial.pop(can_id, None)
+            if 3 <= b0 <= 7 and len(data) > b0:
+                self._check(data[1:1 + b0])
+        elif kind == 1:
+            if len(data) >= 3:
+                self.partial[can_id] = ((b0 & 0x0F) << 8 | data[1], bytes(data[2:]))
+        elif kind == 2 and can_id in self.partial:
+            total, buf = self.partial[can_id]
+            buf += bytes(data[1:])
+            if len(buf) >= total:
+                del self.partial[can_id]
+                self._check(buf[:total])
+            else:
+                self.partial[can_id] = (total, buf)
+
+    def _check(self, payload):
+        if len(payload) < 3 or payload[0] != 0x62:
+            return
+        run = longest = 0
+        for b in payload[3:]:
+            run = run + 1 if chr(b).isascii() and chr(b).isalnum() else 0
+            longest = max(longest, run)
+        if longest >= self.TEXT_RUN:
+            self.found.add(payload[1] << 8 | payload[2])
 
 
 def scrub(src) -> tuple:
     """(scrubbed capture text, summary)."""
     frames, texty = {}, {}
+    text_dids = TextDids()
     lines = Path(src).read_text(encoding="utf-8", errors="replace").splitlines()
     parsed = []
     for line in lines:
@@ -67,13 +132,15 @@ def scrub(src) -> tuple:
                 continue
             frames[f.addr] = frames.get(f.addr, 0) + 1
             texty[f.addr] = texty.get(f.addr, 0) + _texty(f.data)
+            if 0x700 <= f.addr <= 0x7FF:
+                text_dids.frame(f.addr, f.data)
             parsed.append((s, f))
         elif s.startswith("#") and EVENT.match(s):
             parsed.append((s, None))
     withheld = sorted(i for i in frames if not 0x700 <= i <= 0x7FF and texty[i] >= TEXT_SHARE * frames[i])
-    out = ["# PandaCapture capture bundle (scrubbed: no header, no text-carrying ids, diagnostics: OBD mode 01 only)"]
+    out = ["# PandaCapture capture bundle (scrubbed: no header, no text-carrying ids, diagnostics: OBD mode 01 and UDS data reads only)"]
     kept = dropped_diag = events = 0
-    obd = Mode01Filter()
+    obd = DiagnosticFilter(text_dids.found)
     for s, f in parsed:
         if f is None:
             m = EVENT.match(s)
@@ -116,8 +183,9 @@ analysis tools: the same read-only tools `pandacapture analyze` gives Claude.
 | `bundle.json` | how the bundle was made |
 
 **Scrubbed:** no header lines (they name the recording hardware), no frames of ids whose data carries text
-({withheld}), and of the diagnostic ids (700-7FF) only OBD mode 01 requests and answers. Markers and events
-(`# marker 1 (time)`) stay. {reference_note}
+({withheld}), and of the diagnostic ids (700-7FF) only OBD mode 01 requests and answers and UDS reads of data
+by identifier (22 and its 62 answers), never identification data (F1xx) or an identifier whose answers carry text.
+Markers and events (`# marker 1 (time)`) stay. {reference_note}
 
 ## Using the tools
 
@@ -299,7 +367,7 @@ def main(argv) -> int:
           + (f"{info['reference']}, " if info["reference"] else "") + "and the analysis tools (python tools.py)")
     print("  Scrubbed: the header (it names the panda), "
           + (f"text-carrying ids {', '.join(info['withheld_ids'])}, " if info["withheld_ids"] else "")
-          + f"{info['diagnostic_frames_dropped']:,} diagnostic frames other than OBD mode 01")
+          + f"{info['diagnostic_frames_dropped']:,} diagnostic frames other than OBD mode 01 and UDS data reads")
     if info["reference"]:
         print(f"  {info['reference']} is included as given: check it before sharing.")
     print("  Unzip it and point an agent at the folder: it starts from README.md (Claude Code also reads CLAUDE.md).")
