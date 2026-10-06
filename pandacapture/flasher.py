@@ -68,7 +68,7 @@ def check_hardware(panda: Panda, force: bool) -> p.Mcu:
     """Which firmware build the panda takes: H7 for the Red Panda, F4 for the Black Panda."""
     hw = panda.hw_type()
     name = p.HW_NAMES.get(hw, f"unknown hardware 0x{hw:02X}")
-    # Grey: comma's grey board, and boards that detect as one, such as oneclone's mini blackpanda
+    # Gray: comma's grey board, and boards that detect as one, such as oneclone's mini blackpanda
     if hw in (p.HW_RED_PANDA, p.HW_BLACK_PANDA, p.HW_GREY_PANDA):
         return p.MCU_BY_HW[hw]
     if hw == p.HW_WHITE_PANDA:
@@ -178,7 +178,7 @@ def flash(load_firmware, serial=None, recover=None, force=False, confirm=None, l
             log(f"A panda ({mcu.name}) is waiting in the STM32 bootloader (DFU): flashing it from there.")
             log(f"Firmware to flash: {fw.version}")
             if confirm and not confirm():
-                raise FlashError("Cancelled; nothing was changed.")
+                raise FlashError("Canceled; nothing was changed.")
             if backup_dir:
                 backup_flash(dfus[0].serial, backup_dir, None, "unknown (found in DFU)", log)
             serial = write_bootstub(dfus[0].serial, fw, log)
@@ -205,7 +205,7 @@ def flash(load_firmware, serial=None, recover=None, force=False, confirm=None, l
         if backup_dir:
             log(f"The whole flash is backed up first, to {backup_dir}.")
     if confirm and not confirm():
-        raise FlashError("Cancelled; nothing was changed.")
+        raise FlashError("Canceled; nothing was changed.")
 
     if via_dfu:
         if not pandas[0].kind == "bootstub":
@@ -263,7 +263,7 @@ def restore(path, serial=None, confirm=None, log=print) -> str:
     log(f"Backup: {Path(path).name}, {meta['mcu']}, firmware {meta.get('firmware')}, made {meta.get('created')}")
     log("This erases the panda's flash and writes the backup back.")
     if confirm and not confirm():
-        raise FlashError("Cancelled; nothing was changed.")
+        raise FlashError("Canceled; nothing was changed.")
 
     if pandas:
         serial = pandas[0].serial

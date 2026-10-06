@@ -58,7 +58,7 @@ A second bus can go on A11/A10 (CAN1). Record with plain `pandacapture`. The sta
 traffic on `bus0`.
 
 - **Tapping a bus:** add no termination resistor. The bus already has its two 120 Ω terminators.
-  Twist the CAN-H/CAN-L pair, and keep the stub to the panda short (well under a metre).
+  Twist the CAN-H/CAN-L pair, and keep the stub to the panda short (well under a meter).
 - **On the bench:** an ECU alone on a bench cable needs a 120 Ω resistor across CAN-H and CAN-L
   somewhere on the bench wiring. With nothing else on the bus, record with
   `pandacapture --ack --bitrate 500`, so the panda acknowledges the ECU's frames.
@@ -94,8 +94,8 @@ pins 25 and 26 at the camera end.
 | 7 | PT4 | purple | 8 | **CAN1_H** (radar) | pink |
 | 9 | PT3 | yellow | 10 | **CAN1_L** (radar) | blue |
 | 11 | PT2 | white | 12 | 12 V in | red |
-| 13 | PT1 | grey | 14 | 12 V in | red |
-| 15 | PT1 | grey | 16 | IGN | brown |
+| 13 | PT1 | gray | 14 | 12 V in | red |
+| 15 | PT1 | gray | 16 | IGN | brown |
 | 17 | PT2 | white | 18 | **CAN1_H** (radar) | pink |
 | 19 | PT3 | yellow | 20 | **CAN1_L** (radar) | blue |
 | 21 | PT4 | purple | 22 | **CAN2_H** (camera) | orange |
@@ -130,15 +130,15 @@ Then plug it into the harness box, and the box into the panda with the OBD-C cab
 
 ### Example: a third-party 26-pin pigtail
 
-Colours mean nothing on third-party cables. One supplied with a oneclone mini blackpanda used red
+Colors mean nothing on third-party cables. One supplied with a oneclone mini blackpanda used red
 for ground. Go by cavity number: the harness box fixes each cavity's function, whatever the wire
-colour. This cable read:
+color. This cable read:
 
 | Cavity | Wire | Function |
 |---|---|---|
 | 1, 26 | long red, yellow | ground |
 | 12, 14 | purple, orange | +12 V |
-| 4 / 6 | blue / grey | CAN0 high / low: bus 0, the one to tap |
+| 4 / 6 | blue / gray | CAN0 high / low: bus 0, the one to tap |
 | 22 / 24 | long black / green | CAN2 high / low: bus 2, joined to bus 0 by the relay |
 | 9 ↔ 19, 11 ↔ 17 | short brown ↔ short red, short black ↔ short white | pass-throughs, unused |
 

@@ -1,4 +1,4 @@
-"""pandacapture bundle: a capture packed for another agent to analyse, with PandaCapture's analysis tools in it.
+"""pandacapture bundle: a capture packed for another agent to analyze, with PandaCapture's analysis tools in it.
 
 The zip holds:
 - capture.log, scrubbed: no header lines (they name the panda's serial number), no frames of ids that carry
@@ -246,7 +246,7 @@ def write_bundle(capture, address_map, out_path, reference=None, bus=0, ref_rpm=
             "map": address_map.name, **summary}
     withheld = ", ".join(summary["withheld_ids"]) or "none in this capture"
     readme = README.format(
-        version=__version__, made=info["made"], capture=Path(capture).name, bus_text=f"bus {bus} analysed",
+        version=__version__, made=info["made"], capture=Path(capture).name, bus_text=f"bus {bus} analyzed",
         reference_row=f"| `{ref_name}` | the reference log recorded alongside |\n" if ref_name else "",
         withheld=withheld, tools=tools_reference(),
         reference_note=f"`{ref_name}` is included as it was given." if ref_name else "")
@@ -275,7 +275,7 @@ def main(argv) -> int:
     ap.add_argument("capture")
     ap.add_argument("reference", nargs="?", help="a log recorded alongside (a logger's CSV, pandacapture obd CSV)")
     ap.add_argument("--map", help="the vehicle's address map (default: the built-in one, if there's one)")
-    ap.add_argument("--bus", type=int, default=0, help="the bus the tools analyse (default 0)")
+    ap.add_argument("--bus", type=int, default=0, help="the bus the tools analyze (default 0)")
     ap.add_argument("--ref-rpm", default="RPM", help="the reference's RPM column (default RPM)")
     ap.add_argument("--out", help="the zip to write (default: next to the capture)")
     args = ap.parse_args(argv)

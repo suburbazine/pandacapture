@@ -59,7 +59,7 @@
     -webkit-font-smoothing: antialiased;
     overflow-x: hidden;
   }
-  /* Lamp and level colours, set once per element so the rules below can share them */
+  /* Lamp and level colors, set once per element so the rules below can share them */
   .c-red { --lc: var(--red); }
   .c-amber { --lc: var(--amber); }
   .c-green { --lc: var(--green); }
@@ -235,7 +235,7 @@
   .light.on .label { color: var(--text); font-weight: 600; }
   .light.on .sub { color: var(--muted); }
 
-  /* Stale and no-data tiles look different from live ones, not just dimmer: dashed edge, grey value, a tag */
+  /* Stale and no-data tiles look different from live ones, not just dimmer: dashed edge, gray value, a tag */
   .tile.stale { border-style: dashed; }
   /* The stale tag: in the label's row (the label gives way while it shows), or a lamp's top corner */
   .tile.stale .hz { display: none; }
@@ -369,7 +369,7 @@
   $("theme").onclick = () => {
     root.dataset.theme = root.dataset.theme === "light" ? "dark" : "light";
     remember("pc-theme", root.dataset.theme);
-    dirty = true;   // traces take their colours from the theme
+    dirty = true;   // traces take their colors from the theme
   };
   $("full").onclick = () => {
     if (document.fullscreenElement) document.exitFullscreen();

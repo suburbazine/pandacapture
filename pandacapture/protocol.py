@@ -2,7 +2,7 @@
 
 Constants and pure functions with no USB access, so they can be tested anywhere and ported to other
 apps (docs/protocol.md describes the same things). They follow comma's panda
-firmware and Python library (MIT licence), pinned in firmware/panda.
+firmware and Python library (MIT license), pinned in firmware/panda.
 """
 
 import hashlib

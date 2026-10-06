@@ -13,7 +13,7 @@ from pandacapture import diag, diagsession
 from pandacapture import protocol as p
 from pandacapture.diag import Client
 from pandacapture.diagsession import EngineOffSession, SessionEnded
-from pandacapture.policy import PolicyRefused, VehicleState, is_flow_control, recognise
+from pandacapture.policy import PolicyRefused, VehicleState, is_flow_control, recognize
 
 
 def load(name):
@@ -27,7 +27,7 @@ tc = load("test_codes")
 
 
 class Module:
-    """An engine module (7E0/7E8) with UDS session behaviour; the car's RPM and speed over OBD."""
+    """An engine module (7E0/7E8) with UDS session behavior; the car's RPM and speed over OBD."""
 
     S3 = 0.6           # s without tester present before it drops back to its default session (5 s, scaled down)
 
@@ -115,7 +115,7 @@ class Link:
                 self.out += self.held
                 self.held = []
                 continue
-            req = recognise(f)
+            req = recognize(f)
             if f.addr not in (0x7DF, 0x7E0):
                 continue
             with self.m.lock:

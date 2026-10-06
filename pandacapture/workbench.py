@@ -68,7 +68,7 @@ def key_status() -> dict:
 
 
 class ClaudeJob:
-    """One analysis at a time: idle -> preparing -> confirm -> running -> done / error / cancelled."""
+    """One analysis at a time: idle -> preparing -> confirm -> running -> done / error / canceled."""
 
     def __init__(self, out_dir):
         self.out_dir = Path(out_dir)
@@ -111,7 +111,7 @@ class ClaudeJob:
                     client = client_factory(key)
                 analysis = Analysis(capture, address_map, reference, log=self._log)
                 session = Session(client, MODELS[model_name], analysis, log=self._log, max_cost=max_cost,
-                                  effort=effort, cancelled=self._cancel.is_set)
+                                  effort=effort, canceled=self._cancel.is_set)
                 params = {k: v for k, v in session.request_params(session.first_message()).items()
                           if k not in ("max_tokens", "cache_control")}
                 tokens = client.messages.count_tokens(**params).input_tokens
@@ -138,7 +138,7 @@ class ClaudeJob:
         def work():
             try:
                 session.run()
-                self._finish(session, "cancelled" if session.stopped == "Cancelled." else "done")
+                self._finish(session, "canceled" if session.stopped == "Canceled." else "done")
             except Exception as e:  # noqa: BLE001 - shown on the page
                 self._finish(session, "error", _api_error(e))
 

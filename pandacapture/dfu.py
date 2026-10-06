@@ -1,7 +1,7 @@
 """The STM32 ROM bootloader over USB DFU (ST's DfuSe commands), on an STM32H7 or STM32F4 panda.
 
 Only used to write the bootstub, the one part of a panda's flash the panda can't rewrite itself.
-Follows comma's panda library (python/usb.py, python/dfu.py; MIT licence).
+Follows comma's panda library (python/usb.py, python/dfu.py; MIT license).
 """
 
 import struct

@@ -182,7 +182,7 @@
      "offset": -40, "unit": "°C", "display": "number", "decimals": 0, "source": "dbc", "note": "TCU11 TEMP_AT"},
     {"key": "fuel_temp", "label": "Fuel", "group": "Temperatures", "id": "0x545", "byte": 7, "scale": 0.75,
      "offset": -48, "unit": "°C", "display": "number", "decimals": 0, "source": "dbc", "note": "EMS14"},
-    {"key": "ambient_model", "label": "Ambient (modelled)", "short": "Ambient (model)", "group": "Temperatures", "id": "0x492", "byte": 6,
+    {"key": "ambient_model", "label": "Ambient (modeled)", "short": "Ambient (model)", "group": "Temperatures", "id": "0x492", "byte": 6,
      "scale": 0.5, "offset": -41, "unit": "°C", "display": "number", "decimals": 1, "source": "dbc", "note": "EMS19"},
 
     {"key": "battery", "label": "Battery", "group": "Electrical", "id": "0x545", "byte": 3, "scale": 0.1015625,
@@ -277,7 +277,7 @@
     {"key": "mil", "label": "Check engine", "group": "Lamps", "id": "0x545", "byte": 0, "bit": 1, "bits": 1,
      "display": "light", "color": "amber", "source": "verified",
      "note": "EMS14 MIL. On with a real P0605, and the bulb check at key-on. DBC+CAP"},
-    {"key": "immo", "label": "Immobiliser", "group": "Lamps", "id": "0x545", "byte": 0, "bit": 0, "bits": 1,
+    {"key": "immo", "label": "Immobilizer", "group": "Lamps", "id": "0x545", "byte": 0, "bit": 0, "bits": 1,
      "display": "light", "color": "amber", "source": "dbc", "note": "EMS14"},
     {"key": "etc_limp", "label": "Throttle limp mode", "group": "Lamps", "id": "0x18F", "byte": 4, "bit": 7, "bits": 1,
      "display": "light", "color": "red", "source": "dbc", "note": "EMS_H12 CF_Ems_EtcLimpMod"},

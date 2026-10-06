@@ -10,7 +10,7 @@ from pandacapture import diag
 from pandacapture import protocol as p
 from pandacapture.codes import dtc, dtc_kind, parse_dtcs, read_codes, report
 from pandacapture.diag import Client
-from pandacapture.policy import PolicyRefused, VehicleState, is_flow_control, recognise
+from pandacapture.policy import PolicyRefused, VehicleState, is_flow_control, recognize
 
 
 def bitmask(*pids, base=0):
@@ -89,7 +89,7 @@ class Car:
                         rest = rest[1:] + rest[:1]
                     self.out += [(module, d) for d in rest]
                 continue
-            req = recognise(f)               # the car only ever sees policy requests
+            req = recognize(f)               # the car only ever sees policy requests
             for module, answers in self.modules.items():
                 if f.addr not in (0x7DF, module - 8) or req.payload not in answers:
                     continue
@@ -193,9 +193,9 @@ def test_read_codes_through_a_panda_style_link():
     car = Car(stinger())
     e = check_read(read_codes(client_for(car), [0], log=lambda s: None))
     assert "VIN" not in e.info
-    assert not any(recognise(f).payload == b"\x09\x02" for f in car.sent if not is_flow_control(f))
+    assert not any(recognize(f).payload == b"\x09\x02" for f in car.sent if not is_flow_control(f))
     for f in car.sent:                               # every frame: a policy request or flow control
-        assert is_flow_control(f) or recognise(f)
+        assert is_flow_control(f) or recognize(f)
 
 
 def test_vin_only_when_asked():

@@ -43,7 +43,7 @@
 
 ## Not yet tested on hardware
 - Engine-off diagnostic sessions (`pandacapture diag`, 2026-10-04): tested against a simulated module with real
-  session behaviour (tests/test_diagsession.py): refused while running, ENGINE OFF needed, tester present only
+  session behavior (tests/test_diagsession.py): refused while running, ENGINE OFF needed, tester present only
   while the state holds, everything undone newest first when the engine starts or the car moves, the module's
   own timeout. Not yet run on a car.
 - Clearing codes (`codes --clear`, 2026-10-04): tested against a simulated car (tests/test_clear.py). Covered:

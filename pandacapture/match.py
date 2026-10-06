@@ -241,9 +241,9 @@ def align(capture, ref, ref_rpm, rpm_signal, log=print):
             continue
         lo, hi = -span, capture.duration
         for step in (0.5, 0.05, 0.005):
-            centre = best[2] if best[1] == unit else None
-            if centre is not None:
-                lo, hi = centre - step * 20, centre + step * 20
+            center = best[2] if best[1] == unit else None
+            if center is not None:
+                lo, hi = center - step * 20, center + step * 20
             for k in range(int((hi - lo) / step) + 1):
                 off = lo + k * step
                 at = [off + unit * t for t in ref.times]
@@ -379,7 +379,7 @@ def run(capture_path, ref_path, address_map, ref_rpm="RPM", rpm_key="rpm", colum
 
     results = {}
     for c in wanted:
-        # Only this column's own rows, so the changes from one answer to the next have neighbours to compare
+        # Only this column's own rows, so the changes from one answer to the next have neighbors to compare
         rows = [i for i, v in enumerate(ref.values[c]) if v is not None]
         col = [ref.values[c][i] for i in rows]
         rpm_c = [rpm_at[i] for i in rows]

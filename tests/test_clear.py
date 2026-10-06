@@ -11,7 +11,7 @@ from pandacapture import diag
 from pandacapture import policy as pol
 from pandacapture import protocol as p
 from pandacapture.diag import Client
-from pandacapture.policy import EngineNotOff, PolicyRefused, VehicleState, build, is_flow_control, recognise
+from pandacapture.policy import EngineNotOff, PolicyRefused, VehicleState, build, is_flow_control, recognize
 
 
 def load(name):
@@ -66,7 +66,7 @@ class Car:
             if is_flow_control(f):
                 self.out += [(f.addr + 8, d) for d in self.held.pop(f.addr + 8, [])]
                 continue
-            req = recognise(f)
+            req = recognize(f)
             for module in (0x7E8, 0x7E9):
                 if f.addr not in (0x7DF, module - 8):
                     continue
@@ -84,7 +84,7 @@ class Car:
             self.client.frame(p.Frame(0, module, data))
 
     def payloads(self):
-        return [recognise(f).payload for f in self.sent if not is_flow_control(f)]
+        return [recognize(f).payload for f in self.sent if not is_flow_control(f)]
 
 
 @pytest.fixture(autouse=True)

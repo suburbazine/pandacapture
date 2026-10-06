@@ -8,7 +8,7 @@ import pytest
 from pandacapture import policy as pol
 from pandacapture import protocol as p
 from pandacapture.policy import (EngineNotOff, PolicyRefused, Request, Sender, Service, Tier, VehicleState,
-                                 build, recognise)
+                                 build, recognize)
 
 
 class Clock:
@@ -90,7 +90,7 @@ def test_targets():
 def test_frame_layout_and_recognise():
     f = build(0x01, b"\x0d").frame(1)
     assert (f.bus, f.addr, f.data) == (1, 0x7DF, bytes([2, 1, 0x0D, 0, 0, 0, 0, 0]))
-    assert recognise(f).payload == b"\x01\x0d"
+    assert recognize(f).payload == b"\x01\x0d"
 
 
 def test_links_refuse_everything_else():
@@ -99,7 +99,7 @@ def test_links_refuse_everything_else():
         data = bytes(rnd.randrange(256) for _ in range(8))
         f = p.Frame(0, rnd.choice([0x7DF, 0x7E0, 0x316, 0x7E8]), data)
         try:
-            r = recognise(f)
+            r = recognize(f)
         except PolicyRefused:
             continue
         assert r.payload[0] in pol.SERVICES and f.addr in (0x7DF, 0x7E0)
@@ -108,7 +108,7 @@ def test_links_refuse_everything_else():
                     p.Frame(0, 0x7E0, bytes([2, 0x10, 0x02, 0, 0, 0, 0, 0])),              # programming session
                     p.Frame(0, 0x18DB33F1, bytes([2, 1, 0x0C, 0, 0, 0, 0, 0]), extended=True)):
         with pytest.raises(PolicyRefused):
-            recognise(refused)
+            recognize(refused)
 
 
 # ---- vehicle state ----
@@ -216,7 +216,7 @@ def test_flow_control_is_the_only_other_frame():
                    p.Frame(0, 0x7DF, bytes([0x30, 0, 0, 0, 0, 0, 0, 0]))):
         assert not pol.is_flow_control(not_fc)
         with pytest.raises(PolicyRefused):
-            recognise(not_fc)
+            recognize(not_fc)
 
 
 def test_uds_reads():

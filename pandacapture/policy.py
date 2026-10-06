@@ -271,7 +271,7 @@ def build(sid, params=b"", target=FUNCTIONAL, table=None) -> Request:
     return Request(service, bytes([sid]) + params, target, tier, confirm, undo)
 
 
-def recognise(frame, table=None) -> Request:
+def recognize(frame, table=None) -> Request:
     """The request a frame carries, if the policy allows it; links use this to refuse anything else."""
     d = frame.data
     if frame.extended or len(d) < 2 or not 1 <= d[0] <= 7 or len(d) < 1 + d[0]:
@@ -384,7 +384,7 @@ class VehicleState:
     def check_engine_off(self):
         """For engine-off requests: engine speed exactly 0 since the last check, vehicle speed 0, and
         Park when the gear is known. Unknown counts as running or moving. The reading at a check counts
-        towards the next one too, so after the engine stops it takes a whole interval at 0 to pass."""
+        toward the next one too, so after the engine stops it takes a whole interval at 0 to pass."""
         if not self.fresh("rpm"):
             raise EngineNotOff("Engine speed isn't known, so it counts as running.")
         worst = self._worst_rpm()
@@ -453,7 +453,7 @@ class Sender:
         if request.target != FUNCTIONAL:
             self._free(request.target, bus)
         frame = request.frame(bus)
-        recognise(frame, self.table)          # what goes out is exactly what the table allows
+        recognize(frame, self.table)          # what goes out is exactly what the table allows
         self.link.send([frame])
         self.sent += 1
         if self.on_sent:

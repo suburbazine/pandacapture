@@ -10,7 +10,7 @@ import pytest
 from pandacapture import diag, uds
 from pandacapture import protocol as p
 from pandacapture.diag import Client
-from pandacapture.policy import VehicleState, is_flow_control, recognise
+from pandacapture.policy import VehicleState, is_flow_control, recognize
 
 
 def load(name):
@@ -75,7 +75,7 @@ def test_find_modules_skips_ids_with_other_traffic():
     assert 0x7A0 not in asked and 0x7D7 not in asked and not asked & set(range(0x7E8, 0x7F0))
     assert len(asked) == 248 - 1 - 2 - 8      # 700-7F7, less 7A0, 7D7/7DF, 7E8-7EF
     for f in car.sent:
-        assert is_flow_control(f) or recognise(f).payload == b"\x22\xf1\x87"
+        assert is_flow_control(f) or recognize(f).payload == b"\x22\xf1\x87"
 
 
 def test_identify_and_did():

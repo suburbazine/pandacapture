@@ -203,7 +203,7 @@ class Session:
     """One analysis: the requests, the tool calls, the proposals, and what it cost."""
 
     def __init__(self, client, model, analysis: Analysis, log=print, max_turns=20, max_cost=2.0, effort="high",
-                 cancelled=lambda: False):
+                 canceled=lambda: False):
         if model not in PRICES:
             raise AnalyzeError(f"{model} isn't one of the models PandaCapture uses ({', '.join(MODELS.values())}).")
         self.client = client
@@ -213,7 +213,7 @@ class Session:
         self.max_turns = max_turns
         self.max_cost = max_cost
         self.effort = effort
-        self.cancelled = cancelled     # checked between turns (the dashboard's Cancel)
+        self.canceled = canceled     # checked between turns (the dashboard's Cancel)
         self.proposals = []
         self.rejected = []
         self.built_map = None          # the map build_map made, as map JSON
@@ -246,8 +246,8 @@ class Session:
     def run(self):
         messages = self.first_message()
         for turn in range(self.max_turns):
-            if self.cancelled():
-                self.stopped = "Cancelled."
+            if self.canceled():
+                self.stopped = "Canceled."
                 break
             response = self.client.messages.create(**self.request_params(messages))
             self._count(response.usage)
@@ -414,7 +414,7 @@ def main(argv) -> int:
                     help="opus (Claude Opus 5.5, default) or fable (Claude Fable 5.1, about 2.5x the price)")
     ap.add_argument("--effort", choices=("medium", "high", "xhigh", "max"), default="high",
                     help="how hard it thinks (default high)")
-    ap.add_argument("--bus", type=int, default=0, help="the capture's bus to analyse (default 0)")
+    ap.add_argument("--bus", type=int, default=0, help="the capture's bus to analyze (default 0)")
     ap.add_argument("--ref-rpm", default="RPM", help="the reference's RPM column, for lining the logs up")
     ap.add_argument("--max-turns", type=int, default=20, help="most request/answer rounds (default 20)")
     ap.add_argument("--max-cost", type=float, default=2.0, help="stop at about this many dollars (default 2)")
@@ -435,7 +435,7 @@ def main(argv) -> int:
         if not name:
             raise AnalyzeError("choose the vehicle's address map with --map (see: pandacapture maps)")
         address_map = load_map(name)
-        print(f"Analysing {args.capture} locally...")
+        print(f"Analyzing {args.capture} locally...")
         analysis = Analysis(args.capture, address_map, args.reference, bus=args.bus, ref_rpm=args.ref_rpm)
     except (AnalyzeError, MapError, MatchError, OSError) as e:
         print(f"ERROR: {e}")

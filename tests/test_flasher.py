@@ -215,7 +215,7 @@ def test_refuses_comma_device_panda(world):
 
 
 def test_cancel_changes_nothing(world):
-    with pytest.raises(flasher.FlashError, match="Cancelled"):
+    with pytest.raises(flasher.FlashError, match="Canceled"):
         flasher.flash(load, confirm=lambda: False, log=lambda s: None)
     assert world.events == []
 

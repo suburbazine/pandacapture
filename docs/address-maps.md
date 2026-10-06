@@ -57,7 +57,7 @@ how to show each one: as a gauge, a number or a status light. Maps are JSON file
 | `min`, `max` | | Gauge range (required for gauges); also the range of high-resolution traces |
 | `warn_above`, `alert_above`, `warn_below`, `alert_below` | | Gauges and numbers turn amber or red past these; gauges mark the zones |
 | `on_above`, `on_below` | | Lights: on past this value. Without either, a light is on when the value isn't 0 |
-| `color` | `red` | Light colour: `red`, `amber`, `green` or `blue` |
+| `color` | `red` | Light color: `red`, `amber`, `green` or `blue` |
 | `source` | `unconfirmed` | Where the definition came from: `verified` (checked on the car), `dbc`, `observed` or `unconfirmed`. Shown in each tile's description (tap or hover the tile) |
 | `note` | | Shown when you hover over the tile |
 

@@ -141,7 +141,7 @@ def _xor(values):
 # ---------------------------------------------------------------- the analysis
 
 class Analysis:
-    """The capture, its references, and the tools. bus: which bus to analyse."""
+    """The capture, its references, and the tools. bus: which bus to analyze."""
 
     def __init__(self, capture_path, address_map, ref_path=None, bus=0, ref_rpm="RPM", rpm_key="rpm", log=print):
         self.capture = Capture(capture_path, bus)
@@ -223,7 +223,7 @@ class Analysis:
         rpm = keys.get(ref_rpm, "")
         for c in ref.columns:
             # Each column keeps only its own rows: a pandacapture obd CSV has one answer per row, and the
-            # blanks between would leave r_changes and "with RPM held" no neighbouring pairs to work with
+            # blanks between would leave r_changes and "with RPM held" no neighboring pairs to work with
             vals = ref.values[c]
             keep = [i for i, v in enumerate(vals) if v is not None]
             self.columns[keys[c]] = Column(keys[c], name, [times[i] for i in keep], [vals[i] for i in keep], rpm)
@@ -264,7 +264,7 @@ class Analysis:
         events = self.markers()["markers_and_events"]
         lines = [
             f"Vehicle map: {m.name}" + (f", {m.bitrate} kbit/s" if m.bitrate else ""),
-            f"Capture: bus {self.bus}, {self.duration:.1f} s, {len(self.stats)} broadcast ids analysed"
+            f"Capture: bus {self.bus}, {self.duration:.1f} s, {len(self.stats)} broadcast ids analyzed"
             + (f", {len(self.withheld)} withheld because their frames carry text" if self.withheld else ""),
             "Markers and events: " + (", ".join(f"{e['what']} at {e['t']} s" for e in events) if events else "none"),
             "",
@@ -294,7 +294,7 @@ class Analysis:
 
     def _known(self, can_id):
         if can_id not in self.stats:
-            raise ValueError(f"0x{can_id:03X} isn't one of the analysed ids"
+            raise ValueError(f"0x{can_id:03X} isn't one of the analyzed ids"
                              + (" (withheld: its frames carry text)" if can_id in self.withheld else ""))
 
     def _grid(self, points, start=0.0, end=None):
@@ -533,7 +533,7 @@ class Analysis:
             return str(e), None
         s = m.signals[0]
         if s.can_id not in self.stats:
-            return f"0x{s.can_id:03X} isn't one of the analysed ids", None
+            return f"0x{s.can_id:03X} isn't one of the analyzed ids", None
         if not reference:
             return "", None
         try:

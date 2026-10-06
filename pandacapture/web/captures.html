@@ -346,13 +346,13 @@
     const st = $("claudeState");
     st.className = "state" + (c.state === "error" ? " err" : "");
     st.textContent = {
-      preparing: `Preparing ${c.capture}: analysing it on this computer, then asking the API how big the first request is…`,
+      preparing: `Preparing ${c.capture}: analyzing it on this computer, then asking the API how big the first request is…`,
       running: `Claude is working on ${c.capture}…`,
       error: `Couldn't finish: ${c.error || ""}`,
-      cancelled: "Cancelled.",
+      canceled: "Canceled.",
       done: c.stopped || "",
     }[c.state] || "";
-    $("claudeLog").hidden = !(busy || c.state === "done" || c.state === "cancelled") || !(c.log && c.log.length);
+    $("claudeLog").hidden = !(busy || c.state === "done" || c.state === "canceled") || !(c.log && c.log.length);
     $("claudeLog").textContent = (c.log || []).join("\n");
     $("runningRow").hidden = c.state !== "running";
 
@@ -373,7 +373,7 @@
     }
 
     const out = $("claudeResults");
-    if (!["done", "cancelled", "error"].includes(c.state) || !c.proposals) { if (busy) out.innerHTML = ""; return; }
+    if (!["done", "canceled", "error"].includes(c.state) || !c.proposals) { if (busy) out.innerHTML = ""; return; }
     const props = c.proposals;
     out.innerHTML = `<div class="res">
       <h3>${props.length} proposal${props.length === 1 ? "" : "s"}, each checked against the capture</h3>` +

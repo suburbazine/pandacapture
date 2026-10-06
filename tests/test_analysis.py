@@ -119,7 +119,7 @@ def test_only_read_tools(a):
 
 def test_one_answer_per_row_log(tmp_path):
     # pandacapture obd writes one answer per row, so each column is mostly blank. Every column keeps only its
-    # own rows: otherwise the gaps leave no neighbouring pairs, and r_changes and r_with_rpm_held come out None
+    # own rows: otherwise the gaps leave no neighboring pairs, and r_changes and r_with_rpm_held come out None
     cap, _ = build(tmp_path)
     rows = ["time,RPM,Coolant"]
     for i in range(0, 600, 10):

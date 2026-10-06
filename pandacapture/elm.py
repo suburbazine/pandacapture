@@ -188,10 +188,10 @@ class ElmLink:
         self.answers_complete = False
 
     def send(self, frames):
-        from .policy import FUNCTIONAL, PolicyRefused, recognise
+        from .policy import FUNCTIONAL, PolicyRefused, recognize
         for f in frames:
             try:
-                request = recognise(f)        # only what the diagnostic policy allows
+                request = recognize(f)        # only what the diagnostic policy allows
             except PolicyRefused as ex:
                 raise ElmError(f"Refused: {ex}") from None
             other = request.target != FUNCTIONAL and not 0x7E0 <= request.target <= 0x7E7
