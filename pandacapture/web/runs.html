@@ -123,6 +123,7 @@
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 16a8 8 0 1 1 16 0M12 16l4-5"/></svg><span class="txt">Gauges</span></a>
   <a class="ctl" href="/captures.html" target="pandacapture-captures" title="Captures and Claude">
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v4H4zM4 11h16v8H4zM8 15h8"/></svg><span class="txt">Captures</span></a>
+  <button class="ctl" id="units" type="button">US</button>
   <button class="ctl" id="theme" type="button" title="Switch light/dark" aria-label="Switch light/dark theme">
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9c0-.5 0-1-.1-1.4A6 6 0 0 1 13.4 3.1C13 3 12.5 3 12 3z"/></svg></button>
 </header>
@@ -131,12 +132,12 @@
   <section>
     <div class="row"><h2 class="grow">Find runs in a capture</h2>
       <button class="ctl small" id="refresh" type="button">Refresh</button></div>
-    <p class="hint" id="folder">Full-throttle pulls (standing or rolling) and stops from 60 mph, timed from the car's own wheel speeds.</p>
+    <p class="hint" id="folder">Full-throttle pulls (standing or rolling) and hard stops, timed from the car's own wheel speeds.</p>
     <div class="scroll"><table><thead><tr><th>Capture</th><th>Size</th><th>Recorded</th><th>Speeds</th></tr></thead>
       <tbody id="capList"></tbody></table></div>
     <div class="row" style="margin-top:12px">
       <label class="lbl" for="weight">Weight with driver and fuel</label>
-      <input type="number" id="weight" min="1500" max="10000" step="10"> <span class="lbl">lb</span>
+      <input type="number" id="weight" min="500" max="10000" step="10"> <span class="lbl" id="weightUnit">lb</span>
       <span class="grow"></span>
       <button class="ctl primary" id="find" type="button">Find runs</button>
     </div>
@@ -156,6 +157,7 @@
 </main>
 <div class="banner" id="banner"></div>
 
+<script src="/units.js"></script>
 <script>
 (() => {
   "use strict";
@@ -169,14 +171,25 @@
   const remember = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
   const recall = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
   const css = (name) => getComputedStyle(root).getPropertyValue(name).trim();
-  const MPH = 1.609344;
+  const U = window.PCUnits;
   const LB = 0.45359237;
   const fmt = (v, d = 0) => v == null || Number.isNaN(v) ? "–" : Number(v).toLocaleString(undefined, { minimumFractionDigits: d, maximumFractionDigits: d });
 
   if (recall("pc-theme")) root.dataset.theme = recall("pc-theme");
   $("theme").onclick = () => { root.dataset.theme = root.dataset.theme === "light" ? "dark" : "light"; remember("pc-theme", root.dataset.theme); redraw(); };
-  $("weight").value = recall("pc-weight-lb") || "4277";
-  $("weight").onchange = () => remember("pc-weight-lb", $("weight").value);
+  // The weight is kept in lb, and shown in lb or kg as the units are set
+  const weightLb = () => Number(recall("pc-weight-lb")) || 4277;
+  const showWeight = () => {
+    const metric = U.system === "metric";
+    $("weight").value = Math.round(metric ? weightLb() * LB : weightLb());
+    $("weight").step = metric ? 5 : 10;
+    $("weightUnit").textContent = metric ? "kg" : "lb";
+  };
+  $("weight").onchange = () => {
+    const v = Number($("weight").value);
+    if (v > 0) remember("pc-weight-lb", String(Math.round(U.system === "metric" ? v / LB : v)));
+  };
+  showWeight();
 
   // ---------------------------------------------------------------- the samples, as columns
 
@@ -196,7 +209,7 @@
       if (Number.isNaN(f) || Number.isNaN(r)) return Number.isNaN(f) ? r : f;
       return c.brake_switch[i] >= 1.5 ? Math.max(f, r) : Math.min(f, r);
     });
-    c.speed_mph = ground.map((x) => x / MPH);
+    c.speed_mph = ground;   // km/h, whatever the key says: charts show it in the units set
     c.rear_slip = front.map((f, i) => f > 3 ? (rear[i] / f - 1) * 100 : NaN);
     c.accel_g = c.accel_long_g;
     c.afr_b1 = c.lambda_b1.map((x) => x * 14.7);
@@ -207,10 +220,10 @@
     return c;
   }
 
-  // What each series key means: its label, unit (one unit per panel), and decimals
-  // What each series key means: label, unit (one unit per panel), decimals, and its short end label
+  // What each series key means: label, the unit its values are in (shown in the units set; one unit per panel),
+  // decimals, and its short end label
   const SERIES = {
-    speed_mph: ["Speed", "mph", 0, "speed"], accel_g: ["Acceleration", "g", 2, "g"], rpm: ["Engine speed", "rpm", 0, "rpm"],
+    speed_mph: ["Speed", "km/h", 0, "speed"], accel_g: ["Acceleration", "g", 2, "g"], rpm: ["Engine speed", "rpm", 0, "rpm"],
     boost_psi: ["Boost", "psi", 1, "boost"], pedal: ["Pedal", "%", 0, "pedal"], spark: ["Spark advance", "°", 1, "spark"],
     rear_slip: ["Rear slip", "%", 0, "slip"], tqi_tcs: ["Traction control torque", "%", 0, "TCS"],
     awd_torque_nm: ["AWD coupling torque", "Nm", 0, "AWD"], afr_b1: ["AFR bank 1", "AFR", 1, "bank 1"],
@@ -218,6 +231,14 @@
     lowside_target_psi: ["Low-side target", "psi", 0, "target"], iat: ["Intake air", "°C", 0, "IAT"],
     brake_psi: ["Brake pressure", "psi", 0, "brake"],
   };
+
+  /** A series in the units set: {unit, d, ys}. */
+  function inUnits(ys, unit, d) {
+    const c = U.conversion(unit);
+    return { unit: c.unit, d: d + c.extra, ys: (c.f === 1 && c.o === 0) ? ys : ys.map((y) => y * c.f + c.o) };
+  }
+  const speedUnit = () => U.conversion("km/h").unit;
+  const speedAxis = () => ({ label: speedUnit(), unit: speedUnit() });
 
   // ---------------------------------------------------------------- the chart
 
@@ -371,21 +392,25 @@
 
   const color = (k) => css(["--s1", "--s2", "--s3"][k]);
 
-  /** Seconds behind (+) or ahead (−) of the best run at each speed, mph. */
+  /** Seconds behind (+) or ahead (−) of the best run at each speed, in the units set. */
   function gapSeries(me, them) {
-    const timeAt = (c, mph) => { for (let i = 1; i < c.n; i++) if (c.t[i] >= 0 && c.speed_mph[i - 1] < mph && c.speed_mph[i] >= mph) return c.t[i - 1] + (c.t[i] - c.t[i - 1]) * (mph - c.speed_mph[i - 1]) / (c.speed_mph[i] - c.speed_mph[i - 1]); return NaN; };
-    const top = Math.max(...me.speed_mph.filter((x) => !Number.isNaN(x)), 0);
+    const sp = (c) => c.speed_mph.map((x) => U.value(x, "km/h"));
+    const a = sp(me), b = sp(them);
+    const timeAt = (c, s, v) => { for (let i = 1; i < c.n; i++) if (c.t[i] >= 0 && s[i - 1] < v && s[i] >= v) return c.t[i - 1] + (c.t[i] - c.t[i - 1]) * (v - s[i - 1]) / (s[i] - s[i - 1]); return NaN; };
+    const top = Math.max(...a.filter((x) => !Number.isNaN(x)), 0);
     const xs = [], ys = [];
-    for (let m = 5; m <= top; m += 1) { xs.push(m); ys.push(timeAt(me, m) - timeAt(them, m)); }
+    for (let v = 5; v <= top; v += 1) { xs.push(v); ys.push(timeAt(me, a, v) - timeAt(them, b, v)); }
     return { xs, ys };
   }
 
   /** A pointer's chart: its series stacked by unit on the run's time (or the speed, for the gap), its stretch shaded. */
   function tipChart(el, ch, me, them) {
-    if (ch.x === "mph") {
+    if (ch.x === "kmh" || ch.x === "mph") {
       if (!them) return;
       const g = gapSeries(me, them);
-      chart(el, { title: ch.title, x: { label: "mph", unit: "mph" }, zero: true, bands: ch.highlight, bandLabel: ch.label,
+      // Highlights in km/h (runs saved before the units setting have mph), shown in the units set
+      const bands = ch.highlight.map((r) => r.map((x) => U.value(ch.x === "mph" ? x * U.KMH_PER_MPH : x, "km/h")));
+      chart(el, { title: ch.title, x: speedAxis(), zero: true, bands, bandLabel: ch.label,
         panels: [{ unit: "s", d: 2, series: [{ name: "Time behind your best (+) or ahead (−)", short: "gap", color: color(0), xs: g.xs, ys: g.ys }] }] });
       return;
     }
@@ -396,12 +421,13 @@
       const info = SERIES[key]; if (!info || !me[key]) continue;
       const seen = me[key].filter((x, i) => !Number.isNaN(x) && me.t[i] >= wa && me.t[i] <= wb);
       if (!seen.length || Math.max(...seen) - Math.min(...seen) < 1e-6) continue;   // nothing to see: leave it out
-      const [name, unit, d, short] = info;
-      if (!byUnit.has(unit)) byUnit.set(unit, { unit, d, series: [] });
+      const [name, base, d0, short] = info;
+      const mine = inUnits(me[key], base, d0), unit = mine.unit;
+      if (!byUnit.has(unit)) byUnit.set(unit, { unit, d: mine.d, series: [] });
       const panel = byUnit.get(unit), c = color(k++ % 3);
-      panel.series.push({ name, short, color: c, xs: me.t, ys: me[key] });
+      panel.series.push({ name, short, color: c, xs: me.t, ys: mine.ys });
       if (them && them[key] && ["speed_mph", "boost_psi", "accel_g", "rpm"].includes(key)) {
-        panel.series.push({ name: `${name}, your best`, short: `${short}, best`, color: c, xs: them.t, ys: them[key], dashed: true });
+        panel.series.push({ name: `${name}, your best`, short: `${short}, best`, color: c, xs: them.t, ys: inUnits(them[key], base, d0).ys, dashed: true });
       }
     }
     for (const panel of byUnit.values()) if (panel.series.length === 1) panel.label = panel.series[0].name;
@@ -413,32 +439,40 @@
   function allCharts(el, run, me, them) {
     const add = (spec) => { const d = document.createElement("div"); d.className = "chart"; el.appendChild(d); chart(d, spec); };
     const t = { label: "seconds from the start", unit: "s", d: 1 };
-    const vs = (key) => [{ name: "This run", color: color(0), xs: me.t, ys: me[key] }].concat(them ? [{ name: "Your best", color: color(1), xs: them.t, ys: them[key], dashed: true }] : []);
-    add({ title: "Speed", x: t, panels: [{ unit: "mph", d: 0, series: vs("speed_mph") }] });
+    // This run and the best one, in the units set
+    const vs = (key, base) => [{ name: "This run", color: color(0), xs: me.t, ys: inUnits(me[key], base, 0).ys }]
+      .concat(them ? [{ name: "Your best", color: color(1), xs: them.t, ys: inUnits(them[key], base, 0).ys, dashed: true }] : []);
+    const sp = (c) => inUnits(c.speed_mph, "km/h", 0).ys;
+    add({ title: "Speed", x: t, panels: [{ unit: speedUnit(), d: 0, series: vs("speed_mph", "km/h") }] });
     if (them && run.kind !== "braking") {
       const g = gapSeries(me, them);
-      add({ title: "Time against your best (above 0 = behind)", x: { label: "mph", unit: "mph" }, zero: true,
+      add({ title: "Time against your best (above 0 = behind)", x: speedAxis(), zero: true,
         panels: [{ unit: "s", d: 2, series: [{ name: "Gap", color: color(0), xs: g.xs, ys: g.ys }] }] });
     }
-    add({ title: "Acceleration through the speed range", x: { label: "mph", unit: "mph" },
-      panels: [{ unit: "g", d: 2, series: [{ name: "This run", color: color(0), xs: me.speed_mph, ys: me.accel_g }]
-        .concat(them ? [{ name: "Your best", color: color(1), xs: them.speed_mph, ys: them.accel_g, dashed: true }] : []) }] });
+    add({ title: "Acceleration through the speed range", x: speedAxis(),
+      panels: [{ unit: "g", d: 2, series: [{ name: "This run", color: color(0), xs: sp(me), ys: me.accel_g }]
+        .concat(them ? [{ name: "Your best", color: color(1), xs: sp(them), ys: them.accel_g, dashed: true }] : []) }] });
     add({ title: "Engine speed and gear changes", x: t, bands: run.shifts.map((s) => [s.t, s.t + s.duration_s]), bandLabel: run.shifts.length ? "shifts" : "",
       panels: [{ unit: "rpm", d: 0, label: "Engine speed", series: [{ name: "rpm", color: color(0), xs: me.t, ys: me.rpm }] }] });
-    add({ title: "Boost", x: t, panels: [{ unit: "psi", d: 1, series: vs("boost_psi") }] });
+    const boost = inUnits([], "psi", 1);
+    add({ title: "Boost", x: t, panels: [{ unit: boost.unit, d: boost.d, series: vs("boost_psi", "psi") }] });
     add({ title: "Traction", x: t, panels: [{ unit: "%", d: 0, series: [
       { name: "Rear slip", short: "slip", color: color(0), xs: me.t, ys: me.rear_slip },
       { name: "Traction control torque", short: "TCS", color: color(1), xs: me.t, ys: me.tqi_tcs }] }] });
     add({ title: "Spark advance", x: t, panels: [{ unit: "°", d: 1, series: [{ name: "Spark", color: color(0), xs: me.t, ys: me.spark }] }] });
-    if (run.kind === "braking") add({ title: "Brake pressure", x: t, panels: [{ unit: "psi", d: 0, series: [{ name: "Brake", color: color(0), xs: me.t, ys: me.brake_psi }] }] });
+    if (run.kind === "braking") {
+      const b = inUnits(me.brake_psi, "psi", 0);
+      add({ title: "Brake pressure", x: t, panels: [{ unit: b.unit, d: b.d, series: [{ name: "Brake", color: color(0), xs: me.t, ys: b.ys }] }] });
+    }
     for (const p of run.pulls) {
       const arr = (a) => a.map((x) => x == null ? NaN : x);
-      add({ title: `Gear ${p.gear} pull: estimated wheel power and torque` + (p.peak_hp ? ` (peak ${fmt(p.peak_hp)} hp at ${fmt(p.peak_hp_rpm)} rpm)` : ""),
+      const hp = inUnits(arr(p.hp), "hp", 0), tq = inUnits(arr(p.torque_lbft), "lb-ft", 0), bst = inUnits(arr(p.boost_psi), "psi", 1);
+      add({ title: `Gear ${p.gear} pull: estimated wheel power and torque` + (p.peak_hp ? ` (peak ${U.show(p.peak_hp, "hp", 0)} at ${fmt(p.peak_hp_rpm)} rpm)` : ""),
         x: { label: "rpm", unit: "rpm" }, panels: [
-          { unit: "hp", d: 0, series: [{ name: "Wheel hp", short: "hp", color: color(0), xs: p.rpm, ys: arr(p.hp) }] },
-          { unit: "lb-ft", d: 0, series: [{ name: "Torque at the crank", short: "lb-ft", color: color(1), xs: p.rpm, ys: arr(p.torque_lbft) }] }] });
+          { unit: hp.unit, d: hp.d, series: [{ name: "Wheel power", short: hp.unit, color: color(0), xs: p.rpm, ys: hp.ys }] },
+          { unit: tq.unit, d: tq.d, series: [{ name: "Torque at the crank", short: tq.unit, color: color(1), xs: p.rpm, ys: tq.ys }] }] });
       add({ title: `Gear ${p.gear} pull: boost, spark and mixture`, x: { label: "rpm", unit: "rpm" }, panels: [
-        { unit: "psi", d: 1, series: [{ name: "Boost", color: color(0), xs: p.rpm, ys: arr(p.boost_psi) }] },
+        { unit: bst.unit, d: bst.d, series: [{ name: "Boost", color: color(0), xs: p.rpm, ys: bst.ys }] },
         { unit: "°", d: 1, series: [{ name: "Spark", color: color(1), xs: p.rpm, ys: arr(p.spark) }] },
         { unit: "AFR", d: 1, series: [{ name: "AFR", color: color(2), xs: p.rpm, ys: arr(p.afr) }] }] });
     }
@@ -446,53 +480,58 @@
 
   // ---------------------------------------------------------------- showing results
 
-  const HEADLINES = ["0-60 mph", "1/4 mile", "60 ft", "0-100 km/h", "40-100 mph", "60-130 mph", "100-200 km/h", "60-0 mph", "100-0 km/h"];
-  const headline = (run) => { const std = run.metrics.filter((m) => m.standard); return HEADLINES.map((n) => std.find((m) => m.name === n)).find(Boolean) || std[0]; };
   const KIND = { standing: "Standing start", rolling: "Rolling pull", braking: "Stop from speed" };
-  const metricText = (m) => m.unit === "s" ? `${fmt(m.value, 2)} s` : `${fmt(m.value / 0.3048, 0)} ft`;
+  const metricText = (m) => m.unit === "s" ? `${fmt(m.value, 2)} s` : U.show(m.value, "m", U.system === "metric" ? 1 : 0);
+  const say = (text) => esc(U.render(text));   // text with units tokens, in the units set
 
+  let shownResult = null;   // shown again when the units change
   function show(result) {
+    shownResult = result;
     charts.length = 0;
     const holder = $("runs");
     holder.innerHTML = "";
     $("events").innerHTML = result.events?.length ? `<h3>Events in the capture</h3><table><tbody>` + result.events.map((e) =>
-      `<tr><td style="width:120px"><span class="tag">${esc(e.kind)}</span></td><td>${esc(e.summary)}</td></tr>`).join("") + `</tbody></table>` : "";
-    if (!result.runs.length) { $("status").textContent = `No full-throttle pulls or stops from 60 mph in ${result.capture}.`; return; }
-    $("status").textContent = `${result.runs.length} run${result.runs.length === 1 ? "" : "s"} in ${result.capture}.`;
+      `<tr><td style="width:120px"><span class="tag">${esc(e.kind)}</span></td><td>${say(e.summary)}</td></tr>`).join("") + `</tbody></table>` : "";
+    if (!result.runs.length) { $("status").textContent = `No full-throttle pulls or hard stops in ${result.capture}.`; return; }
+    // A capture read again replaces its runs' earlier readings: say so, rather than "0 new"
+    const n = result.runs.length, again = result.read_before || 0, runs = `${n} run${n === 1 ? "" : "s"}`;
+    $("status").textContent = result.read_before == null ? `${runs} in ${result.capture}.`
+      : again === n ? `${result.capture}: ${runs} read again (updated).`
+      : `${result.capture}: ${runs} found` + (again ? `, ${again} of them read before (updated).` : ".");
     for (const run of result.runs) {
       const best = run.best_id ? result.bests[run.best_id] : null;
       const me = columns(run), them = best ? columns(best) : null;
       const st = run.stats;
       const sec = document.createElement("section");
-      const head = headline(run);
+      const head = U.headline(run.metrics);
       const when = new Date(run.started).toLocaleString();
       sec.innerHTML = `
         <div class="run-head"><h2>${esc(KIND[run.kind] || run.kind)}</h2><span class="hint" style="margin:0">${esc(when)} · ${esc(run.capture || "")}</span></div>
         <div class="hero">
           ${head ? `<div class="stat"><div class="k">${esc(head.name)}</div><div class="v">${metricText(head)}</div>${head.rollout != null ? `<div class="s">${fmt(head.rollout, 2)} s with 1 ft rollout</div>` : ""}</div>` : ""}
-          <div class="stat"><div class="k">Top speed</div><div class="v">${fmt((st.max_kmh || 0) / MPH)} mph</div></div>
+          <div class="stat"><div class="k">Top speed</div><div class="v">${U.show(st.max_kmh || 0, "km/h", 0)}</div></div>
           <div class="stat"><div class="k">${run.kind === "braking" ? "Peak deceleration" : "Peak acceleration"}</div><div class="v">${fmt(Math.abs(st.peak_g ?? NaN), 2)} g</div></div>
-          ${st.peak_boost_psi != null ? `<div class="stat"><div class="k">Peak boost</div><div class="v">${fmt(st.peak_boost_psi, 1)} psi</div></div>` : ""}
+          ${st.peak_boost_psi != null ? `<div class="stat"><div class="k">Peak boost</div><div class="v">${U.show(st.peak_boost_psi, "psi", 1)}</div></div>` : ""}
           ${best ? `<div class="stat"><div class="k">Compared with</div><div class="v" style="font-size:15px">your best</div><div class="s">${esc(new Date(best.started).toLocaleString())}</div></div>` : ""}
         </div>
         <h3>Where it could be better</h3><div class="tips"></div>
         <div class="grid2" style="margin-top:6px">
-          <div><h3>Times</h3><table><thead><tr><th>Result</th><th>Time</th><th>Notes</th></tr></thead><tbody>${run.metrics.map((m) => `
-            <tr><td>${esc(m.name)}</td><td>${metricText(m)}</td><td>${[m.rollout != null ? `${fmt(m.rollout, 2)} s with 1 ft rollout` : "", m.trap_mph ? `trap ${fmt(m.trap_mph, 1)} mph` : ""].filter(Boolean).join(", ")}</td></tr>`).join("")}</tbody></table></div>
-          <div><h3>Shifts</h3>${run.shifts.length ? `<table><thead><tr><th>Shift</th><th>At</th><th>Took</th><th>g before → after</th></tr></thead><tbody>${run.shifts.map((s) => `
-            <tr><td>${s.from}-${s.to}</td><td>${fmt(s.rpm)} rpm, ${fmt(s.kmh / MPH)} mph</td><td>${fmt(s.duration_s, 2)} s</td><td>${fmt(s.g_before, 2)} → ${fmt(s.g_after, 2)}</td></tr>`).join("")}</tbody></table>` : `<p class="hint">No full-throttle upshifts.</p>`}
-            ${run.pulls.length ? `<h3>Estimated power</h3><table><tbody>${run.pulls.map((p) => `<tr><td>Gear ${p.gear}</td><td>${p.peak_hp ? `${fmt(p.peak_hp)} wheel hp at ${fmt(p.peak_hp_rpm)} rpm` : "–"}</td><td>${p.peak_torque_lbft ? `${fmt(p.peak_torque_lbft)} lb-ft at ${fmt(p.peak_torque_rpm)} rpm` : ""}</td></tr>`).join("")}</tbody></table>
+          <div><h3>Times</h3><table><thead><tr><th>Result</th><th>Time</th><th>Notes</th></tr></thead><tbody>${U.shown(run.metrics).map((m) => `
+            <tr><td>${esc(m.name)}</td><td>${metricText(m)}</td><td>${[m.rollout != null ? `${fmt(m.rollout, 2)} s with 1 ft rollout` : "", m.trap_mph ? `trap ${U.show(m.trap_mph * U.KMH_PER_MPH, "km/h", 1)}` : ""].filter(Boolean).join(", ")}</td></tr>`).join("")}</tbody></table></div>
+          <div><h3>Shifts</h3>${run.shifts.length ? `<table><thead><tr><th>Shift</th><th>At</th><th>Took</th><th title="The old gear's g at its very end, against the new gear's once settled">g before → after</th><th title="Where the old gear's g met the new gear's">Gears meet</th></tr></thead><tbody>${run.shifts.map((s) => `
+            <tr><td>${s.from}-${s.to}</td><td>${fmt(s.rpm)} rpm, ${U.show(s.kmh, "km/h", 0)}</td><td>${fmt(s.duration_s, 2)} s</td><td>${fmt(s.g_before, 2)} → ${fmt(s.g_after, 2)}</td><td>${s.cross_rpm != null ? `${fmt(s.cross_rpm)} rpm` : "–"}</td></tr>`).join("")}</tbody></table>` : `<p class="hint">No full-throttle upshifts.</p>`}
+            ${run.pulls.length ? `<h3>Estimated power</h3><table><tbody>${run.pulls.map((p) => `<tr><td>Gear ${p.gear}</td><td>${p.peak_hp ? `${U.show(p.peak_hp, "hp", 0)} at the wheels at ${fmt(p.peak_hp_rpm)} rpm` : "–"}</td><td>${p.peak_torque_lbft ? `${U.show(p.peak_torque_lbft, "lb-ft", 0)} at ${fmt(p.peak_torque_rpm)} rpm` : ""}</td></tr>`).join("")}</tbody></table>
               <p class="hint" style="margin-top:6px">From weight × acceleration plus drag: an estimate, and a slope changes it.</p>` : ""}
           </div>
         </div>
-        <h3>Checks</h3><ul class="checks">${run.checks.map((c) => `<li><span class="mark ${c.pass ? "ok" : "no"}" aria-hidden="true">${c.pass ? "✓" : "✕"}</span><b>${esc(c.label)}</b>${c.scope !== "run" ? ` <span class="tag">${esc(c.scope)}</span>` : ""}: ${esc(c.detail)}${c.pass ? "" : " <span class='tag'>failed</span>"}</li>`).join("")}</ul>
+        <h3>Checks</h3><ul class="checks">${run.checks.map((c) => `<li><span class="mark ${c.pass ? "ok" : "no"}" aria-hidden="true">${c.pass ? "✓" : "✕"}</span><b>${esc(c.label)}</b>${c.scope !== "run" ? ` <span class="tag">${esc(c.scope)}</span>` : ""}: ${say(c.detail)}${c.pass ? "" : " <span class='tag'>failed</span>"}</li>`).join("")}</ul>
         <h3>Graphs</h3><div class="grid2 all"></div>`;
       holder.appendChild(sec);
       const tips = sec.querySelector(".tips");
       for (const tip of run.insights) {
         const card = document.createElement("div");
         card.className = "tip" + (tip.topic === "clean" ? " clean" : "");
-        card.innerHTML = `<div class="topic">${esc(tip.topic)}</div><p>${esc(tip.text)}</p><div class="chart"></div>`;
+        card.innerHTML = `<div class="topic">${esc(tip.topic)}</div><p>${say(tip.text)}</p><div class="chart"></div>`;
         tips.appendChild(card);
         if (tip.chart) tipChart(card.querySelector(".chart"), tip.chart, me, them);
       }
@@ -504,7 +543,7 @@
 
   // A capture's speed range tag; older logs are read in the background, so look again while any are pending
   function speedTag(x) {
-    if (x.speed) return `<span class="tag" title="Speed range: ${x.speed.min.toFixed(1)} to ${x.speed.max.toFixed(1)} km/h">${esc(x.speed.label)}</span>`;
+    if (x.speed) return `<span class="tag" title="Speed range: ${esc(U.show(x.speed.min, "km/h", 1))} to ${esc(U.show(x.speed.max, "km/h", 1))}">${esc(U.speedLabel(x.speed))}</span>`;
     return x.speed_pending ? '<span class="tag" title="Reading this capture for its speed range">…</span>' : "";
   }
   let speedPoll = null;
@@ -530,27 +569,40 @@
     });
   }
   function loadSaved() {
-    getJSON("/runs/saved").then((s) => {
+    getJSON("/runs/saved?units=" + U.system).then((s) => {
       $("savedFolder").textContent = `Every run found so far, kept in ${s.folder}. Pick one to see it again.`;
       $("savedList").innerHTML = s.runs.length ? s.runs.map((r) => `
         <tr class="pick" data-id="${esc(r.id)}"><td>${esc(new Date(r.started).toLocaleString())}</td><td>${esc(KIND[r.kind] || r.kind)}</td>
-          <td>${r.headline ? `${esc(r.headline.name)} ${metricText(r.headline)}` : "–"}</td><td>${fmt((r.max_kmh || 0) / MPH)} mph</td><td>${esc(r.capture)}</td></tr>`).join("")
+          <td>${(() => { const h = r.metrics ? U.headline(r.metrics) : r.headline; return h ? `${esc(h.name)} ${metricText(h)}` : "–"; })()}</td><td>${U.show(r.max_kmh || 0, "km/h", 0)}</td><td>${esc(r.capture)}</td></tr>`).join("")
         : `<tr><td colspan="5" class="empty">None yet.</td></tr>`;
       $("savedList").querySelectorAll("tr.pick").forEach((tr) => tr.onclick = () =>
-        getJSON("/runs/run?id=" + encodeURIComponent(tr.dataset.id)).then((r) => { show(r); $("runs").scrollIntoView({ behavior: "smooth" }); }).catch((e) => flash(e.message)));
+        getJSON("/runs/run?id=" + encodeURIComponent(tr.dataset.id) + "&units=" + U.system).then((r) => { show(r); $("runs").scrollIntoView({ behavior: "smooth" }); }).catch((e) => flash(e.message)));
     });
   }
   $("refresh").onclick = () => { loadCaptures(); loadSaved(); };
   $("find").onclick = () => {
     if (!capture) { flash("Pick a capture first."); return; }
-    const lb = Number($("weight").value) || 4277;
+    $("weight").onchange();
     $("find").disabled = true;
     $("status").textContent = `Reading ${capture}…`;
-    post("/runs/analyze", { capture, mass_kg: lb * LB })
+    // The units set pick what a run is compared by, and whether a launch is timed to 60 mph or 100 km/h
+    post("/runs/analyze", { capture, mass_kg: weightLb() * LB, units: U.system })
       .then((r) => { show(r); loadSaved(); })
       .catch((e) => { $("status").textContent = ""; flash(e.message); })
       .finally(() => { $("find").disabled = false; });
   };
+  // The units: everything shown follows them (each run measures every result; which ones show changes)
+  U.button($("units"));
+  U.onChange(() => {
+    showWeight();
+    loadCaptures();
+    loadSaved();
+    if (shownResult) {
+      const status = $("status").textContent;
+      show(shownResult);
+      $("status").textContent = status;
+    }
+  });
   loadCaptures();
   loadSaved();
 })();

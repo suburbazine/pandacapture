@@ -258,6 +258,9 @@ Your browser opens on gauges, numbers and status lights, decoded from the panda'
 listens silently. Press `Q` in the console to stop.
 
 - **Gauges** come first, as the view to drive with.
+- **US or metric:** the units button switches every page between US (mph, °F, psi, lb, ft, hp, lb-ft)
+  and metric (km/h, °C, bar, kg, m, kW, Nm). Only what's shown changes: logs, run files and the map
+  keep the car's own units, and a gauge's arc and zones stay where they were.
 - **Every other group** (engine, fuel, cam phasers…) folds away. A folded group's badge still
   says when a lamp is lit or a value is in its warning zone.
 - **A strip above the gauges** lists every lit warning lamp and every value in a warn or alert
@@ -340,30 +343,39 @@ To look at a recorded drive at your desk:
 pandacapture dashboard --map kia-stinger-33t-pcan --replay captures/capture-20261003-080200.log
 ```
 
+`--replay` also opens a zip holding a capture: a shared capture with its OBD CSVs, or an exported
+bundle (its `capture.log`).
+
 ### Runs: timed and coached
 
 **Runs** on the dashboard opens its own page. Pick a capture and **Find runs**: every full-throttle pull
-and every stop from 60 mph in it is timed from the car's own wheel speeds, and coached.
+and every hard stop in it is timed from the car's own wheel speeds, and coached.
 - **Times:**
   - standing starts: 0-30, 0-60 mph, 60 ft to 1/4 mile, with 1 ft rollout and trap speeds;
   - rolling: 40-100 mph and the like;
   - stops: 60-0 mph.
-- **The details:** each full-throttle shift (rpm, how long the torque was held, g either side), and an
-  estimated wheel-power curve per gear from your weight.
+
+  Each run measures the metric ones too (0-100 km/h, 100-200 km/h, 100-0 km/h). Which ones show follows
+  the units: they're different runs, not one in two units. A run is known by 0-60 mph or 0-100 km/h.
+- **The details:** each full-throttle shift (rpm, how long the torque was held, the old gear's g at its
+  end against the new gear's once settled, and the rpm where they meet), and an estimated wheel-power
+  curve per gear from your weight.
 - **Where it could be better.** Each pointer comes with its own chart, shading the stretch it's about:
   - a late throttle or a low-boost launch;
   - wheelspin and traction-control cuts;
-  - slow or early shifts, slow boost build, knock;
+  - slow shifts, and shifts that came early or late against where the gears' pull meets;
+  - slow boost build, knock;
   - low-side fuel pressure falling short, a lean bank, intake heat.
   The knock check leaves out the spark the car pulls on purpose: for a shift's torque hold, for traction
   control, and around gear changes.
 - **Against your best.** Runs are kept in `captures/runs`. A new run is compared with your best of the
-  same kind, with the speed range where it lost the most time and why.
+  same kind, with the speed range where it lost the most time and why. A capture read again updates
+  its runs rather than comparing them with themselves.
 - **Events:** brake stands, launches and pop windows (fuel still on during an overrun), over the whole
   capture.
 
 There's no GPS here, so no road-grade correction or certification: the times are the car's own.
-From a terminal: `pandacapture runs CAPTURE`.
+From a terminal: `pandacapture runs CAPTURE [--units metric]`.
 
 ## 6. Find unknown signals
 
@@ -712,7 +724,7 @@ pandacapture analyze CAPTURE [REFERENCE.csv] [options]     Claude proposes map e
   --max-cost D, --max-turns N   stop at about D dollars (default 2) or N turns (default 20)
 pandacapture apikey set | clear | status     your Anthropic API key, in the system's credential store
 pandacapture bundle CAPTURE [REFERENCE.csv]  a scrubbed capture with the analysis tools, for another agent
-pandacapture runs CAPTURE [--weight-lb LB]     time the runs in a capture, and where they could be better
+pandacapture runs CAPTURE [--weight-lb LB] [--units us|metric]   time the runs in a capture, and where they could be better
 
 pandacapture match CAPTURE [REFERENCE.csv | --obd] [options]     find which fields carry which values
   --map NAME|FILE               map with the RPM signal used to line the logs up

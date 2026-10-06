@@ -194,9 +194,12 @@ class ReplaySource:
 
     def __init__(self, path, speed=1.0, loop=True):
         from .transmit import read_replay
-        self.frames = read_replay(path)
+        try:
+            self.frames = read_replay(path)   # a candump log, or a zip holding one
+        except (OSError, ValueError) as e:
+            raise SourceError(f"Can't replay {Path(path).name}: {e}") from None
         if not self.frames:
-            raise SourceError(f"No frames in {path}")
+            raise SourceError(f"Nothing to replay in {Path(path).name}: it has no candump frames")
         self.speed = speed
         self.loop = loop
         self.index = 0

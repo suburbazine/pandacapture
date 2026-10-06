@@ -155,6 +155,33 @@ def test_replay_source(tmp_path):
     assert [f.addr for f in frames] == [0x316, 0x316]
 
 
+def test_replay_opens_zips(tmp_path):
+    import zipfile
+    from pandacapture.sources import SourceError
+    log = "(10.000000) can0 316#0010800C00000000\n(10.050000) can0 329#0010000D00000000\n"
+    share = tmp_path / "share.zip"                 # a shared capture: its log and the OBD CSV
+    with zipfile.ZipFile(share, "w") as z:
+        z.writestr("capture-20261006-120000.log", log)
+        z.writestr("obd-20261006-120000.csv", "t,RPM\n0,800\n")
+    assert len(ReplaySource(share).frames) == 2
+    bundle = tmp_path / "bundle.zip"               # an exported bundle: capture.log among the tools
+    with zipfile.ZipFile(bundle, "w") as z:
+        z.writestr("pandacapture-bundle-x/capture.log", log)
+        z.writestr("pandacapture-bundle-x/reference.log", log)
+        z.writestr("pandacapture-bundle-x/tools.py", "")
+    assert [f.addr for _, f in ReplaySource(bundle).frames] == [0x316, 0x329]
+    several = tmp_path / "several.zip"
+    with zipfile.ZipFile(several, "w") as z:
+        z.writestr("a.log", log)
+        z.writestr("b.log", log)
+    with pytest.raises(SourceError, match=r"several logs \(a.log, b.log\): unzip it and pick one"):
+        ReplaySource(several)
+    empty = tmp_path / "empty.log"
+    empty.write_text("# PandaCapture candump log\n")
+    with pytest.raises(SourceError, match="Nothing to replay in empty.log"):
+        ReplaySource(empty)
+
+
 def test_raw_sentinels_and_labels():
     s = sig(byte=0, raw_max=127)
     assert s.decode(bytes([127])) == 127 and s.decode(bytes([128])) is None

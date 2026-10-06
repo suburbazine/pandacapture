@@ -122,7 +122,7 @@ def test_compared_with_your_best(tmp_path):
     assert run["best_id"] == first["runs"][0]["id"] and run["best_id"] in second["bests"]
     tip = run["insights"][0]
     assert tip["topic"] == "compare" and "behind your best (0-60 mph)" in tip["text"]
-    assert tip["chart"]["x"] == "mph" and tip["chart"]["highlight"]
+    assert tip["chart"]["x"] == "kmh" and tip["chart"]["highlight"]
     R.save_runs(second, folder)
     listed = R.saved_summaries(folder)
     assert [r["headline"]["name"] for r in listed] == ["0-60 mph", "0-60 mph"] and listed[0]["started"] > listed[1]["started"]
@@ -134,7 +134,7 @@ def test_command(tmp_path, capsys):
     path = drive(tmp_path / "a.log")
     assert R.main([str(path), "--out", str(tmp_path / "runs")]) == 0
     out = capsys.readouterr().out
-    assert "0-60 mph: 3.4" in out and "Saved 1 run(s)" in out
+    assert "0-60 mph: 3.4" in out and "1 run found." in out and "0-100 km/h" not in out
     assert list((tmp_path / "runs").glob("run-*-standing.json"))
 
 

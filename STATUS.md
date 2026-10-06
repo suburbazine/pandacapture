@@ -1,6 +1,10 @@
 # Status
 
 ## Verified
+- Units, US or metric (2026-10-06): the same conversions and `{kind:value:decimals}` tokens as
+  PandaCapture Android, so run text from either shows in the units set. On the 2026-10-05 0-60 capture
+  the new shift coaching gives what Android's does: 1-2 at 5,722 rpm no advice (0.69 g against 0.71 g),
+  2-3 at 5,596 rpm late, from about 5,418 rpm.
 - Speed range tags on captures (2026-10-06): the same `# speed range` line and the same labels as
   PandaCapture Android. On its 2026-10-05 boost capture both give 0.0-102.2 km/h, "0–64 mph".
 - Run timing and coaching (pandacapture runs, the Runs page; 2026-10-06): a port of the Android app's run

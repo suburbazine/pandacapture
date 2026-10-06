@@ -307,6 +307,7 @@
       <a class="ctl" id="runsLink" href="/runs.html" target="pandacapture-runs"
          title="Runs: performance runs from your captures, timed and coached (opens its own window)">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 18l5-6 4 3 7-9M15 6h5v5"/></svg><span class="txt">Runs</span></a>
+      <button class="ctl" id="units" type="button">US</button>
       <button class="ctl icon" id="theme" type="button" title="Switch light/dark" aria-label="Switch light/dark theme">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9c0-.5 0-1-.1-1.4A6 6 0 0 1 13.4 3.1C13 3 12.5 3 12 3z"/></svg><span class="txt">Theme</span>
       </button>
@@ -329,6 +330,7 @@
 </main>
 <footer id="foot"></footer>
 
+<script src="/units.js"></script>
 <script>
 (() => {
   "use strict";
@@ -353,6 +355,11 @@
   const fmt = (v, d) => (v === null || v === undefined) ? "--" :
     Number(v).toLocaleString(undefined, { minimumFractionDigits: d, maximumFractionDigits: d });
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+  // Units: values arrive (and are judged, traced and zoned) in the map's units; only the text is converted
+  const U = window.PCUnits;
+  const cv = (s) => U.conversion(s.unit || "");
+  const shownValue = (s, v) => { const c = cv(s); return fmt(v * c.f + c.o, (s.decimals || 0) + c.extra); };
+  const shownWith = (s, v) => `${shownValue(s, v)} ${cv(s).unit}`.trim();
   const post = (path, body, raw) => fetch(path, raw ? { method: "POST", body } :
     { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) })
     .then(async (r) => { const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || r.statusText); return j; });
@@ -369,6 +376,12 @@
   const rememberGroup = (name, open) => { openGroups[name] = open; remember("pc-groups", JSON.stringify(openGroups)); };
 
   if (recall("pc-theme")) root.dataset.theme = recall("pc-theme");
+  // US or metric: the tiles' text follows (their arcs, zones and traces are in the map's units either way)
+  U.button($("units"));
+  U.onChange(() => {
+    for (const t of [...Object.values(tiles), ...Object.values(pins)]) t.relabel?.();
+    dirty = true;
+  });
   $("theme").onclick = () => {
     root.dataset.theme = root.dataset.theme === "light" ? "dark" : "light";
     remember("pc-theme", root.dataset.theme);
@@ -432,15 +445,26 @@
         ${zones(s)}
         <path class="val" d="${ARC}" pathLength="100" fill="none" stroke-width="13" stroke-linecap="round" stroke-dasharray="0 200" />
         <text class="gv" x="100" y="98" text-anchor="middle">--</text>
-        <text class="gu" x="100" y="118" text-anchor="middle">${esc(s.unit || "")}</text>
-        <text class="gm" x="44" y="168" text-anchor="middle">${fmt(s.min, 0)}</text>
-        <text class="gm" x="156" y="168" text-anchor="middle">${fmt(s.max, 0)}</text>
+        <text class="gu" x="100" y="118" text-anchor="middle"></text>
+        <text class="gm" x="44" y="168" text-anchor="middle"></text>
+        <text class="gm" x="156" y="168" text-anchor="middle"></text>
       </svg><canvas class="trace"></canvas>`;
-    const val = el.querySelector(".val"), text = el.querySelector(".gv");
-    return { el, s, hz: el.querySelector(".hz"), canvas: el.querySelector("canvas"), show(v) {
-      text.textContent = fmt(v, s.decimals);
+    const val = el.querySelector(".val"), text = el.querySelector(".gv"), unit = el.querySelector(".gu");
+    const [lo, hi] = el.querySelectorAll(".gm");
+    let last = null;
+    const t = { el, s, hz: el.querySelector(".hz"), canvas: el.querySelector("canvas"), show(v) {
+      last = v;
+      text.textContent = shownValue(s, v);
       val.setAttribute("stroke-dasharray", `${pct(s, v)} 200`);
+    }, relabel() {
+      const c = cv(s), d = Math.max(0, c.extra - 1);
+      unit.textContent = c.unit;
+      lo.textContent = fmt(s.min * c.f + c.o, d);
+      hi.textContent = fmt(s.max * c.f + c.o, d);
+      if (last !== null) text.textContent = shownValue(s, last);
     }};
+    t.relabel();
+    return t;
   }
 
   function numberTile(s) {
@@ -448,24 +472,38 @@
     el.innerHTML = head(s) + `<div class="num"><span class="v">--</span><span class="u">${esc(s.unit || "")}</span></div>
       <canvas class="trace"></canvas>`;
     const v = el.querySelector(".v"), u = el.querySelector(".u");
-    return { el, s, hz: el.querySelector(".hz"), canvas: el.querySelector("canvas"), show(x) {
+    let last = null;
+    const t = { el, s, hz: el.querySelector(".hz"), canvas: el.querySelector("canvas"), show(x) {
+      last = x;
       const label = labelFor(s, x);
-      v.textContent = label ?? fmt(x, s.decimals);
+      v.textContent = label ?? shownValue(s, x);
       v.classList.toggle("txt", label !== undefined);
       u.hidden = label !== undefined;
+    }, relabel() {
+      u.textContent = cv(s).unit;
+      if (last !== null) t.show(last);
     }};
+    t.relabel();
+    return t;
   }
 
   function lightTile(s) {
     const el = tileEl(s, `light c-${s.color || "red"}`);
-    const cond = s.on_above != null ? `on above ${s.on_above}${s.unit ? " " + s.unit : ""}` :
-                 s.on_below != null ? `on below ${s.on_below}${s.unit ? " " + s.unit : ""}` : "";
+    // Its condition in the units set
+    const cond = () => s.on_above != null ? `on above ${shownWith(s, s.on_above)}` :
+                       s.on_below != null ? `on below ${shownWith(s, s.on_below)}` : "";
     el.innerHTML = `<div class="lamp"></div><div><div class="label">${esc(name(s))}</div>` +
-      (cond ? `<div class="sub">${esc(cond)}</div>` : "") + `</div>`;
+      (cond() ? `<div class="sub"></div>` : "") + `</div>`;
     const sub = el.querySelector(".sub");
-    return { el, s, show(v) {
-      if (sub) sub.textContent = `${fmt(v, s.decimals)} ${s.unit || ""} · ${cond}`;
+    let last = null;
+    const t = { el, s, show(v) {
+      last = v;
+      if (sub) sub.textContent = `${shownWith(s, v)} · ${cond()}`;
+    }, relabel() {
+      if (sub) sub.textContent = last !== null ? `${shownWith(s, last)} · ${cond()}` : cond();
     }};
+    t.relabel();
+    return t;
   }
 
   // ---- pinning: a star on every tile puts a copy in the Pinned band at the top ----
@@ -753,7 +791,7 @@
           if (s.color !== "green") noticed.push({ key: s.key, cls: `c-${s.color || "red"}`, label: s.label });
         } else if (!stale && l.level !== "ok" && l.level) {
           c[l.level]++;
-          noticed.push({ key: s.key, cls: `lvl-${l.level}`, label: s.label, value: `${fmt(l.v, s.decimals)} ${s.unit || ""}`.trim() });
+          noticed.push({ key: s.key, cls: `lvl-${l.level}`, label: s.label, value: shownWith(s, l.v) });
         }
       }
       if (mode === "high") for (const t of views) drawTrace(t, l, now);

@@ -10,7 +10,8 @@ are the car's own wheel speeds, so times are as the car measured them.
 - analyze() times each one (standing 0-60 mph, 60 ft to 1/4 mile; rolling 40-100 mph and the like;
   braking 60-0), finds the full-throttle upshifts and each gear's pull (an estimated wheel power curve),
   checks the data, and coaches: where time went in this run, and against your best earlier run.
-- Each pointer comes with a chart: what to plot, over which window, and what to highlight.
+- Each pointer comes with a chart: what to plot, over which window, and what to highlight. Measurements in
+  its text, the checks' and the events' are units tokens (units.py), shown in the units set when read.
 - events() finds brake stands, launches and pop windows (overrun without fuel cut) over the whole log.
 """
 
@@ -22,6 +23,7 @@ import re
 from pathlib import Path
 
 from . import protocol as p
+from . import units as U
 
 COLUMNS = [
     "wheel_fl", "wheel_fr", "wheel_rl", "wheel_rr", "speed_kmh", "accel_long_g", "accel_lat_g", "rpm", "gear",
@@ -63,17 +65,38 @@ STANDING_SPEEDS = [("0-30 mph", 48.28032), ("0-60 mph", 96.56064), ("0-100 km/h"
 STANDING_DISTANCES = [("60 ft", 18.288), ("1/8 mile", 201.168), ("1/4 mile", 402.336)]
 ROLLING = [("40-100 mph", 64.37376, 160.9344), ("60-130 mph", 96.56064, 209.21472), ("100-200 km/h", 100.0, 200.0)]
 BRAKING = [("60-0 mph", 96.56064), ("100-0 km/h", 100.0)]
-# What a run is headlined and compared by, in order of preference
-HEADLINES = ["0-60 mph", "1/4 mile", "60 ft", "0-100 km/h", "40-100 mph", "60-130 mph", "100-200 km/h", "60-0 mph", "100-0 km/h"]
+# What a run is headlined and compared by, first first, in each system's units: 0-60 mph or 0-100 km/h for a
+# standing start (the 60 ft and 0-30 come before it, but they're splits), then the distances, the longer speeds,
+# the rolling ones and the stops. 0-60 mph and 0-100 km/h are different runs, not one in two units: each system
+# shows its own (shown_in); the drag-strip distances are the same in both. The same order as PandaCapture Android.
+HEADLINE_ORDER = {
+    U.US: ["0-60 mph", "1/4 mile", "1/8 mile", "0-100 mph", "60-130 mph", "40-100 mph", "60-0 mph", "0-30 mph", "60 ft"],
+    U.METRIC: ["0-100 km/h", "1/4 mile", "1/8 mile", "0-200 km/h", "100-200 km/h", "100-0 km/h", "60 ft"],
+}
 
 
-def headline(run):
-    std = [m for m in run.get("metrics", []) if m["standard"]]
-    for name in HEADLINES:
-        m = next((m for m in std if m["name"] == name), None)
-        if m:
-            return m
-    return std[0] if std else None
+def shown_in(name: str, system) -> bool:
+    """Whether a result goes with the system's units: mph runs in US, km/h runs in metric, distances in both."""
+    if "mph" in name:
+        return U.system_of(system) == U.US
+    if "km/h" in name:
+        return U.system_of(system) == U.METRIC
+    return True
+
+
+def shown(metrics, system):
+    """The results to show in the system's units (all of them, if none is in them)."""
+    return [m for m in metrics if shown_in(m["name"], system)] or list(metrics)
+
+
+def headline(run, system=U.US):
+    """The leading standard result shown in the system's units by HEADLINE_ORDER, else the first shown."""
+    order = HEADLINE_ORDER[U.system_of(system)]
+    ms = shown(run.get("metrics", []), system)
+    std = [m for m in ms if m["standard"]]
+    if std:
+        return min(std, key=lambda m: order.index(m["name"]) if m["name"] in order else len(order))
+    return ms[0] if ms else None
 
 
 def ok(v) -> bool:
@@ -527,8 +550,9 @@ class Analysis:
 
             def limited_at(x):
                 return ok(rows[x][limit_c]) and rows[x][limit_c] < 95
-            # The transmission holding torque back around the gear change, else the dip in acceleration
-            seeds = [k for k in near if limited_at(k) and abs(t[k] - t[i]) <= 0.4]
+            # The transmission holding torque back around the gear change, else the dip in acceleration. The gear
+            # number comes up to half a second after the hold, so look further back than ahead
+            seeds = [k for k in near if limited_at(k) and t[i] - 0.7 <= t[k] <= t[i] + 0.3]
             if seeds:
                 seed = min(seeds, key=lambda k: abs(t[k] - t[i]))
                 a0 = a1 = seed
@@ -546,12 +570,47 @@ class Analysis:
             rpms = [rows[k][rpm_c] for k in range(len(rows)) if s0 - 0.4 <= t[k] <= t[i] and ok(rows[k][rpm_c])]
             if not rpms:
                 continue
-            g_before = mean([a[k] for k in range(len(rows)) if s0 - 0.4 <= t[k] <= s0 - 0.05])
-            g_after = mean([a[k] for k in range(len(rows)) if s1 + 0.1 <= t[k] <= s1 + 0.5])
+            # The old gear at its very end, and the new one once settled (past the boost spike and spark recovery,
+            # up to the next torque hold or a lift), so the two compare the gears at nearly the same speed
+            g_before = mean([a[k] for k in range(len(rows)) if s0 - 0.12 <= t[k] <= s0 - 0.02])
+            stop = next((t[k] for k in range(len(rows)) if t[k] > s1 + 0.1
+                         and (limited_at(k) or not (rows[k][pedal_c] >= WOT))), math.inf)
+            top = min(s1 + 0.8, stop)
+            g_after = None if top - (s1 + 0.3) < 0.2 else mean([a[k] for k in range(len(rows)) if s1 + 0.3 <= t[k] <= top])
+            cross = self._cross_rpm(a, s0, g_before, g_after) if g_before is not None and g_after is not None else None
             out.append({"from": int(g0), "to": int(g1), "t": round(s0 - self.zero, 3), "rpm": max(rpms),
                         "kmh": round(v[i], 1), "duration_s": round(s1 - s0, 3),
-                        "g_before": rnd(g_before, 3), "g_after": rnd(g_after, 3)})
+                        "g_before": rnd(g_before, 3), "g_after": rnd(g_after, 3),
+                        "cross_rpm": round(cross) if cross is not None else None})
         return out
+
+    def _cross_rpm(self, a, s0, end, settled):
+        """Where the old gear's acceleration met `settled`, the new gear's, in old-gear rpm. Already below at the
+        end: the last moment (over 1.5 s back, smoothed over ±0.05 s) it still pulled `settled`. Still above: its
+        trend over the last 0.3 s, carried forward; None if it's flat or rising (it wouldn't meet)."""
+        rows, t, rpm_c = self.rows, self.t, C["rpm"]
+        back = [k for k in range(len(rows)) if s0 - 1.5 <= t[k] <= s0 - 0.02 and ok(rows[k][rpm_c])]
+        if not back:
+            return None
+        if end <= settled:
+            def smooth(x):
+                m = mean([a[k] for k in range(len(rows)) if abs(t[k] - t[x]) <= 0.05 and t[k] < s0])
+                return m if m is not None else a[x]
+            hit = next((k for k in reversed(back) if smooth(k) >= settled), None)
+            return rows[hit][rpm_c] if hit is not None else None
+        recent = [k for k in back if t[k] >= s0 - 0.3]
+        if len(recent) < 5:
+            return None
+        rpms = [rows[k][rpm_c] for k in recent]
+        gs = [a[k] for k in recent]
+        mr, mg = sum(rpms) / len(rpms), sum(gs) / len(gs)
+        sxx = sum((x - mr) ** 2 for x in rpms)
+        if sxx <= 0:
+            return None
+        slope = sum((x - mr) * (y - mg) for x, y in zip(rpms, gs)) / sxx
+        if slope >= -1e-5:
+            return None
+        return rpms[-1] + (settled - end) / slope
 
     def gear_pulls(self):
         """Each full-throttle stretch in one gear (2nd and up, 1.5 s or more): wheel power from mass x
@@ -646,7 +705,7 @@ class Analysis:
         if len(pairs) > 20:
             off = sum(1 for r in pairs if abs(r[C["speed_kmh"]] - front(r)) > 3)
             out.append(_check("speeds_agree", "Wheel speeds match the ECU's speed", off <= len(pairs) // 20,
-                              f"{off} of {len(pairs)} samples more than 3 km/h apart"))
+                              f"{off} of {len(pairs)} samples more than {U.kmh(3.0)} apart"))
         ai = [i for i in range(len(rows)) if ok(rows[i][C["accel_long_g"]]) and v[i] > 3 and slope_g(t, v, i) is not None]
         if len(ai) > 40:
             r = correlation([rows[i][C["accel_long_g"]] for i in ai], [slope_g(t, v, i) for i in ai])
@@ -670,18 +729,18 @@ def _check(id_, label, passed, detail, scope="run"):
 
 # ---------------------------------------------------------------- coaching
 
-def mph(kmh):
-    return kmh / 1.609344
-
-
 class Coach:
     """Where the time went: plain pointers from one run's samples (launch, traction, the driver's pedal,
     shifts, boost, knock, fuel, heat), then against the best earlier run of the same kind, the speed range
     where most time was lost and what was different there. Each pointer carries a chart: what to plot, the
-    window, and the stretch to highlight (times from the run's zero)."""
+    window, and the stretch to highlight (times from the run's zero). Measurements in the text are units tokens;
+    `units` (the setting when it's analyzed) picks the result it's compared by and the comparison's speed marks."""
 
-    def __init__(self, a: Analysis, run: dict):
-        self.a, self.run = a, run
+    SHIFT_LIMIT_RPM = 6300.0    # shifts at or over this are at the top of the rev range already: never called early
+    MIN_SHIFT_GAIN_RPM = 150.0  # a shift point is only called off by this much or more: less is noise, and little time
+
+    def __init__(self, a: Analysis, run: dict, units=U.US):
+        self.a, self.run, self.units = a, run, U.system_of(units)
         self.rows, self.t, self.v, self.zero = a.rows, a.t, a.v, a.zero
         self.shifts, self.stats, self.kind = run["shifts"], run["stats"], run["kind"]
 
@@ -707,7 +766,7 @@ class Coach:
             b = self.stats.get("launch_boost_psi")
             if b is not None and b < 2.0:
                 rpm = self.stats.get("launch_rpm")
-                out.append(_tip("launch", f"Launched at {b:.1f} psi" + (f" and {rpm:,.0f} rpm" if rpm else "") +
+                out.append(_tip("launch", f"Launched at {U.psi(b)}" + (f" and {rpm:,.0f} rpm" if rpm else "") +
                                 ": a brake stand to build boost first would cut the 60 ft.",
                                 _chart("Boost and rpm before the launch", ["boost_psi", "rpm"], [-4.0, 2.0],
                                        [[-0.2, 0.2]], "launch")))
@@ -727,7 +786,7 @@ class Coach:
         if tcs:
             worst = min(rows[i][C["tqi_tcs"]] for i in tcs)
             out.append(_tip("traction", f"Traction control cut torque to {worst:.0f} % for {len(tcs) * 0.02:.1f} s "
-                            f"(from {mph(v[tcs[0]]):.0f} to {mph(v[tcs[-1]]):.0f} mph): try the traction setting your "
+                            f"(from {U.kmh(v[tcs[0]])} to {U.kmh(v[tcs[-1]])}): try the traction setting your "
                             "track allows, or ease the launch.",
                             _chart("Traction control", ["tqi_tcs", "rear_slip", "speed_mph"], span,
                                    [[self._rel(t[tcs[0]]), self._rel(t[tcs[-1]])]], "torque cut")))
@@ -737,23 +796,21 @@ class Coach:
                                                                    for s in slow) + ".",
                             _chart("Shifts", ["accel_g", "rpm"], span,
                                    [[s["t"], s["t"] + s["duration_s"]] for s in slow], "slow shift")))
+        # A shift is right where the old gear's acceleration has fallen to what the new one gives at that speed: the
+        # old gear at its very end against the new one settled. Only worth saying when it's clearly off
         for s in self.shifts:
-            before, after = s.get("g_before"), s.get("g_after")
-            if before is None or after is None:
-                continue
-            if before > after * 1.08 and s["rpm"] < 6300:
-                out.append(_tip("shifts", f"{s['from']}-{s['to']} at {s['rpm']:,.0f} rpm was early: it was still "
-                                f"pulling {before:.2f} g in {s['from']} against {after:.2f} g after. Holding it longer "
-                                "would be faster.",
-                                _chart(f"The {s['from']}-{s['to']} shift", ["accel_g", "rpm"],
-                                       [s["t"] - 2.0, s["t"] + 2.0], [[s["t"], s["t"] + s["duration_s"]]], "shift")))
+            text = self._shift_advice(s)
+            if text:
+                out.append(_tip("shifts", text, _chart(f"The {s['from']}-{s['to']} shift", ["accel_g", "rpm"],
+                                                       [s["t"] - 2.0, s["t"] + 2.0], [[s["t"], s["t"] + s["duration_s"]]],
+                                                       "shift")))
         peak = self.stats.get("peak_boost_psi")
         if peak is not None and peak > 5:
             wot_at = next((t[i] for i in range(len(rows)) if rows[i][C["pedal"]] >= WOT), zero)
             reached = next((t[i] for i in range(len(rows)) if t[i] >= wot_at and ok(rows[i][C["boost_psi"]])
                             and rows[i][C["boost_psi"]] >= 0.9 * peak), None)
             if reached is not None and reached - wot_at > 1.5:
-                out.append(_tip("boost", f"Boost took {reached - wot_at:.1f} s to reach 90 % of its {peak:.1f} psi peak.",
+                out.append(_tip("boost", f"Boost took {reached - wot_at:.1f} s to reach 90 % of its {U.psi(peak)} peak.",
                                 _chart("Boost build", ["boost_psi", "rpm"], [self._rel(wot_at) - 1, self._rel(reached) + 2],
                                        [[self._rel(wot_at), self._rel(reached)]], "spooling")))
         # Knock: spark pulled back while the throttle stayed down. Not where something asked for less torque: a
@@ -790,7 +847,7 @@ class Coach:
                 deficit.append(((tgt - act) / 6.894757, t[i]))
         if deficit and max(d for d, _ in deficit) > 10:
             low = [x for d, x in deficit if d > 10]
-            out.append(_tip("fuel", f"Low-side fuel pressure fell {max(d for d, _ in deficit):.0f} psi under its target: "
+            out.append(_tip("fuel", f"Low-side fuel pressure fell {U.psi(max(d for d, _ in deficit), 0)} under its target: "
                             "the low-pressure pump is struggling.",
                             _chart("Low-side fuel pressure", ["lowside_psi", "lowside_target_psi"], span,
                                    [[self._rel(low[0]), self._rel(low[-1])]], "under target")))
@@ -807,7 +864,7 @@ class Coach:
                                    [[self._rel(worst_t) - 0.3, self._rel(worst_t) + 0.3]], "lean")))
         iat = self.stats.get("intake_c")
         if iat is not None and iat > 45:
-            out.append(_tip("heat", f"Intake air was {iat:.0f} °C at the start: heat soak costs power. Let it cool "
+            out.append(_tip("heat", f"Intake air was {U.celsius(iat)} at the start: heat soak costs power. Let it cool "
                             "between runs.", _chart("Intake air", ["iat", "boost_psi"], span, [], "")))
         if best is not None:
             tip = self._compare(best)
@@ -817,6 +874,28 @@ class Coach:
             out.append(_tip("clean", "Clean run: no wheelspin, traction-control cuts, slow shifts or knock found.",
                             _chart("The run", ["speed_mph", "accel_g", "rpm"], span, [], "")))
         return out
+
+    def _shift_advice(self, s):
+        before, after, cross, rpm = s.get("g_before"), s.get("g_after"), s.get("cross_rpm"), s["rpm"]
+        if before is None or after is None:
+            return None
+        name, old, new = f"{s['from']}-{s['to']}", _ordinal(s["from"]), _ordinal(s["to"])
+        if before > after * 1.05:
+            if rpm >= self.SHIFT_LIMIT_RPM:
+                return None
+            if cross is None or cross >= self.SHIFT_LIMIT_RPM:
+                return (f"{name} at {rpm:,.0f} rpm was early: {old} still pulled {before:.2f} g at the end against "
+                        f"{after:.2f} g in {new} once it settled, and wasn't fading. Holding it toward the limiter "
+                        "would be faster.")
+            if cross - rpm >= self.MIN_SHIFT_GAIN_RPM:
+                return (f"{name} at {rpm:,.0f} rpm was early: {old} still pulled {before:.2f} g at the end against "
+                        f"{after:.2f} g in {new} once it settled. They'd meet at about {cross:,.0f} rpm: holding it "
+                        "to there would be faster.")
+            return None
+        if before < after * 0.95 and cross is not None and rpm - cross >= self.MIN_SHIFT_GAIN_RPM:
+            return (f"{name} at {rpm:,.0f} rpm came late: {old} had fallen to {before:.2f} g, under the {after:.2f} g "
+                    f"{new} gives once settled, from about {cross:,.0f} rpm. Shifting there would be faster.")
+        return None
 
     def _braking(self, out):
         rows, t = self.rows, self.t
@@ -851,8 +930,10 @@ class Coach:
                     return rs[i - 1][T] + (rs[i][T] - rs[i - 1][T]) * (kmh - a) / (b - a)
             return None
         deltas = []
-        for m in range(10, 201, 10):
-            kmh = m * 1.609344
+        # Every 10 mph, or every 10 km/h with metric units, so the stretch it names reads round
+        step = 10.0 if self.units == U.METRIC else 10 * U.KMH_PER_MPH
+        for m in range(1, 21):
+            kmh = m * step
             a, b = time_at(mine, kmh), time_at(theirs, kmh)
             if a is not None and b is not None:
                 deltas.append((kmh, a - b))
@@ -861,12 +942,12 @@ class Coach:
         total = deltas[-1][1]
         steps = [(a[0], b[0], b[1] - a[1]) for a, b in zip(deltas, deltas[1:])]
         worst = max(steps, key=lambda s: s[2])
-        head = headline(self.run)
+        head = headline(self.run, self.units)
         sign = "behind" if total >= 0 else "ahead of"
-        chart = _chart("Time against your best", ["gap"], None, [[mph(worst[0]), mph(worst[1])]] if worst[2] >= 0.03
-                       else [], "lost here", x="mph")
+        chart = _chart("Time against your best", ["gap"], None, [[worst[0], worst[1]]] if worst[2] >= 0.03
+                       else [], "lost here", x="kmh")
         if worst[2] < 0.03:
-            return _tip("compare", f"{abs(total):.2f} s {sign} your best by {mph(deltas[-1][0]):.0f} mph, and no one "
+            return _tip("compare", f"{abs(total):.2f} s {sign} your best by {U.kmh(deltas[-1][0])}, and no one "
                         "stretch stands out.", chart)
         lo, hi = worst[0], worst[1]
         reasons = []
@@ -881,7 +962,7 @@ class Coach:
         my_boost = mean([r[C["boost_psi"]] for r, x in zip(self.rows, self.v) if lo <= x <= hi])
         b_boost = mean([r[C["boost_psi"]] for r in theirs if ok(ground(r)) and lo <= ground(r) <= hi])
         if my_boost is not None and b_boost is not None and b_boost - my_boost > 1.0:
-            reasons.append(f"boost averaged {my_boost:.1f} psi against {b_boost:.1f}")
+            reasons.append(f"boost averaged {U.psi(my_boost)} against {U.psi(b_boost)}")
         my_slip = [(rear(r) / front(r) - 1) * 100 for r, x in zip(self.rows, self.v)
                    if lo <= x <= hi and ok(front(r)) and front(r) > 3 and ok(rear(r))]
         if my_slip and max(my_slip) > 8:
@@ -889,8 +970,12 @@ class Coach:
         if any(lo <= x <= hi and ok(r[C["tqi_tcs"]]) and r[C["tqi_tcs"]] < 95 for r, x in zip(self.rows, self.v)):
             reasons.append("traction control cut torque")
         return _tip("compare", f"{abs(total):.2f} s {sign} your best" + (f" ({head['name']})" if head else "") +
-                    f"; most of it ({worst[2]:.2f} s) between {mph(lo):.0f} and {mph(hi):.0f} mph" +
+                    f"; most of it ({worst[2]:.2f} s) between {U.kmh(lo)} and {U.kmh(hi)}" +
                     (", where " + ", ".join(reasons) if reasons else "") + ".", chart)
+
+
+def _ordinal(n):
+    return f"{n}" + ("th" if n % 100 in (11, 12, 13) else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th"))
 
 
 def _tip(topic, text, chart):
@@ -899,7 +984,8 @@ def _tip(topic, text, chart):
 
 def _chart(title, series, window, highlight, label, x="t"):
     """What the page plots for a pointer: series (column keys, or derived: speed_mph, rear_slip, accel_g,
-    afr_b1/b2, lowside_psi, lowside_target_psi, gap), the x window, and the stretches to shade."""
+    afr_b1/b2, lowside_psi, lowside_target_psi, gap), the x window, and the stretches to shade. x is "t" (seconds
+    from the run's zero) or "kmh" (the speed, with highlights in km/h; runs saved before units came have "mph")."""
     return {"title": title, "series": series, "x": x, "window": window, "highlight": highlight, "label": label}
 
 
@@ -923,14 +1009,17 @@ def _rows_of(run):
 # ---------------------------------------------------------------- events over the whole log
 
 class Events:
-    """Brake stands, launches (to 60 mph within 20 s) and pop windows (fuel still on with the pedal up over
-    2,000 rpm: an overrun that isn't cutting fuel), as the phone's detectors find them."""
+    """Brake stands, launches (to 60 mph, or 100 km/h with metric units, within 20 s) and pop windows (fuel still
+    on with the pedal up over 2,000 rpm: an overrun that isn't cutting fuel), as the phone's detectors find them.
+    Measurements in the summaries are units tokens."""
 
     FRESH_S = 1.0
     WHEELS = ("wheel_fl", "wheel_fr", "wheel_rl", "wheel_rr")
 
-    def __init__(self, keys):
+    def __init__(self, keys, units=U.US):
         self.has = set(keys)
+        # To 60 mph, or 100 km/h with metric units: the benchmark people know in each
+        self.launch_to, self.launch_name = (100.0, "0-100 km/h") if U.system_of(units) == U.METRIC else (SIXTY_KMH, "0-60 mph")
         self.value, self.at = {}, {}
         self.out = []
         self.stand_from = self.still_since = self.launch_from = self.pop_from = None
@@ -983,8 +1072,8 @@ class Events:
             held = t - self.stand_from
             if held >= 0.5:
                 self._add("brake stand", self.stand_from, t, f"held {held:.1f} s" +
-                          (f", peak brake {self.stand_brake:.0f} psi" if self.stand_brake is not None else "") +
-                          (f", {self.stand_boost:.1f} psi boost at release" if self.stand_boost is not None else ""))
+                          (f", peak brake {U.psi(self.stand_brake, 0)}" if self.stand_brake is not None else "") +
+                          (f", {U.psi(self.stand_boost)} boost at release" if self.stand_boost is not None else ""))
             self.stand_from = None
 
     def _launch(self, t, dt_):
@@ -1007,8 +1096,8 @@ class Events:
             self.g_peak = max(self.g_peak if self.g_peak is not None else g, g)
             self.g_sum += g * dt_
             self.g_time += dt_
-        if speed >= SIXTY_KMH:
-            self._add("launch", self.launch_from, t, f"0-60 mph {t - self.launch_from:.2f} s from the first wheel turning" +
+        if speed >= self.launch_to:
+            self._add("launch", self.launch_from, t, f"{self.launch_name} {t - self.launch_from:.2f} s from the first wheel turning" +
                       (f", peak {self.g_peak:.2f} g" if self.g_peak is not None else "") +
                       (f", average {self.g_sum / self.g_time:.2f} g" if self.g_time > 0 else ""))
             self.launch_from = None
@@ -1052,30 +1141,31 @@ def saved_runs(folder: Path):
     return out
 
 
-def saved_summaries(folder: Path):
-    """The saved runs, newest first: what the Runs page lists."""
+def saved_summaries(folder: Path, system=U.US):
+    """The saved runs, newest first: what the Runs page lists (it picks each one's headline in its own units)."""
     out = []
     for run in saved_runs(folder):
-        head = headline(run)
         out.append({"id": run["id"], "kind": run["kind"], "started": run["started"], "capture": run.get("capture", ""),
-                    "map": run.get("map", ""), "headline": head, "max_kmh": run.get("stats", {}).get("max_kmh")})
+                    "map": run.get("map", ""), "headline": headline(run, system), "max_kmh": run.get("stats", {}).get("max_kmh"),
+                    "metrics": [{k: m.get(k) for k in ("name", "value", "unit", "standard")} for m in run.get("metrics", [])]})
     return sorted(out, key=lambda r: r["started"], reverse=True)
 
 
-def open_saved(folder: Path, run_id: str):
+def open_saved(folder: Path, run_id: str, system=U.US):
     """A saved run with the best one it compares with, as the page shows a freshly found one."""
     saved = saved_runs(folder)
     run = next((r for r in saved if r.get("id") == run_id), None)
     if run is None:
         raise ValueError("No saved run by that name.")
-    best = best_of([r for r in saved if r["started"] < run["started"]], run)
+    best = best_of([r for r in saved if r["started"] < run["started"]], run, system)
     return {"capture": run.get("capture", ""), "map": run.get("map", ""), "mass_kg": run.get("mass_kg"),
             "runs": [run], "events": [], "bests": {best["id"]: best} if best else {}}
 
 
-def best_of(saved, run):
-    """The best saved run of the same kind and map with the same headline metric, other than this one."""
-    head = headline(run)
+def best_of(saved, run, system=U.US):
+    """The best saved run of the same kind and map by this run's headline, other than this one (or an earlier
+    reading of it, which has the same id): comparing a run with itself says "0.00 s behind your best"."""
+    head = headline(run, system)
     if head is None:
         return None
     found = []
@@ -1088,14 +1178,15 @@ def best_of(saved, run):
     return min(found, key=lambda x: x[0])[1] if found else None
 
 
-def analyze_capture(path, address_map, mass_kg=DEFAULT_MASS_KG, saved=(), log=lambda s: None):
-    """{"runs": [...], "events": [...], "bests": {id: run}} for a capture; each run judged and coached against
-    the best of `saved` (and of the runs before it in this capture)."""
+def analyze_capture(path, address_map, mass_kg=DEFAULT_MASS_KG, saved=(), log=lambda s: None, units=U.US):
+    """{"runs": [...], "events": [...], "bests": {id: run}, "read_before": n} for a capture; each run judged and
+    coached against the best of `saved` (and of the runs before it in this capture) by its headline in `units`.
+    read_before counts the runs `saved` already had (the capture read again): saving them replaces those."""
     finder = RunFinder(address_map)
     if not finder.usable:
         raise ValueError(f"the map {address_map.name!r} decodes no wheel or vehicle speed, so runs can't be found")
     keys = {s.key for s in address_map.signals if not s.derived}
-    events = Events(keys)
+    events = Events(keys, units)
     event_sigs = {}
     for s in address_map.signals:
         if not s.derived and s.key in ("brake_switch", "brake_psi", "pedal", "speed_kmh", "boost_psi", "accel_long_g",
@@ -1124,15 +1215,16 @@ def analyze_capture(path, address_map, mass_kg=DEFAULT_MASS_KG, saved=(), log=la
             continue
         run["map"] = address_map.name
         run["capture"] = Path(path).name
-        best = best_of(pool, run)
-        run["insights"] = Coach(a, run).advise(best)
+        best = best_of(pool, run, units)
+        run["insights"] = Coach(a, run, units).advise(best)
         run["best_id"] = best["id"] if best else None
         if best:
             bests[best["id"]] = best
         runs.append(run)
         pool.append(run)
+    known = {r.get("id") for r in saved}
     return {"capture": Path(path).name, "map": address_map.name, "mass_kg": mass_kg, "runs": runs,
-            "events": events.out, "bests": bests}
+            "events": events.out, "bests": bests, "read_before": sum(1 for r in runs if r["id"] in known)}
 
 
 def save_runs(result, folder: Path):
@@ -1141,38 +1233,51 @@ def save_runs(result, folder: Path):
         (folder / f"{run['id']}.json").write_text(json.dumps(run, separators=(",", ":")), encoding="utf-8")
 
 
-def fmt_metric(m):
-    v = f"{m['value']:.2f} s" if m["unit"] == "s" else f"{m['value'] / 0.3048:.0f} ft"
+def fmt_metric(m, system=U.US):
+    v = f"{m['value']:.2f} s" if m["unit"] == "s" else U.show(m["value"], "m", 0 if U.system_of(system) == U.US else 1, system)
     extra = []
     if m.get("trap_mph"):
-        extra.append(f"trap {m['trap_mph']:.1f} mph")
+        extra.append("trap " + U.show(m["trap_mph"] * U.KMH_PER_MPH, "km/h", 1, system))
     if m.get("rollout") is not None:
         extra.append(f"{m['rollout']:.2f} s with 1 ft rollout")
     return f"{m['name']}: {v}" + (f" ({', '.join(extra)})" if extra else "")
 
 
-def report(result) -> str:
+def found_text(result) -> str:
+    """How many runs a capture gave, and how many replaced an earlier reading of the same run."""
+    n, again = len(result["runs"]), result.get("read_before", 0)
+    if not n:
+        return f"No full-throttle pulls or hard stops in {result['capture']}."
+    runs = f"{n} run{'' if n == 1 else 's'}"
+    if again == n:
+        return f"{result['capture']}: {runs} read again (updated)."
+    return f"{result['capture']}: {runs} found" + (f", {again} of them read before (updated)." if again else ".")
+
+
+def report(result, system=U.US) -> str:
+    """The runs as text, in the system's units (results that go with them, measurements converted)."""
     lines = []
     for r in result["runs"]:
         st = r["stats"]
-        lines.append(f"{r['kind'].capitalize()} run at {r['started']}: up to {mph(st['max_kmh'] or 0):.0f} mph"
+        lines.append(f"{r['kind'].capitalize()} run at {r['started']}: up to {U.show(st['max_kmh'] or 0, 'km/h', 0, system)}"
                      + (f", peak {st['peak_g']:.2f} g" if st.get("peak_g") is not None else ""))
-        for m in r["metrics"]:
-            lines.append("  " + fmt_metric(m))
+        for m in shown(r["metrics"], system):
+            lines.append("  " + fmt_metric(m, system))
         for s in r["shifts"]:
-            lines.append(f"  shift {s['from']}-{s['to']} at {s['rpm']:,.0f} rpm, {mph(s['kmh']):.0f} mph, "
+            lines.append(f"  shift {s['from']}-{s['to']} at {s['rpm']:,.0f} rpm, {U.show(s['kmh'], 'km/h', 0, system)}, "
                          f"{s['duration_s']:.2f} s")
         for pl in r["pulls"]:
             if pl.get("peak_hp"):
-                lines.append(f"  gear {pl['gear']}: about {pl['peak_hp']:.0f} hp at the wheels at {pl['peak_hp_rpm']:,.0f} rpm")
+                lines.append(f"  gear {pl['gear']}: about {U.show(pl['peak_hp'], 'hp', 0, system)} at the wheels at "
+                             f"{pl['peak_hp_rpm']:,.0f} rpm")
         for c in r["checks"]:
             if not c["pass"]:
-                lines.append(f"  [check] {c['label']}: {c['detail']}")
+                lines.append(f"  [check] {c['label']}: {U.render(c['detail'], system)}")
         for tip in r["insights"]:
-            lines.append(f"  > {tip['text']}")
+            lines.append(f"  > {U.render(tip['text'], system)}")
     for e in result["events"]:
-        lines.append(f"{e['kind']}: {e['summary']}")
-    return "\n".join(lines) if lines else "No full-throttle pulls or stops from 60 mph in this capture."
+        lines.append(f"{e['kind']}: {U.render(e['summary'], system)}")
+    return "\n".join(lines) if lines else "No full-throttle pulls or hard stops in this capture."
 
 
 def main(argv) -> int:
@@ -1189,6 +1294,8 @@ def main(argv) -> int:
                     help="car with driver and fuel, lb, for the power estimates (default %(default).0f)")
     ap.add_argument("--out", help="folder for saved runs (default: captures/runs next to the program)")
     ap.add_argument("--no-save", action="store_true", help="don't keep the runs for later comparisons")
+    ap.add_argument("--units", choices=U.SYSTEMS, default=U.US,
+                    help="show results in US (mph, psi, °F, ft, hp) or metric units (km/h, bar, °C, m, kW); default us")
     args = ap.parse_args(argv)
     try:
         maps = builtin_maps()
@@ -1197,12 +1304,13 @@ def main(argv) -> int:
             raise MapError("choose the vehicle's address map with --map (see: pandacapture maps)")
         address_map = load_map(name)
         folder = Path(args.out) if args.out else runs_dir(default_out_dir())
-        result = analyze_capture(args.capture, address_map, args.weight_lb * 0.45359237, saved_runs(folder), print)
+        result = analyze_capture(args.capture, address_map, args.weight_lb * 0.45359237, saved_runs(folder), print,
+                                 args.units)
     except (MapError, ValueError, OSError) as e:
         print(f"ERROR: {e}")
         return 1
-    print(report(result))
+    print(report(result, args.units))
     if not args.no_save and result["runs"]:
         save_runs(result, folder)
-        print(f"\nSaved {len(result['runs'])} run(s) in {folder} for later comparisons.")
+        print(f"\n{found_text(result)} Saved in {folder} for later comparisons.")
     return 0

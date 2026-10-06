@@ -184,6 +184,7 @@
 </main>
 <div class="banner" id="banner"></div>
 
+<script src="/units.js"></script>
 <script>
 (() => {
   "use strict";
@@ -214,7 +215,8 @@
   // ---- captures ----
   // A capture's speed range tag; older logs are read in the background, so look again while any are pending
   function speedTag(x) {
-    if (x.speed) return `<span class="tag" title="Speed range: ${x.speed.min.toFixed(1)} to ${x.speed.max.toFixed(1)} km/h">${esc(x.speed.label)}</span>`;
+    const U = window.PCUnits;   // the speeds in the units set on the gauges or the Runs page
+    if (x.speed) return `<span class="tag" title="Speed range: ${esc(U.show(x.speed.min, "km/h", 1))} to ${esc(U.show(x.speed.max, "km/h", 1))}">${esc(U.speedLabel(x.speed))}</span>`;
     return x.speed_pending ? '<span class="tag" title="Reading this capture for its speed range">…</span>' : "";
   }
   let speedPoll = null;
@@ -429,6 +431,7 @@
 
   // ---- start ----
   loadCaptures();
+  window.PCUnits.onChange(loadCaptures);   // switched in another window
   loadRefs();
   fetch("/match").then((r) => r.json()).then((m) => { showFind(m); if (m.state === "running") watchFind(); });
   fetch("/claude").then((r) => r.json()).then((c) => { showClaude(c); if (["preparing", "running"].includes(c.state)) watchClaude(); });

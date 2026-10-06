@@ -425,6 +425,7 @@ def make_handler(dash):
     captures_page = (web_dir() / "captures.html").read_bytes()
     runs_page = (web_dir() / "runs.html").read_bytes()
     icons = {"/icon.svg": ((web_dir() / "icon.svg").read_bytes(), "image/svg+xml"),
+             "/units.js": ((web_dir() / "units.js").read_bytes(), "text/javascript; charset=utf-8"),
              "/icon-512.png": ((web_dir() / "icon-512.png").read_bytes(), "image/png")}
 
     class Handler(BaseHTTPRequestHandler):
@@ -466,10 +467,13 @@ def make_handler(dash):
                 self._send(runs_page, "text/html; charset=utf-8")
             elif path == "/runs/saved":
                 from .runs import runs_dir, saved_summaries
-                self._json({"folder": str(runs_dir(reader.record_dir)), "runs": saved_summaries(runs_dir(reader.record_dir))})
+                units = (parse_qs(url.query).get("units") or ["us"])[0]
+                self._json({"folder": str(runs_dir(reader.record_dir)),
+                            "runs": saved_summaries(runs_dir(reader.record_dir), units)})
             elif path == "/runs/run":
                 from .runs import open_saved, runs_dir
-                self._json(open_saved(runs_dir(reader.record_dir), (parse_qs(url.query).get("id") or [""])[0]))
+                q = parse_qs(url.query)
+                self._json(open_saved(runs_dir(reader.record_dir), (q.get("id") or [""])[0], (q.get("units") or ["us"])[0]))
             elif path in icons:
                 self._send(*icons[path])
             elif path == "/references":
@@ -582,7 +586,9 @@ def make_handler(dash):
                     with state.lock:
                         current = state.map
                     folder = runs_dir(reader.record_dir)
-                    result = analyze_capture(capture, current, mass, saved_runs(folder))
+                    # The units set on the page: they pick what a run is compared by, the coaching's speed
+                    # marks, and whether a launch is timed to 60 mph or 100 km/h
+                    result = analyze_capture(capture, current, mass, saved_runs(folder), units=req.get("units", "us"))
                     save_runs(result, folder)
                     self._json(result)
                 elif url.path == "/claude/use-map":
