@@ -1,6 +1,8 @@
 # Status
 
 ## Verified
+- Speed range tags on captures (2026-10-06): the same `# speed range` line and the same labels as
+  PandaCapture Android. On its 2026-10-05 boost capture both give 0.0-102.2 km/h, "0–64 mph".
 - Run timing and coaching (pandacapture runs, the Runs page; 2026-10-06): a port of the Android app's run
   processing, without its certification. On all 32 phone captures it finds the same runs with the same
   times, shifts and power estimates as the Android code. Also tested on synthetic drives with known physics

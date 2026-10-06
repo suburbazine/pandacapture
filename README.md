@@ -212,6 +212,11 @@ markers, traffic per bus. On Hyundai, Kia and Genesis engines, `RPM(0x316)` appe
 The log goes to a `captures` folder next to the program, as `capture-YYYYMMDD-HHMMSS.log`. A
 summary of every bus and ID is added at the end.
 
+- **Speed range:** just before the summary, the log notes the speed range it covers, e.g.
+  `# speed range: 0.0-102.2 km/h`. The speed comes from the address map's signals (`--map`, default the
+  built-in one): the slower axle's wheel speeds, so wheelspin doesn't count, else the ECU's vehicle
+  speed. PandaCapture Android writes the same line, so each reads the other's logs.
+
 - **Long drives roll over:** a new file starts every 100 MB, about 15 minutes of a busy bus. Each
   part repeats the header and names the file before and after it, and markers keep counting.
   `--split-mb N` changes the size, and `--split-mb 0` keeps one file.
@@ -300,7 +305,9 @@ The bar at the top of the page:
 
 The gauge page holds only what's needed while driving. Everything else is on the **Captures & Claude**
 page:
-- **Captures:** the captures folder, newest first.
+- **Captures:** the captures folder, newest first, each tagged with the speed range it covers
+  ("0–64 mph", "Stationary", or "No speed" when the map's speed signals never came up). Older logs
+  without the line are read once in the background and remembered in `capture-speeds.json`.
 - **Reference:** the OBD answers in the capture, or a logger's or `obd` log you add. Logs you add are kept
   until the dashboard stops.
 - **Find signals:** runs [`match`](#6-find-unknown-signals) on this computer and lists the ranked fields;
@@ -660,6 +667,7 @@ pandacapture [options]          record
   --out DIR                     where to save captures
   --seconds N                   stop after N seconds
   --split-mb N                  new file every N MB (default 100; 0 = one file)
+  --map NAME|FILE               address map for the log's speed range (default: the built-in one)
   --no-reconnect                stop on a panda error
   --reconnect-seconds N         how long to keep trying (default 60)
   --serial S                    which panda (see: pandacapture list)

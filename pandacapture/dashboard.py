@@ -34,6 +34,7 @@ from .capture import RollingLog, candump_line, default_out_dir, restart_note
 from .firmware import bundled_dir
 from .signals import Evaluator, MapError, builtin_maps, load_map
 from .sources import SourceError
+from .speedrange import SpeedTags
 
 STALE_SECONDS = 1.5
 PUSH_EVERY = 0.1        # normal mode
@@ -166,9 +167,9 @@ class LiveState:
 class Recorder:
     """candump log of everything received while recording is on, in parts of split_mb."""
 
-    def __init__(self, out_dir, description, split_mb=100.0):
+    def __init__(self, out_dir, description, split_mb=100.0, speed_map=None):
         self.log = RollingLog(out_dir, ["# PandaCapture candump log (recorded by the dashboard)",
-                                        f"# source: {description}"], split_mb)
+                                        f"# source: {description}"], split_mb, speed_map=speed_map)
         self._last_flush = time.monotonic()
 
     @property
@@ -183,6 +184,7 @@ class Recorder:
         for f in frames:
             if not (f.returned or f.rejected):
                 self.log.write(candump_line(t, f) + "\n")
+                self.log.track(f)
         if time.monotonic() - self._last_flush > 1.0:
             self.log.flush()
             self._last_flush = time.monotonic()
@@ -193,6 +195,7 @@ class Recorder:
         self.log.flush()
 
     def close(self):
+        self.log.speed_note()
         self.log.close()
 
 
@@ -227,7 +230,9 @@ class Reader(threading.Thread):
     def start_recording(self):
         with self.rec_lock:
             if self.recorder is None:
-                self.recorder = Recorder(self.record_dir, self.description, self.split_mb)
+                with self.state.lock:
+                    speed_map = self.state.map
+                self.recorder = Recorder(self.record_dir, self.description, self.split_mb, speed_map)
                 with self.state.lock:
                     self.state.recording = str(self.recorder.path)
                     self.state.recording_since = time.monotonic()
@@ -393,15 +398,21 @@ class MatchJob:
             return json.loads(json.dumps(self.state))
 
 
-def list_captures(folder: Path, recording: str):
+def list_captures(folder: Path, recording: str, tags=None, address_map=None):
+    """The folder's newest 50 logs; with tags (a SpeedTags), each one's speed range as far as it's known."""
     if not folder.is_dir():
         return []
     out = []
     for f in sorted(folder.glob("*.log"), key=lambda f: f.stat().st_mtime, reverse=True)[:50]:
         st = f.stat()
-        out.append({"name": f.name, "size": st.st_size,
-                    "modified": dt.datetime.fromtimestamp(st.st_mtime).strftime("%Y-%m-%d %H:%M"),
-                    "recording": str(f) == recording})
+        item = {"name": f.name, "size": st.st_size,
+                "modified": dt.datetime.fromtimestamp(st.st_mtime).strftime("%Y-%m-%d %H:%M"),
+                "recording": str(f) == recording}
+        if tags is not None and not item["recording"]:   # the one recording gets its tag as it ends
+            tag, pending = tags.get(f, address_map)
+            item["speed"] = tag.to_json() if tag else None
+            item["speed_pending"] = pending
+        out.append(item)
     return out
 
 
@@ -501,8 +512,10 @@ def make_handler(dash):
                 self._json({"maps": names, "current": current.name,
                             "current_file": Path(current.path).stem if current.path else ""})
             elif path == "/captures":
+                with state.lock:
+                    current = state.map
                 self._json({"folder": str(reader.record_dir),
-                            "captures": list_captures(reader.record_dir, state.recording)})
+                            "captures": list_captures(reader.record_dir, state.recording, dash.speed_tags, current)})
             elif path == "/match":
                 self._json(dash.match.snapshot())
             elif path == "/events":
@@ -650,6 +663,7 @@ class Dashboard:
         self.reader = Reader(open_source, self.state, record_dir=record_dir, record=record, split_mb=split_mb,
                              log=log)
         self.match = MatchJob()
+        self.speed_tags = SpeedTags(self.reader.record_dir)
         from .workbench import ClaudeJob, References
         self.references = References()
         self.claude = ClaudeJob(self.reader.record_dir)

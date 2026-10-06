@@ -13,6 +13,7 @@ from pathlib import Path
 
 from .keys import KeyReader
 from .sources import SourceError
+from .speedrange import SpeedTracker
 
 STALL_SECONDS = 2.0
 RECONNECT_INTERVAL = 2.0
@@ -47,13 +48,17 @@ class CaptureOptions:
     buses: tuple = ()  # record only these buses; empty = all
     stamp: str = None  # file name timestamp, for tests
     split_mb: float = 100.0  # start a new file past this size; 0 = one file
+    speed_map: object = None  # an address map: each part ends with the speed range it heard (see speedrange.py)
 
 
 class RollingLog:
     """A candump log that continues in a new file once it passes a size. Each part repeats the
-    header and names the file before and after it, so the parts read as one recording."""
+    header and names the file before and after it, so the parts read as one recording. Given a map with speed
+    signals, each part ends with the speed range it heard (track() each frame, speed_note() before the summary)."""
 
-    def __init__(self, out_dir: Path, header, split_mb=100.0, stamp=None):
+    def __init__(self, out_dir: Path, header, split_mb=100.0, stamp=None, speed_map=None):
+        self.speed_map = speed_map if speed_map is not None and SpeedTracker(speed_map).available else None
+        self.speed = None
         self.out_dir = Path(out_dir)
         self.out_dir.mkdir(parents=True, exist_ok=True)
         self.header = list(header)
@@ -80,6 +85,7 @@ class RollingLog:
         self._f = open(path, "w", encoding="utf-8", newline="\n")
         self.paths.append(path)
         self.size = 0
+        self.speed = SpeedTracker(self.speed_map) if self.speed_map is not None else None
         for line in self.header:
             self.write(line + "\n")
         self.write(f"# started: {dt.datetime.now(dt.timezone.utc).isoformat().replace('+00:00', 'Z')}\n")
@@ -93,11 +99,23 @@ class RollingLog:
     def flush(self):
         self._f.flush()
 
+    def track(self, frame):
+        """A frame written to this part, for its speed range."""
+        if self.speed is not None:
+            self.speed.feed(frame)
+
+    def speed_note(self):
+        """This part's speed range, as the line it ends with (before the summary), once."""
+        if self.speed is not None:
+            self.write(f"# {self.speed.tag().note()}\n")
+            self.speed = None
+
     def maybe_rotate(self) -> bool:
         """Call between frames: starts the next part if this one is past the limit."""
         if not self.limit or self.size < self.limit:
             return False
         old, new = self.path, self._next_path()
+        self.speed_note()
         self._f.write(f"# continued in: {new.name}\n")
         self._f.close()
         self._open(continues_from=old, path=new)
@@ -236,7 +254,7 @@ def capture(open_source, opts: CaptureOptions, console: Console = None, keys: Ke
     for h in source.header:
         console.line(f"  {h}")
     w = RollingLog(out_dir, ["# PandaCapture candump log", f"# source: {source.description}",
-                             *[f"# {h}" for h in source.header]], opts.split_mb, opts.stamp)
+                             *[f"# {h}" for h in source.header]], opts.split_mb, opts.stamp, opts.speed_map)
     console.line(f"Writing {w.path}" + (f" (a new file every {opts.split_mb:g} MB)" if opts.split_mb else ""))
     console.line("Keys: M = marker, 1-9 = numbered marker, Q or Esc = stop.\n")
 
@@ -279,6 +297,7 @@ def capture(open_source, opts: CaptureOptions, console: Console = None, keys: Ke
                         session.frames += 1
                         bus_counts[f.bus] = bus_counts.get(f.bus, 0) + 1
                         w.write(candump_line(t, f) + "\n")
+                        w.track(f)
                         st = session.stats.get((f.bus, f.addr))
                         if st is None:
                             st = session.stats[(f.bus, f.addr)] = IdStats(first=t)
@@ -339,6 +358,7 @@ def capture(open_source, opts: CaptureOptions, console: Console = None, keys: Ke
         finally:
             signal.signal(signal.SIGINT, old_handler)
             source.close()
+            w.speed_note()
             lines = summary(session, time.monotonic() - t0)
             if len(w.paths) > 1:
                 lines.insert(1, f"Recorded in {len(w.paths)} parts: {', '.join(x.name for x in w.paths)}")

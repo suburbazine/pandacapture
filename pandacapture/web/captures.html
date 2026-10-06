@@ -113,7 +113,7 @@
     <div class="row"><h2 class="grow">Captures</h2>
       <button class="ctl small" id="refresh" type="button">Refresh</button></div>
     <p class="hint" id="folder">Recordings from this computer's captures folder, newest first. Pick one.</p>
-    <div class="scroll"><table><thead><tr><th>Capture</th><th>Size</th><th>Recorded</th><th></th></tr></thead>
+    <div class="scroll"><table><thead><tr><th>Capture</th><th>Size</th><th>Recorded</th><th>Speeds</th></tr></thead>
       <tbody id="capList"></tbody></table></div>
   </section>
 
@@ -212,6 +212,16 @@
   fetch("/maps").then((r) => r.json()).then((m) => { $("sub").textContent = `Address map: ${m.current}`; });
 
   // ---- captures ----
+  // A capture's speed range tag; older logs are read in the background, so look again while any are pending
+  function speedTag(x) {
+    if (x.speed) return `<span class="tag" title="Speed range: ${x.speed.min.toFixed(1)} to ${x.speed.max.toFixed(1)} km/h">${esc(x.speed.label)}</span>`;
+    return x.speed_pending ? '<span class="tag" title="Reading this capture for its speed range">…</span>' : "";
+  }
+  let speedPoll = null;
+  function pollSpeeds(c) {
+    clearTimeout(speedPoll);
+    if (c.captures.some((x) => x.speed_pending)) speedPoll = setTimeout(loadCaptures, 3000);
+  }
   let capture = recall("pc-capture") || "";
   function loadCaptures() {
     fetch("/captures").then((r) => r.json()).then((c) => {
@@ -221,9 +231,10 @@
         <tr class="pick${x.name === capture ? " sel" : ""}" data-name="${esc(x.name)}">
           <td><label><input type="radio" name="cap" value="${esc(x.name)}"${x.name === capture ? " checked" : ""}> ${esc(x.name)}</label></td>
           <td>${(x.size / 1048576).toFixed(1)} MB</td><td>${esc(x.modified)}</td>
-          <td>${x.recording ? '<span class="tag rec">recording now</span>' : ""}</td></tr>`).join("")
+          <td>${x.recording ? '<span class="tag rec">recording now</span>' : speedTag(x)}</td></tr>`).join("")
         : `<tr><td colspan="4" class="empty">No captures yet: record one from the gauges (Record).</td></tr>`;
       $("capList").querySelectorAll("tr.pick").forEach((tr) => tr.onclick = () => pick(tr.dataset.name));
+      pollSpeeds(c);
     });
   }
   function pick(name) {

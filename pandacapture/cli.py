@@ -91,6 +91,8 @@ def capture_parser():
     ap.add_argument("--seconds", type=float, default=0, help="stop after this many seconds")
     ap.add_argument("--split-mb", type=float, default=100,
                     help="start a new capture file past this size (default 100, about 15 minutes of a busy bus; 0 = never)")
+    ap.add_argument("--map", help="the address map whose speed signals give the capture its speed range tag "
+                                  "(default: the built-in one, if there's one)")
     ap.add_argument("--no-reconnect", action="store_true", help="stop on a panda error instead of reconnecting")
     ap.add_argument("--reconnect-seconds", type=float, default=60, help="how long to keep trying (default 60)")
     ap.add_argument("--simulate", action="store_true", help="fake traffic, to try the tool without a panda")
@@ -123,6 +125,14 @@ def cmd_capture(argv) -> int:
 
     opts = CaptureOptions(out_dir=args.out, seconds=args.seconds, reconnect=not args.no_reconnect,
                           reconnect_seconds=args.reconnect_seconds, buses=tuple(args.bus or ()), split_mb=args.split_mb)
+    from .signals import MapError, builtin_maps, load_map
+    try:
+        maps = builtin_maps()
+        name = args.map or (next(iter(maps)) if len(maps) == 1 else None)
+        opts.speed_map = load_map(name) if name else None
+    except MapError as e:
+        print(f"ERROR: {e}")
+        return 2
     if args.adapter and not (args.simulate or args.simulate_dropout):
         open_source, error = adapter_opener(args.adapter, rates)
         if error:
