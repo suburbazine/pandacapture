@@ -412,6 +412,7 @@ def make_handler(dash):
     state, reader, stopping = dash.state, dash.reader, dash.stopping
     page = (web_dir() / "dashboard.html").read_bytes()
     captures_page = (web_dir() / "captures.html").read_bytes()
+    runs_page = (web_dir() / "runs.html").read_bytes()
     icons = {"/icon.svg": ((web_dir() / "icon.svg").read_bytes(), "image/svg+xml"),
              "/icon-512.png": ((web_dir() / "icon-512.png").read_bytes(), "image/png")}
 
@@ -450,6 +451,14 @@ def make_handler(dash):
                 self._send(page, "text/html; charset=utf-8")
             elif path == "/captures.html":
                 self._send(captures_page, "text/html; charset=utf-8")
+            elif path == "/runs.html":
+                self._send(runs_page, "text/html; charset=utf-8")
+            elif path == "/runs/saved":
+                from .runs import runs_dir, saved_summaries
+                self._json({"folder": str(runs_dir(reader.record_dir)), "runs": saved_summaries(runs_dir(reader.record_dir))})
+            elif path == "/runs/run":
+                from .runs import open_saved, runs_dir
+                self._json(open_saved(runs_dir(reader.record_dir), (parse_qs(url.query).get("id") or [""])[0]))
             elif path in icons:
                 self._send(*icons[path])
             elif path == "/references":
@@ -549,6 +558,20 @@ def make_handler(dash):
                         raise ValueError("Choose a CSV file.")
                     name = (parse_qs(url.query).get("filename") or ["reference.csv"])[0]
                     self._json({"id": dash.references.add(body, name), "name": name})
+                elif url.path == "/runs/analyze":
+                    # Runs in a capture: found, timed and coached, and kept for later comparisons
+                    from .runs import DEFAULT_MASS_KG, analyze_capture, runs_dir, save_runs, saved_runs
+                    req = json.loads(body or b"{}")
+                    capture = self._capture(req.get("capture", ""))
+                    mass = float(req.get("mass_kg") or DEFAULT_MASS_KG)
+                    if not 500 <= mass <= 5000:
+                        raise ValueError("The weight should be the car with driver and fuel.")
+                    with state.lock:
+                        current = state.map
+                    folder = runs_dir(reader.record_dir)
+                    result = analyze_capture(capture, current, mass, saved_runs(folder))
+                    save_runs(result, folder)
+                    self._json(result)
                 elif url.path == "/claude/use-map":
                     # The user's choice: add the map Claude built to their maps and switch the dashboard to it
                     if not self._local():

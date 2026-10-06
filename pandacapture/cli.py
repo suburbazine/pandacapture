@@ -18,7 +18,7 @@ from .sources import BusSetup, PandaSource, SimulatedSource, SourceError, detect
 from .transmit import ArmedPanda, TransmitRefused, TxLog, acknowledge, read_replay
 from .usbdev import UsbError
 
-COMMANDS = ("capture", "list", "info", "dashboard", "maps", "match", "obd", "codes", "modules", "did", "analyze", "apikey", "bundle", "diag", "flash", "backup", "restore", "send", "replay",
+COMMANDS = ("capture", "list", "info", "dashboard", "maps", "match", "obd", "codes", "modules", "did", "analyze", "apikey", "bundle", "diag", "runs", "flash", "backup", "restore", "send", "replay",
             "selftest")
 
 
@@ -481,6 +481,11 @@ def cmd_bundle(argv) -> int:
     return main(argv)
 
 
+def cmd_runs(argv) -> int:
+    from .runs import main
+    return main(argv)
+
+
 def cmd_diag(argv) -> int:
     from .diag_cli import main
     return main(argv)
@@ -689,7 +694,7 @@ def main(argv=None) -> int:
     command = argv.pop(0) if argv and argv[0] in COMMANDS else "capture"
     try:
         return {"capture": cmd_capture, "list": cmd_list, "info": cmd_info, "dashboard": cmd_dashboard, "maps": cmd_maps, "match": cmd_match, "flash": cmd_flash, "backup": cmd_backup, "restore": cmd_restore,
-                "send": cmd_send, "replay": cmd_replay, "selftest": cmd_selftest, "obd": cmd_obd, "codes": cmd_codes, "modules": cmd_modules, "did": cmd_did, "analyze": cmd_analyze, "apikey": cmd_apikey, "bundle": cmd_bundle, "diag": cmd_diag}[command](argv)
+                "send": cmd_send, "replay": cmd_replay, "selftest": cmd_selftest, "obd": cmd_obd, "codes": cmd_codes, "modules": cmd_modules, "did": cmd_did, "analyze": cmd_analyze, "apikey": cmd_apikey, "bundle": cmd_bundle, "diag": cmd_diag, "runs": cmd_runs}[command](argv)
     except KeyboardInterrupt:
         print("\nStopped.")
         return 130

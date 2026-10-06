@@ -1,0 +1,547 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>PandaCapture Runs</title>
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-512.png">
+<style>
+  /* The same tokens as the gauge and captures pages */
+  :root {
+    --bg: #0b0e13; --panel: #141922; --panel-2: #1b2230; --line: #2a3344;
+    --text: #e8edf5; --muted: #8b97ab; --faint: #556074; --accent: #4fb3ff;
+    --warn: #ffb020; --alert: #ff4d4f; --green: #35d07f;
+    /* Chart series: the validated categorical order, stepped for this surface */
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70;
+    --grid: #232b3a; --axis: #3a4458; --band: rgba(236, 131, 90, .22); --band-edge: #ec835a;
+    --good: #0ca30c; --bad: #d03b3b;
+    --radius: 12px; --pad: 16px; --ctl: 40px;
+    color-scheme: dark;
+  }
+  :root[data-theme="light"] {
+    --bg: #f3f5f9; --panel: #ffffff; --panel-2: #e9edf3; --line: #d8dee8;
+    --text: #141a24; --muted: #5c6779; --faint: #9aa3b2; --accent: #0b74d1;
+    --warn: #c77700; --alert: #d92d2f; --green: #148a4b;
+    --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a;
+    --grid: #e1e0d9; --axis: #c3c2b7; --band: rgba(236, 131, 90, .20); --band-edge: #d06a3e;
+    --good: #006300; --bad: #d03b3b;
+    color-scheme: light;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { margin: 0; }
+  body { background: var(--bg); color: var(--text); font: 15px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+         -webkit-font-smoothing: antialiased; overflow-x: hidden; }
+  header { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+           padding: 10px var(--pad); background: color-mix(in srgb, var(--bg) 90%, transparent);
+           backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
+  .title { display: flex; flex-direction: column; min-width: 0; flex: 1 1 200px; }
+  .title strong { font-size: 16px; }
+  .title span { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ctl { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: var(--ctl);
+         padding: 0 14px; border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 10px;
+         font: inherit; font-size: 14px; white-space: nowrap; cursor: pointer; text-decoration: none; }
+  .ctl:hover:not(:disabled) { border-color: var(--accent); }
+  .ctl:disabled { opacity: .45; cursor: default; }
+  .ctl.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .ctl svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .ctl.small { min-height: 32px; padding: 0 10px; font-size: 12px; }
+  main { max-width: 1100px; margin: 0 auto; padding: 16px var(--pad) 40px; display: grid; gap: 16px; }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; min-width: 0; }
+  section > h2 { margin: 0 0 4px; font-size: 16px; }
+  h3 { margin: 18px 0 8px; font-size: 14px; }
+  .hint { color: var(--muted); font-size: 13px; margin: 0 0 12px; }
+  .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .grow { flex: 1 1 auto; }
+  label.lbl { color: var(--muted); font-size: 13px; }
+  input[type=number] { min-height: var(--ctl); width: 110px; background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; font: inherit; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; }
+  tbody tr.pick { cursor: pointer; }
+  tbody tr.pick:hover { background: var(--panel-2); }
+  tbody tr.sel { background: color-mix(in srgb, var(--accent) 14%, var(--panel)); }
+  .scroll { overflow-x: auto; max-height: 300px; overflow-y: auto; }
+  .empty { color: var(--muted); padding: 12px 0; }
+  .tag { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px; background: var(--panel-2); color: var(--muted); }
+
+  /* ---- a run ---- */
+  .run-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .run-head h2 { margin: 0; font-size: 18px; }
+  .hero { display: flex; gap: 10px; flex-wrap: wrap; margin: 14px 0 4px; }
+  .stat { flex: 1 1 130px; background: var(--panel-2); border-radius: 10px; padding: 10px 12px; min-width: 0; }
+  .stat .k { color: var(--muted); font-size: 12px; }
+  .stat .v { font-size: 24px; font-weight: 650; line-height: 1.2; }
+  .stat .s { color: var(--muted); font-size: 12px; }
+  .tips { display: grid; gap: 12px; }
+  .tip { border: 1px solid var(--line); border-left: 4px solid var(--band-edge); border-radius: 10px; padding: 12px 14px; background: var(--panel); }
+  .tip.clean { border-left-color: var(--good); }
+  .tip p { margin: 0 0 8px; }
+  .tip .topic { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .checks li { list-style: none; margin: 4px 0; }
+  .checks { padding: 0; margin: 0; }
+  .mark { display: inline-block; width: 18px; font-weight: 700; }
+  .mark.ok { color: var(--good); }
+  .mark.no { color: var(--bad); }
+  .grid2 { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); }
+  @media (max-width: 720px) { .grid2 { grid-template-columns: 1fr; } .ctl .txt { display: none; } :root { --pad: 12px; } }
+
+  /* ---- charts ---- */
+  .chart { position: relative; min-width: 0; }
+  .chart .ctitle { font-size: 13px; font-weight: 600; margin: 0 0 4px; }
+  .chart svg { display: block; width: 100%; overflow: visible; }
+  .chart .grid line { stroke: var(--grid); stroke-width: 1; }
+  .chart .axis line, .chart .axis path { stroke: var(--axis); }
+  .chart text { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+  .chart .plabel { fill: var(--text); font-size: 11px; font-weight: 600; }
+  .chart .band { fill: var(--band); }
+  .chart .bandlbl { fill: var(--text); font-size: 11px; }
+  .chart .xhair { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin: 0 0 4px; }
+  .legend i { display: inline-block; width: 16px; height: 0; border-top: 2px solid; vertical-align: middle; margin-right: 6px; }
+  .legend i.dash { border-top-style: dashed; }
+  .tooltip { position: absolute; pointer-events: none; z-index: 2; background: var(--panel-2); border: 1px solid var(--line);
+             border-radius: 8px; padding: 6px 9px; font-size: 12px; color: var(--text); white-space: nowrap;
+             box-shadow: 0 6px 18px rgb(0 0 0 / .3); font-variant-numeric: tabular-nums; }
+  .tooltip b { font-weight: 600; }
+  .tooltip i { display: inline-block; width: 10px; height: 0; border-top: 2px solid; vertical-align: middle; margin-right: 5px; }
+  details.data { margin-top: 4px; font-size: 12px; }
+  details.data summary { cursor: pointer; color: var(--muted); }
+  details.data table { font-size: 11px; }
+
+  .banner { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 4; max-width: calc(100vw - 32px);
+            padding: 10px 14px; border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); display: none; }
+  .banner.show { display: block; }
+</style>
+</head>
+<body>
+<header>
+  <div class="title"><strong>Runs</strong><span id="sub">Performance runs from your captures, timed and coached</span></div>
+  <a class="ctl" href="/" target="pandacapture-gauges" title="The gauges (their own window)">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 16a8 8 0 1 1 16 0M12 16l4-5"/></svg><span class="txt">Gauges</span></a>
+  <a class="ctl" href="/captures.html" target="pandacapture-captures" title="Captures and Claude">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v4H4zM4 11h16v8H4zM8 15h8"/></svg><span class="txt">Captures</span></a>
+  <button class="ctl" id="theme" type="button" title="Switch light/dark" aria-label="Switch light/dark theme">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9c0-.5 0-1-.1-1.4A6 6 0 0 1 13.4 3.1C13 3 12.5 3 12 3z"/></svg></button>
+</header>
+
+<main>
+  <section>
+    <div class="row"><h2 class="grow">Find runs in a capture</h2>
+      <button class="ctl small" id="refresh" type="button">Refresh</button></div>
+    <p class="hint" id="folder">Full-throttle pulls (standing or rolling) and stops from 60 mph, timed from the car's own wheel speeds.</p>
+    <div class="scroll"><table><thead><tr><th>Capture</th><th>Size</th><th>Recorded</th></tr></thead>
+      <tbody id="capList"></tbody></table></div>
+    <div class="row" style="margin-top:12px">
+      <label class="lbl" for="weight">Weight with driver and fuel</label>
+      <input type="number" id="weight" min="1500" max="10000" step="10"> <span class="lbl">lb</span>
+      <span class="grow"></span>
+      <button class="ctl primary" id="find" type="button">Find runs</button>
+    </div>
+    <p class="hint" style="margin:8px 0 0">The weight only feeds the power estimates. Runs are kept, so each new one is compared with your best.</p>
+    <p class="hint" id="status" style="margin:10px 0 0"></p>
+    <div id="events"></div>
+  </section>
+
+  <div id="runs" style="display:grid;gap:16px"></div>
+
+  <section>
+    <div class="row"><h2 class="grow">Your runs</h2></div>
+    <p class="hint" id="savedFolder">Every run found so far. Pick one to see it again.</p>
+    <div class="scroll"><table><thead><tr><th>When</th><th>Kind</th><th>Best result</th><th>Top speed</th><th>Capture</th></tr></thead>
+      <tbody id="savedList"></tbody></table></div>
+  </section>
+</main>
+<div class="banner" id="banner"></div>
+
+<script>
+(() => {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+  const root = document.documentElement;
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+  const post = (path, body) => fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) })
+    .then(async (r) => { const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || r.statusText); return j; });
+  const getJSON = (path) => fetch(path).then(async (r) => { const j = await r.json(); if (!r.ok) throw new Error(j.error || r.statusText); return j; });
+  const flash = (text) => { const b = $("banner"); b.textContent = text; b.classList.add("show"); clearTimeout(flash.t); flash.t = setTimeout(() => b.classList.remove("show"), 4000); };
+  const remember = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
+  const recall = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+  const css = (name) => getComputedStyle(root).getPropertyValue(name).trim();
+  const MPH = 1.609344;
+  const LB = 0.45359237;
+  const fmt = (v, d = 0) => v == null || Number.isNaN(v) ? "–" : Number(v).toLocaleString(undefined, { minimumFractionDigits: d, maximumFractionDigits: d });
+
+  if (recall("pc-theme")) root.dataset.theme = recall("pc-theme");
+  $("theme").onclick = () => { root.dataset.theme = root.dataset.theme === "light" ? "dark" : "light"; remember("pc-theme", root.dataset.theme); redraw(); };
+  $("weight").value = recall("pc-weight-lb") || "4277";
+  $("weight").onchange = () => remember("pc-weight-lb", $("weight").value);
+
+  // ---------------------------------------------------------------- the samples, as columns
+
+  /** A run's samples as named columns, plus the derived ones charts ask for. */
+  function columns(run) {
+    const idx = {}; run.columns.forEach((k, i) => idx[k] = i);
+    const n = run.samples.length;
+    const raw = (k) => { const i = idx[k]; return run.samples.map((s) => i == null || s[i] == null ? NaN : s[i]); };
+    const c = { t: raw("t") };
+    for (const k of run.columns) if (k !== "t") c[k] = raw(k);
+    const avg = (a, b) => a.map((x, i) => (Number.isNaN(x) || Number.isNaN(b[i])) ? NaN : (x + b[i]) / 2);
+    const front = avg(c.wheel_fl, c.wheel_fr).map((x, i) => Number.isNaN(x) ? c.speed_kmh[i] : x);
+    const rear = avg(c.wheel_rl, c.wheel_rr).map((x, i) => Number.isNaN(x) ? c.speed_kmh[i] : x);
+    // ground speed: the slower axle while driving, the faster under braking (the same as the analysis)
+    const ground = front.map((f, i) => {
+      const r = rear[i];
+      if (Number.isNaN(f) || Number.isNaN(r)) return Number.isNaN(f) ? r : f;
+      return c.brake_switch[i] >= 1.5 ? Math.max(f, r) : Math.min(f, r);
+    });
+    c.speed_mph = ground.map((x) => x / MPH);
+    c.rear_slip = front.map((f, i) => f > 3 ? (rear[i] / f - 1) * 100 : NaN);
+    c.accel_g = c.accel_long_g;
+    c.afr_b1 = c.lambda_b1.map((x) => x * 14.7);
+    c.afr_b2 = c.lambda_b2.map((x) => x * 14.7);
+    c.lowside_psi = c.lowside_kpa.map((x) => x / 6.894757);
+    c.lowside_target_psi = c.lowside_target_kpa.map((x) => x / 6.894757);
+    c.n = n;
+    return c;
+  }
+
+  // What each series key means: its label, unit (one unit per panel), and decimals
+  // What each series key means: label, unit (one unit per panel), decimals, and its short end label
+  const SERIES = {
+    speed_mph: ["Speed", "mph", 0, "speed"], accel_g: ["Acceleration", "g", 2, "g"], rpm: ["Engine speed", "rpm", 0, "rpm"],
+    boost_psi: ["Boost", "psi", 1, "boost"], pedal: ["Pedal", "%", 0, "pedal"], spark: ["Spark advance", "°", 1, "spark"],
+    rear_slip: ["Rear slip", "%", 0, "slip"], tqi_tcs: ["Traction control torque", "%", 0, "TCS"],
+    awd_torque_nm: ["AWD coupling torque", "Nm", 0, "AWD"], afr_b1: ["AFR bank 1", "AFR", 1, "bank 1"],
+    afr_b2: ["AFR bank 2", "AFR", 1, "bank 2"], lowside_psi: ["Low-side fuel", "psi", 0, "actual"],
+    lowside_target_psi: ["Low-side target", "psi", 0, "target"], iat: ["Intake air", "°C", 0, "IAT"],
+    brake_psi: ["Brake pressure", "psi", 0, "brake"],
+  };
+
+  // ---------------------------------------------------------------- the chart
+
+  const charts = [];   // {el, spec} to redraw on theme or width change
+
+  /**
+   * spec: {title, x: {label, unit, d}, panels: [{unit, d, series: [{name, color, xs, ys, dashed}]}], window: [a, b],
+   *        bands: [[a, b]], bandLabel, zero: true}
+   * Panels are stacked on one shared x axis (one unit per panel: never two y-scales on one plot), with one
+   * crosshair and tooltip across them all, and the highlighted stretches shaded through every panel.
+   */
+  function chart(el, spec) {
+    // A series that doesn't move in the window (traction control never cutting, say) only squashes the others
+    const [a, b] = spec.window || [-Infinity, Infinity];
+    for (const p of spec.panels) {
+      if (p.series.length < 2) continue;
+      const moving = p.series.filter((s) => {
+        const ys = s.ys.filter((y, i) => !Number.isNaN(y) && s.xs[i] >= a && s.xs[i] <= b);
+        return ys.length && Math.max(...ys) - Math.min(...ys) > 1e-6;
+      });
+      if (moving.length) p.series = moving;
+    }
+    charts.push({ el, spec });
+    draw(el, spec);
+  }
+
+  function nice(lo, hi, count) {
+    if (!(hi > lo)) { hi = lo + 1; lo -= 1; }
+    const span = hi - lo, step0 = span / count, mag = Math.pow(10, Math.floor(Math.log10(step0)));
+    const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => span / s <= count) || 10 * mag;
+    const a = Math.floor(lo / step) * step, b = Math.ceil(hi / step) * step;
+    const ticks = []; for (let v = a; v <= b + step / 2; v += step) ticks.push(+v.toFixed(10));
+    return { lo: a, hi: b, ticks };
+  }
+
+  function draw(el, spec) {
+    const W = Math.max(280, el.clientWidth || 600);
+    const PH = spec.panels.length > 1 ? 92 : 170, GAP = 22, L = 52, R = 70, TOP = 18, XA = 30;
+    const H = TOP + spec.panels.length * PH + (spec.panels.length - 1) * GAP + XA;
+    const [wa, wb] = spec.window || (() => {
+      let a = Infinity, b = -Infinity;
+      for (const p of spec.panels) for (const s of p.series) s.xs.forEach((x, i) => { if (!Number.isNaN(s.ys[i]) && !Number.isNaN(x)) { a = Math.min(a, x); b = Math.max(b, x); } });
+      return [a, b];
+    })();
+    const xs = nice(wa, wb, Math.max(4, Math.floor((W - L - R) / 65)));
+    const X = (x) => L + (x - wa) / (wb - wa || 1) * (W - L - R);
+    const inWin = (x) => x >= wa && x <= wb;
+    let svg = `<svg viewBox="0 0 ${W} ${H}" height="${H}" role="img" aria-label="${esc(spec.title)}">`;
+    const panelsY = [];
+    spec.panels.forEach((p, k) => {
+      const y0 = TOP + k * (PH + GAP), y1 = y0 + PH;
+      let lo = Infinity, hi = -Infinity;
+      for (const s of p.series) s.ys.forEach((y, i) => { if (!Number.isNaN(y) && inWin(s.xs[i])) { lo = Math.min(lo, y); hi = Math.max(hi, y); } });
+      if (p.zero || spec.zero) { lo = Math.min(lo, 0); hi = Math.max(hi, 0); }
+      if (!Number.isFinite(lo)) { lo = 0; hi = 1; }
+      const ys = nice(lo, hi, spec.panels.length > 1 ? 3 : 5);
+      const Y = (y) => y1 - (y - ys.lo) / (ys.hi - ys.lo || 1) * (y1 - y0);
+      panelsY.push({ Y, p });
+      svg += `<g class="grid">` + ys.ticks.map((t) => `<line x1="${L}" x2="${W - R}" y1="${Y(t)}" y2="${Y(t)}"/>`).join("") + `</g>`;
+      const step = ys.ticks.length > 1 ? ys.ticks[1] - ys.ticks[0] : 1;
+      const td = Math.min(3, Math.max(0, -Math.floor(Math.log10(step) + 1e-9) + (step / Math.pow(10, Math.floor(Math.log10(step))) === 2.5 ? 1 : 0)));
+      svg += ys.ticks.map((t) => `<text x="${L - 6}" y="${Y(t) + 4}" text-anchor="end">${fmt(t, td)}</text>`).join("");
+      svg += `<text x="${L}" y="${y0 - 6}" style="font-size:11px">${esc(p.label ? `${p.label} (${p.unit})` : p.unit)}</text>`;
+      if (ys.lo < 0 && ys.hi > 0) svg += `<line x1="${L}" x2="${W - R}" y1="${Y(0)}" y2="${Y(0)}" stroke="${css("--axis")}" stroke-width="1"/>`;
+      // the highlighted stretches, through every panel
+      for (const [a, b] of spec.bands || []) {
+        const xa = X(Math.max(a, wa)), xb = X(Math.min(Math.max(b, a + (wb - wa) / 150), wb));
+        if (xb > xa) svg += `<rect class="band" x="${xa}" y="${y0}" width="${xb - xa}" height="${PH}" rx="3"/>`;
+      }
+      for (const s of p.series) {
+        let d = "", pen = false;
+        s.xs.forEach((x, i) => {
+          const y = s.ys[i];
+          if (Number.isNaN(y) || Number.isNaN(x) || !inWin(x)) { pen = false; return; }
+          d += (pen ? "L" : "M") + X(x).toFixed(1) + " " + Y(y).toFixed(1) + " "; pen = true;
+        });
+        svg += `<path d="${d}" fill="none" stroke="${s.color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"${s.dashed ? ' stroke-dasharray="6 4"' : ""}/>`;
+      }
+      // direct labels at the right end when a panel has several series
+      if (p.series.length > 1) {
+        const ends = p.series.map((s) => {
+          let i = s.xs.length - 1; while (i >= 0 && (Number.isNaN(s.ys[i]) || !inWin(s.xs[i]))) i--;
+          return i >= 0 ? { s, y: Y(s.ys[i]) } : null;
+        }).filter(Boolean).sort((a, b) => a.y - b.y);
+        for (let i = 1; i < ends.length; i++) if (ends[i].y - ends[i - 1].y < 13) ends[i].y = ends[i - 1].y + 13;
+        svg += ends.map((e) => `<text class="plabel" x="${W - R + 6}" y="${e.y + 4}">${esc(e.s.short || e.s.name)}</text>`).join("");
+      } else if (spec.panels.length > 1) {
+        svg += `<text class="plabel" x="${W - R + 6}" y="${y0 + 12}">${esc(p.series[0].short || p.series[0].name)}</text>`;
+      }
+    });
+    if (spec.bandLabel && spec.bands?.length) {
+      const [a] = spec.bands[0];
+      const bx = Math.max(L, X(Math.max(a, wa)));
+      svg += `<text class="bandlbl" x="${Math.min(bx + 4, W - R - 60)}" y="${TOP + 13}">${esc(spec.bandLabel)}</text>`;
+    }
+    const yb = H - XA;
+    svg += `<g class="axis"><line x1="${L}" x2="${W - R}" y1="${yb}" y2="${yb}"/></g>`;
+    svg += xs.ticks.filter((t) => t >= wa - 1e-9 && t <= wb + 1e-9).map((t) => `<text x="${X(t)}" y="${yb + 16}" text-anchor="middle">${fmt(t, spec.x.d || 0)}</text>`).join("");
+    svg += `<text x="${W - R}" y="${yb + 28}" text-anchor="end">${esc(spec.x.label)}</text>`;
+    svg += `<line class="xhair" x1="0" x2="0" y1="${TOP}" y2="${yb}" visibility="hidden"/>`;
+    svg += `<rect x="${L}" y="0" width="${W - L - R}" height="${H}" fill="transparent" class="hit"/></svg>`;
+
+    const names = []; for (const p of spec.panels) for (const s of p.series) if (!names.some((n) => n.name === s.name && n.color === s.color)) names.push(s);
+    el.innerHTML = `<div class="ctitle">${esc(spec.title)}</div>` +
+      (names.length > 1 ? `<div class="legend">` + names.map((s) => `<span><i class="${s.dashed ? "dash" : ""}" style="border-color:${s.color}"></i>${esc(s.name)}</span>`).join("") + `</div>` : "") +
+      svg + `<div class="tooltip" hidden></div>` + dataTable(spec, wa, wb);
+
+    // crosshair and tooltip: the nearest sample of each series at the pointer
+    const svgEl = el.querySelector("svg"), tip = el.querySelector(".tooltip"), hair = el.querySelector(".xhair");
+    const move = (ev) => {
+      const box = svgEl.getBoundingClientRect(), px = (ev.clientX - box.left) * (W / box.width);
+      const x = wa + (px - L) / (W - L - R) * (wb - wa);
+      if (x < wa || x > wb) { tip.hidden = true; hair.setAttribute("visibility", "hidden"); return; }
+      hair.setAttribute("x1", px); hair.setAttribute("x2", px); hair.setAttribute("visibility", "visible");
+      let rows = `<b>${fmt(x, (spec.x.d || 0) + 1)} ${esc(spec.x.unit || "")}</b>`;
+      for (const p of spec.panels) for (const s of p.series) {
+        let best = -1, dist = Infinity;
+        s.xs.forEach((sx, i) => { if (!Number.isNaN(s.ys[i]) && Math.abs(sx - x) < dist) { dist = Math.abs(sx - x); best = i; } });
+        if (best >= 0) rows += `<br><i style="border-color:${s.color}"></i>${esc(s.name)}: ${fmt(s.ys[best], p.d)} ${esc(p.unit)}`;
+      }
+      tip.innerHTML = rows; tip.hidden = false;
+      const ex = (ev.clientX - el.getBoundingClientRect().left);
+      tip.style.left = Math.min(ex + 14, el.clientWidth - tip.offsetWidth - 4) + "px";
+      tip.style.top = "28px";
+    };
+    svgEl.addEventListener("pointermove", move);
+    svgEl.addEventListener("pointerleave", () => { tip.hidden = true; hair.setAttribute("visibility", "hidden"); });
+  }
+
+  /** The chart's numbers as a table, for reading without the picture (about 40 rows across the window). */
+  function dataTable(spec, wa, wb) {
+    const all = []; for (const p of spec.panels) for (const s of p.series) all.push({ s, p });
+    if (!all.length) return "";
+    const steps = 40, rows = [];
+    for (let k = 0; k <= steps; k++) {
+      const x = wa + (wb - wa) * k / steps;
+      rows.push(`<tr><td>${fmt(x, (spec.x.d || 0) + 1)}</td>` + all.map(({ s, p }) => {
+        let best = -1, dist = Infinity;
+        s.xs.forEach((sx, i) => { if (!Number.isNaN(s.ys[i]) && Math.abs(sx - x) < dist) { dist = Math.abs(sx - x); best = i; } });
+        return `<td>${best >= 0 && dist < (wb - wa) / steps ? fmt(s.ys[best], p.d) : "–"}</td>`;
+      }).join("") + `</tr>`);
+    }
+    return `<details class="data"><summary>Data</summary><div class="scroll"><table><thead><tr><th>${esc(spec.x.label)}</th>` +
+      all.map(({ s, p }) => `<th>${esc(s.name)} (${esc(p.unit)})</th>`).join("") + `</tr></thead><tbody>${rows.join("")}</tbody></table></div></details>`;
+  }
+
+  function redraw() { for (const c of charts) if (c.el.isConnected) draw(c.el, c.spec); }
+  let resizeT; addEventListener("resize", () => { clearTimeout(resizeT); resizeT = setTimeout(redraw, 150); });
+
+  // ---------------------------------------------------------------- building charts from a run
+
+  const color = (k) => css(["--s1", "--s2", "--s3"][k]);
+
+  /** Seconds behind (+) or ahead (−) of the best run at each speed, mph. */
+  function gapSeries(me, them) {
+    const timeAt = (c, mph) => { for (let i = 1; i < c.n; i++) if (c.t[i] >= 0 && c.speed_mph[i - 1] < mph && c.speed_mph[i] >= mph) return c.t[i - 1] + (c.t[i] - c.t[i - 1]) * (mph - c.speed_mph[i - 1]) / (c.speed_mph[i] - c.speed_mph[i - 1]); return NaN; };
+    const top = Math.max(...me.speed_mph.filter((x) => !Number.isNaN(x)), 0);
+    const xs = [], ys = [];
+    for (let m = 5; m <= top; m += 1) { xs.push(m); ys.push(timeAt(me, m) - timeAt(them, m)); }
+    return { xs, ys };
+  }
+
+  /** A pointer's chart: its series stacked by unit on the run's time (or the speed, for the gap), its stretch shaded. */
+  function tipChart(el, ch, me, them) {
+    if (ch.x === "mph") {
+      if (!them) return;
+      const g = gapSeries(me, them);
+      chart(el, { title: ch.title, x: { label: "mph", unit: "mph" }, zero: true, bands: ch.highlight, bandLabel: ch.label,
+        panels: [{ unit: "s", d: 2, series: [{ name: "Time behind your best (+) or ahead (−)", short: "gap", color: color(0), xs: g.xs, ys: g.ys }] }] });
+      return;
+    }
+    const byUnit = new Map();
+    const [wa, wb] = ch.window || [-Infinity, Infinity];
+    let k = 0;
+    for (const key of ch.series) {
+      const info = SERIES[key]; if (!info || !me[key]) continue;
+      const seen = me[key].filter((x, i) => !Number.isNaN(x) && me.t[i] >= wa && me.t[i] <= wb);
+      if (!seen.length || Math.max(...seen) - Math.min(...seen) < 1e-6) continue;   // nothing to see: leave it out
+      const [name, unit, d, short] = info;
+      if (!byUnit.has(unit)) byUnit.set(unit, { unit, d, series: [] });
+      const panel = byUnit.get(unit), c = color(k++ % 3);
+      panel.series.push({ name, short, color: c, xs: me.t, ys: me[key] });
+      if (them && them[key] && ["speed_mph", "boost_psi", "accel_g", "rpm"].includes(key)) {
+        panel.series.push({ name: `${name}, your best`, short: `${short}, best`, color: c, xs: them.t, ys: them[key], dashed: true });
+      }
+    }
+    for (const panel of byUnit.values()) if (panel.series.length === 1) panel.label = panel.series[0].name;
+    if (!byUnit.size) return;
+    chart(el, { title: ch.title, x: { label: "seconds from the start", unit: "s", d: 1 }, window: ch.window,
+      bands: ch.highlight, bandLabel: ch.label, panels: [...byUnit.values()] });
+  }
+
+  function allCharts(el, run, me, them) {
+    const add = (spec) => { const d = document.createElement("div"); d.className = "chart"; el.appendChild(d); chart(d, spec); };
+    const t = { label: "seconds from the start", unit: "s", d: 1 };
+    const vs = (key) => [{ name: "This run", color: color(0), xs: me.t, ys: me[key] }].concat(them ? [{ name: "Your best", color: color(1), xs: them.t, ys: them[key], dashed: true }] : []);
+    add({ title: "Speed", x: t, panels: [{ unit: "mph", d: 0, series: vs("speed_mph") }] });
+    if (them && run.kind !== "braking") {
+      const g = gapSeries(me, them);
+      add({ title: "Time against your best (above 0 = behind)", x: { label: "mph", unit: "mph" }, zero: true,
+        panels: [{ unit: "s", d: 2, series: [{ name: "Gap", color: color(0), xs: g.xs, ys: g.ys }] }] });
+    }
+    add({ title: "Acceleration through the speed range", x: { label: "mph", unit: "mph" },
+      panels: [{ unit: "g", d: 2, series: [{ name: "This run", color: color(0), xs: me.speed_mph, ys: me.accel_g }]
+        .concat(them ? [{ name: "Your best", color: color(1), xs: them.speed_mph, ys: them.accel_g, dashed: true }] : []) }] });
+    add({ title: "Engine speed and gear changes", x: t, bands: run.shifts.map((s) => [s.t, s.t + s.duration_s]), bandLabel: run.shifts.length ? "shifts" : "",
+      panels: [{ unit: "rpm", d: 0, label: "Engine speed", series: [{ name: "rpm", color: color(0), xs: me.t, ys: me.rpm }] }] });
+    add({ title: "Boost", x: t, panels: [{ unit: "psi", d: 1, series: vs("boost_psi") }] });
+    add({ title: "Traction", x: t, panels: [{ unit: "%", d: 0, series: [
+      { name: "Rear slip", short: "slip", color: color(0), xs: me.t, ys: me.rear_slip },
+      { name: "Traction control torque", short: "TCS", color: color(1), xs: me.t, ys: me.tqi_tcs }] }] });
+    add({ title: "Spark advance", x: t, panels: [{ unit: "°", d: 1, series: [{ name: "Spark", color: color(0), xs: me.t, ys: me.spark }] }] });
+    if (run.kind === "braking") add({ title: "Brake pressure", x: t, panels: [{ unit: "psi", d: 0, series: [{ name: "Brake", color: color(0), xs: me.t, ys: me.brake_psi }] }] });
+    for (const p of run.pulls) {
+      const arr = (a) => a.map((x) => x == null ? NaN : x);
+      add({ title: `Gear ${p.gear} pull: estimated wheel power and torque` + (p.peak_hp ? ` (peak ${fmt(p.peak_hp)} hp at ${fmt(p.peak_hp_rpm)} rpm)` : ""),
+        x: { label: "rpm", unit: "rpm" }, panels: [
+          { unit: "hp", d: 0, series: [{ name: "Wheel hp", short: "hp", color: color(0), xs: p.rpm, ys: arr(p.hp) }] },
+          { unit: "lb-ft", d: 0, series: [{ name: "Torque at the crank", short: "lb-ft", color: color(1), xs: p.rpm, ys: arr(p.torque_lbft) }] }] });
+      add({ title: `Gear ${p.gear} pull: boost, spark and mixture`, x: { label: "rpm", unit: "rpm" }, panels: [
+        { unit: "psi", d: 1, series: [{ name: "Boost", color: color(0), xs: p.rpm, ys: arr(p.boost_psi) }] },
+        { unit: "°", d: 1, series: [{ name: "Spark", color: color(1), xs: p.rpm, ys: arr(p.spark) }] },
+        { unit: "AFR", d: 1, series: [{ name: "AFR", color: color(2), xs: p.rpm, ys: arr(p.afr) }] }] });
+    }
+  }
+
+  // ---------------------------------------------------------------- showing results
+
+  const HEADLINES = ["0-60 mph", "1/4 mile", "60 ft", "0-100 km/h", "40-100 mph", "60-130 mph", "100-200 km/h", "60-0 mph", "100-0 km/h"];
+  const headline = (run) => { const std = run.metrics.filter((m) => m.standard); return HEADLINES.map((n) => std.find((m) => m.name === n)).find(Boolean) || std[0]; };
+  const KIND = { standing: "Standing start", rolling: "Rolling pull", braking: "Stop from speed" };
+  const metricText = (m) => m.unit === "s" ? `${fmt(m.value, 2)} s` : `${fmt(m.value / 0.3048, 0)} ft`;
+
+  function show(result) {
+    charts.length = 0;
+    const holder = $("runs");
+    holder.innerHTML = "";
+    $("events").innerHTML = result.events?.length ? `<h3>Events in the capture</h3><table><tbody>` + result.events.map((e) =>
+      `<tr><td style="width:120px"><span class="tag">${esc(e.kind)}</span></td><td>${esc(e.summary)}</td></tr>`).join("") + `</tbody></table>` : "";
+    if (!result.runs.length) { $("status").textContent = `No full-throttle pulls or stops from 60 mph in ${result.capture}.`; return; }
+    $("status").textContent = `${result.runs.length} run${result.runs.length === 1 ? "" : "s"} in ${result.capture}.`;
+    for (const run of result.runs) {
+      const best = run.best_id ? result.bests[run.best_id] : null;
+      const me = columns(run), them = best ? columns(best) : null;
+      const st = run.stats;
+      const sec = document.createElement("section");
+      const head = headline(run);
+      const when = new Date(run.started).toLocaleString();
+      sec.innerHTML = `
+        <div class="run-head"><h2>${esc(KIND[run.kind] || run.kind)}</h2><span class="hint" style="margin:0">${esc(when)} · ${esc(run.capture || "")}</span></div>
+        <div class="hero">
+          ${head ? `<div class="stat"><div class="k">${esc(head.name)}</div><div class="v">${metricText(head)}</div>${head.rollout != null ? `<div class="s">${fmt(head.rollout, 2)} s with 1 ft rollout</div>` : ""}</div>` : ""}
+          <div class="stat"><div class="k">Top speed</div><div class="v">${fmt((st.max_kmh || 0) / MPH)} mph</div></div>
+          <div class="stat"><div class="k">${run.kind === "braking" ? "Peak deceleration" : "Peak acceleration"}</div><div class="v">${fmt(Math.abs(st.peak_g ?? NaN), 2)} g</div></div>
+          ${st.peak_boost_psi != null ? `<div class="stat"><div class="k">Peak boost</div><div class="v">${fmt(st.peak_boost_psi, 1)} psi</div></div>` : ""}
+          ${best ? `<div class="stat"><div class="k">Compared with</div><div class="v" style="font-size:15px">your best</div><div class="s">${esc(new Date(best.started).toLocaleString())}</div></div>` : ""}
+        </div>
+        <h3>Where it could be better</h3><div class="tips"></div>
+        <div class="grid2" style="margin-top:6px">
+          <div><h3>Times</h3><table><thead><tr><th>Result</th><th>Time</th><th>Notes</th></tr></thead><tbody>${run.metrics.map((m) => `
+            <tr><td>${esc(m.name)}</td><td>${metricText(m)}</td><td>${[m.rollout != null ? `${fmt(m.rollout, 2)} s with 1 ft rollout` : "", m.trap_mph ? `trap ${fmt(m.trap_mph, 1)} mph` : ""].filter(Boolean).join(", ")}</td></tr>`).join("")}</tbody></table></div>
+          <div><h3>Shifts</h3>${run.shifts.length ? `<table><thead><tr><th>Shift</th><th>At</th><th>Took</th><th>g before → after</th></tr></thead><tbody>${run.shifts.map((s) => `
+            <tr><td>${s.from}-${s.to}</td><td>${fmt(s.rpm)} rpm, ${fmt(s.kmh / MPH)} mph</td><td>${fmt(s.duration_s, 2)} s</td><td>${fmt(s.g_before, 2)} → ${fmt(s.g_after, 2)}</td></tr>`).join("")}</tbody></table>` : `<p class="hint">No full-throttle upshifts.</p>`}
+            ${run.pulls.length ? `<h3>Estimated power</h3><table><tbody>${run.pulls.map((p) => `<tr><td>Gear ${p.gear}</td><td>${p.peak_hp ? `${fmt(p.peak_hp)} wheel hp at ${fmt(p.peak_hp_rpm)} rpm` : "–"}</td><td>${p.peak_torque_lbft ? `${fmt(p.peak_torque_lbft)} lb-ft at ${fmt(p.peak_torque_rpm)} rpm` : ""}</td></tr>`).join("")}</tbody></table>
+              <p class="hint" style="margin-top:6px">From weight × acceleration plus drag: an estimate, and a slope changes it.</p>` : ""}
+          </div>
+        </div>
+        <h3>Checks</h3><ul class="checks">${run.checks.map((c) => `<li><span class="mark ${c.pass ? "ok" : "no"}" aria-hidden="true">${c.pass ? "✓" : "✕"}</span><b>${esc(c.label)}</b>${c.scope !== "run" ? ` <span class="tag">${esc(c.scope)}</span>` : ""}: ${esc(c.detail)}${c.pass ? "" : " <span class='tag'>failed</span>"}</li>`).join("")}</ul>
+        <h3>Graphs</h3><div class="grid2 all"></div>`;
+      holder.appendChild(sec);
+      const tips = sec.querySelector(".tips");
+      for (const tip of run.insights) {
+        const card = document.createElement("div");
+        card.className = "tip" + (tip.topic === "clean" ? " clean" : "");
+        card.innerHTML = `<div class="topic">${esc(tip.topic)}</div><p>${esc(tip.text)}</p><div class="chart"></div>`;
+        tips.appendChild(card);
+        if (tip.chart) tipChart(card.querySelector(".chart"), tip.chart, me, them);
+      }
+      allCharts(sec.querySelector(".all"), run, me, them);
+    }
+  }
+
+  // ---------------------------------------------------------------- captures and saved runs
+
+  let capture = recall("pc-capture") || "";
+  function loadCaptures() {
+    getJSON("/captures").then((c) => {
+      if (!c.captures.some((x) => x.name === capture)) capture = c.captures.find((x) => !x.recording)?.name || "";
+      $("capList").innerHTML = c.captures.length ? c.captures.map((x) => `
+        <tr class="pick${x.name === capture ? " sel" : ""}" data-name="${esc(x.name)}">
+          <td><label><input type="radio" name="cap" value="${esc(x.name)}"${x.name === capture ? " checked" : ""}> ${esc(x.name)}</label></td>
+          <td>${(x.size / 1048576).toFixed(1)} MB</td><td>${esc(x.modified)}</td></tr>`).join("")
+        : `<tr><td colspan="3" class="empty">No captures yet: record one from the gauges (Record).</td></tr>`;
+      $("capList").querySelectorAll("tr.pick").forEach((tr) => tr.onclick = () => {
+        capture = tr.dataset.name; remember("pc-capture", capture);
+        $("capList").querySelectorAll("tr.pick").forEach((r) => { const on = r.dataset.name === capture; r.classList.toggle("sel", on); r.querySelector("input").checked = on; });
+      });
+    });
+  }
+  function loadSaved() {
+    getJSON("/runs/saved").then((s) => {
+      $("savedFolder").textContent = `Every run found so far, kept in ${s.folder}. Pick one to see it again.`;
+      $("savedList").innerHTML = s.runs.length ? s.runs.map((r) => `
+        <tr class="pick" data-id="${esc(r.id)}"><td>${esc(new Date(r.started).toLocaleString())}</td><td>${esc(KIND[r.kind] || r.kind)}</td>
+          <td>${r.headline ? `${esc(r.headline.name)} ${metricText(r.headline)}` : "–"}</td><td>${fmt((r.max_kmh || 0) / MPH)} mph</td><td>${esc(r.capture)}</td></tr>`).join("")
+        : `<tr><td colspan="5" class="empty">None yet.</td></tr>`;
+      $("savedList").querySelectorAll("tr.pick").forEach((tr) => tr.onclick = () =>
+        getJSON("/runs/run?id=" + encodeURIComponent(tr.dataset.id)).then((r) => { show(r); $("runs").scrollIntoView({ behavior: "smooth" }); }).catch((e) => flash(e.message)));
+    });
+  }
+  $("refresh").onclick = () => { loadCaptures(); loadSaved(); };
+  $("find").onclick = () => {
+    if (!capture) { flash("Pick a capture first."); return; }
+    const lb = Number($("weight").value) || 4277;
+    $("find").disabled = true;
+    $("status").textContent = `Reading ${capture}…`;
+    post("/runs/analyze", { capture, mass_kg: lb * LB })
+      .then((r) => { show(r); loadSaved(); })
+      .catch((e) => { $("status").textContent = ""; flash(e.message); })
+      .finally(() => { $("find").disabled = false; });
+  };
+  loadCaptures();
+  loadSaved();
+})();
+</script>
+</body>
+</html>

@@ -333,6 +333,31 @@ To look at a recorded drive at your desk:
 pandacapture dashboard --map kia-stinger-33t-pcan --replay captures/capture-20261003-080200.log
 ```
 
+### Runs: timed and coached
+
+**Runs** on the dashboard opens its own page. Pick a capture and **Find runs**: every full-throttle pull
+and every stop from 60 mph in it is timed from the car's own wheel speeds, and coached.
+- **Times:**
+  - standing starts: 0-30, 0-60 mph, 60 ft to 1/4 mile, with 1 ft rollout and trap speeds;
+  - rolling: 40-100 mph and the like;
+  - stops: 60-0 mph.
+- **The details:** each full-throttle shift (rpm, how long the torque was held, g either side), and an
+  estimated wheel-power curve per gear from your weight.
+- **Where it could be better.** Each pointer comes with its own chart, shading the stretch it's about:
+  - a late throttle or a low-boost launch;
+  - wheelspin and traction-control cuts;
+  - slow or early shifts, slow boost build, knock;
+  - low-side fuel pressure falling short, a lean bank, intake heat.
+  The knock check leaves out the spark the car pulls on purpose: for a shift's torque hold, for traction
+  control, and around gear changes.
+- **Against your best.** Runs are kept in `captures/runs`. A new run is compared with your best of the
+  same kind, with the speed range where it lost the most time and why.
+- **Events:** brake stands, launches and pop windows (fuel still on during an overrun), over the whole
+  capture.
+
+There's no GPS here, so no road-grade correction or certification: the times are the car's own.
+From a terminal: `pandacapture runs CAPTURE`.
+
 ## 6. Find unknown signals
 
 Record a capture while another tool logs the same drive, then let PandaCapture work out which CAN
@@ -678,6 +703,7 @@ pandacapture analyze CAPTURE [REFERENCE.csv] [options]     Claude proposes map e
   --max-cost D, --max-turns N   stop at about D dollars (default 2) or N turns (default 20)
 pandacapture apikey set | clear | status     your Anthropic API key, in the system's credential store
 pandacapture bundle CAPTURE [REFERENCE.csv]  a scrubbed capture with the analysis tools, for another agent
+pandacapture runs CAPTURE [--weight-lb LB]     time the runs in a capture, and where they could be better
 
 pandacapture match CAPTURE [REFERENCE.csv | --obd] [options]     find which fields carry which values
   --map NAME|FILE               map with the RPM signal used to line the logs up

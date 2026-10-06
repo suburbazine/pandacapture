@@ -1,6 +1,11 @@
 # Status
 
 ## Verified
+- Run timing and coaching (pandacapture runs, the Runs page; 2026-10-06): a port of the Android app's run
+  processing, without its certification. On all 32 phone captures it finds the same runs with the same
+  times, shifts and power estimates as the Android code. Also tested on synthetic drives with known physics
+  (tests/test_runs.py). Its knock check, unlike the Android one, leaves out spark pulled for a shift's
+  torque hold, traction control and gear changes: on the 2026-10-05 launch those were all of its hits.
 - Unit tests (`python -m pytest`):
   - Packet encoding and decoding, including packets split across USB transfers and corrupted ones.
   - The candump output matches the patterns an Android CAN log parser uses.
