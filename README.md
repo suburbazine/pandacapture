@@ -270,16 +270,17 @@ On a phone (with `--lan`), the controls fold into two rows:
 <img src="docs/images/dashboard-phone.png" alt="The dashboard on a phone" width="300">
 
 An **address map** says which CAN IDs and bits mean what for your vehicle:
-- **Built in:** `kia-stinger-33t-pcan`, 89 signals from comma's DBC, tracing of the ECU's CAN code, and captures of the car. It covers:
+- **Built in:** `kia-stinger-33t-pcan`, 113 signals from comma's DBC, tracing of the ECU's CAN code, and captures of the car. It covers:
   - engine and boost; torque and spark
   - an idle and lope panel: idle target, 5 s RPM swing and low, alternator duty
   - cam phasers in degrees, with overlap, off-target (red) and tracking-lag (amber) lamps
-  - temperatures, battery, fuel pressures
-  - drive mode and gear
-  - engine and chassis lamps
+  - temperatures, battery, fuel pressures, with a low-side fuel pressure lamp
+  - drive mode and gear; wheel speeds and rear slip; the AWD coupling's duty and torque
+  - brake pressure and pedal, accelerations, yaw rate and steering angle
+  - traction control's torque requests, and engine and chassis lamps
 
-  Each tile says whether its signal was checked on the car, came from a DBC, or was worked out
-  from captures.
+  Each tile's description says whether its signal was checked on the car, came from a DBC, or was
+  worked out from captures.
 - **Your own:** a JSON file, as described in [docs/address-maps.md](docs/address-maps.md).
   - Signals can be decoded from frames or derived from other signals.
   - Enumerated values can show as text.
