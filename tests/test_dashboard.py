@@ -191,11 +191,14 @@ def test_developer_tools_page(tmp_path):
         # the build area a developer session drops tools into, and the hooks library it loads
         assert 'id="toolHost"' in page and 'id="buildMarker"' in page
         assert '<script src="/devtools.js"></script>' in page and 'window.PCDev' in page
-        lib = get("devtools.js").decode()
-        assert get("devtools.js") and "text/javascript" in \
-            urllib.request.urlopen(dash.url + "devtools.js", timeout=10).headers["Content-Type"]
+        r = urllib.request.urlopen(dash.url + "devtools.js", timeout=10)
+        assert "text/javascript" in r.headers["Content-Type"]
+        lib = r.read().decode()
         for hook in ("onState", "onSignal", "onSamples", "onMap", "panel", "spark", "record", "marker"):
             assert hook in lib, hook
+        # Live hooks share one connection per feed: a browser allows 6 to the dashboard across all its windows, and
+        # one EventSource per subscriber stalled every other request, the gauges' included
+        assert lib.count("new EventSource") == 1 and "EventSource" not in page
         # the tab is on the top row of the other pages, and the page links back to them
         for p in ("", "captures.html", "runs.html"):
             assert 'href="/devtools.html"' in get(p).decode(), p

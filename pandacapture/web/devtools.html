@@ -43,7 +43,7 @@
 
   main { max-width: 1100px; margin: 0 auto; padding: 16px var(--pad) 40px; display: grid; gap: 16px; }
   section { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; min-width: 0; }
-  section > h2 { margin: 0 0 4px; font-size: 16px; }
+  section > h2, section > .row > h2 { margin: 0 0 4px; font-size: 16px; }
   .hint { color: var(--muted); font-size: 13px; margin: 0 0 12px; }
   .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .grow { flex: 1 1 auto; }
@@ -59,8 +59,8 @@
   .dot.on { background: var(--green); } .dot.off { background: var(--alert); }
 
   /* the hook catalog */
-  .hooks { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
-  .hook { background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+  .hooks { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr)); }
+  .hook { background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
   .hook h3 { margin: 0; font-size: 14px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
   .hook p { margin: 0; color: var(--muted); font-size: 12.5px; }
   pre { margin: 0; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px;
@@ -95,24 +95,28 @@
   <section>
     <div class="row"><h2 class="grow">Developer Tools</h2>
       <span class="row" style="gap:6px"><span class="dot" id="connDot"></span><span class="hint" id="conn" style="margin:0">connecting…</span></span></div>
-    <p class="hint">A page for building extra tools onto PandaCapture without touching the gauges. Everything a tool
-      needs to reach the running dashboard is ready on <code>window.PCDev</code> (and units on <code>window.PCUnits</code>):
-      the live values, the address map, the JSON API and small helpers to mount UI in the app's style. Grab a hook
-      below, or drop a tool into the build area at the bottom. This runs on your computer only.</p>
+    <p class="hint">A page for building extra tools onto PandaCapture without touching the gauges. What a tool needs to
+      reach the running dashboard is ready on <code>window.PCDev</code>, and the units setting on
+      <code>window.PCUnits</code>: the live values, the address map, the JSON API, and helpers to mount UI in the app's
+      style. Grab a hook below, or add a tool to the build area at the bottom.</p>
+    <p class="hint" style="margin:0">The dashboard has no sign-in. It answers this computer only, unless it was started
+      with <code>--lan</code>: then anyone on the network can use it, these hooks included. Of the actions, only the
+      Claude routes and the bundle download refuse other devices.</p>
   </section>
 
   <section>
     <h2>Hooks</h2>
-    <p class="hint">Ready-made building blocks. Each is live on this page — call it from a tool, or copy the snippet.
-      <code>stop()</code> ends a live subscription when your tool goes away.</p>
+    <p class="hint">Ready-made building blocks, each running live on this page: call one from a tool, or copy its
+      snippet. A live hook returns <code>stop()</code>; call it when the tool goes away. Live hooks share one connection
+      per feed, so subscribe as often as a tool needs.</p>
     <div class="hooks" id="hooks"></div>
   </section>
 
   <section>
     <h2>API endpoints</h2>
-    <p class="hint">What the dashboard serves. <code>PCDev.get</code>/<code>PCDev.post</code> wrap these (POST and
-      the bundle download are this computer only). To add one, see the recipe below.</p>
-    <div class="scroll"><table><thead><tr><th>Method</th><th>Path</th><th>Gives / takes</th></tr></thead>
+    <p class="hint">What the dashboard serves. <code>PCDev.get</code> and <code>PCDev.post</code> wrap these (post
+      sends JSON; for a CSV body, call <code>fetch</code> with the file). To add one, see the recipe below.</p>
+    <div class="scroll"><table><thead><tr><th>Method</th><th>Path</th><th>Gives or takes</th></tr></thead>
       <tbody id="endpoints"></tbody></table></div>
   </section>
 
@@ -120,30 +124,29 @@
     <h2>Add a tool</h2>
     <p class="hint">For a session building onto this page.</p>
     <ol class="hint" style="color:var(--text);line-height:1.7">
-      <li><b>Client-only tool:</b> drop a <code>&lt;script&gt;</code> into the build area below (or a new section)
-        and use <code>PCDev</code>. No server change needed if the data is already served.</li>
-      <li><b>New data from the car or files:</b> add a route in <code>pandacapture/dashboard.py</code> —
-        a <code>GET</code> branch in <code>do_GET</code> (or <code>do_POST</code> for an action), returning
-        <code>self._json(...)</code>; gate anything that reaches the key, writes files or costs money behind
-        <code>self._local()</code>. Read live values under <code>state.lock</code>.</li>
-      <li><b>A whole new page</b> (like this one): add <code>&lt;name&gt;.html</code> under
-        <code>pandacapture/web/</code>, read it in <code>make_handler</code>, serve it from a
-        <code>do_GET</code> branch, and add a header link on the other pages. Static assets (JS/SVG) go in the
-        <code>icons</code> map. The <code>web/</code> folder is packaged whole, so new files ship with no build change.</li>
-      <li>Keep the tests green: <code>python -m pytest</code>.</li>
+      <li><b>A tool from data already served:</b> add a section and a <code>&lt;script&gt;</code> to the build area
+        below, using <code>PCDev</code>. No server change.</li>
+      <li><b>New data or a new action:</b> add a branch to <code>do_GET</code> (or <code>do_POST</code> for an action)
+        in <code>pandacapture/dashboard.py</code>, answering with <code>self._json(...)</code>. Read live values under
+        <code>state.lock</code>. Anything that spends money on the API key or hands over a capture is limited to this
+        computer with <code>self._local()</code>, as the Claude routes and the bundle download are.</li>
+      <li><b>A page of its own</b> (as this one is): add <code>&lt;name&gt;.html</code> to
+        <code>pandacapture/web/</code>, read it in <code>make_handler</code>, answer it in <code>do_GET</code>, and
+        link it from the other pages' headers. Scripts and images go in the <code>icons</code> map. The
+        <code>web/</code> folder is packaged whole, so new files ship with no build change.</li>
+      <li>The dashboard reads its pages when it starts: restart it to see a change. Keep the tests passing
+        (<code>python -m pytest</code>), and add one for a new route.</li>
     </ol>
   </section>
 
-  <!-- ===================================================================================================== -->
-  <!-- BUILD AREA — tools go here. Append sections to #toolHost (PCDev.panel(title) makes one for you), or    -->
-  <!-- add <section> markup directly below the marker. Everything above is scaffolding; leave it in place.    -->
-  <!-- ===================================================================================================== -->
+  <!-- Build area: tools go in #toolHost. PCDev.panel(title) adds a section to it, or add <section> markup and a
+       <script> after the marker section. Everything above is the page's scaffolding: leave it in place. -->
   <div id="toolHost">
     <section class="build" id="buildMarker">
       <h2>Build area</h2>
-      <p class="hint">No extra tools yet. A developer session adds them here — see <b>Add a tool</b> above.
-        Quick start: <code>const s = PCDev.panel("My tool"); PCDev.onSignal("rpm", (v) =&gt; s.textContent = v);</code></p>
-      <span class="marker">&lt;!-- add tool sections after this one --&gt;</span>
+      <p class="hint">No extra tools yet: a developer session adds them here (see <b>Add a tool</b> above). To start:
+        <code>const s = PCDev.panel("My tool"); PCDev.onSignal("rpm", (v) =&gt; s.textContent = v);</code></p>
+      <span class="marker">&lt;!-- tool sections go after this one --&gt;</span>
     </section>
   </div>
 </main>
@@ -164,89 +167,117 @@
   if (recall("pc-theme")) root.dataset.theme = recall("pc-theme");
   $("theme").onclick = () => { root.dataset.theme = root.dataset.theme === "light" ? "dark" : "light"; remember("pc-theme", root.dataset.theme); };
 
-  // ---- the hook catalog: each is live on the page, with a copyable snippet ----
+  // ---- the hooks: each with a snippet; live ones show a readout, heavy or visible ones run on a button ----
+  let sampleStop = null, sampleCount = 0;
   const HOOKS = [
-    { sig: "PCDev.onState(cb) → stop", why: "Every signal's latest value, ~10×/s (the dashboard's own feed).",
-      code: `const stop = PCDev.onState((s) => {\n  console.log(s.frames, "frames", s.values.rpm?.v, "rpm");\n});`,
-      live: (set) => D.onState((s) => set(`${s.fps || 0} fps · ${Object.keys(s.values || {}).length} signals · ${s.status || ""}`)) },
-    { sig: "PCDev.onSignal(key, cb) → stop", why: "One signal's value from the live feed, as it updates.",
-      code: `PCDev.onSignal("rpm", (v, e) => {\n  myGauge.textContent = v + (e.stale ? " (stale)" : "");\n});`,
-      live: (set) => D.onSignal("rpm", (v) => set(`rpm = ${v}`)) || set("waiting for rpm…") },
-    { sig: "PCDev.onSamples(cb) → stop", why: "Every decoded sample as it arrives (high-resolution): { key, v, t }.",
-      code: `const stop = PCDev.onSamples(({ key, v, t }) => {\n  if (key === "boost_psi") push(t, v);\n});`,
-      live: (set) => { let n = 0, last = ""; return D.onSamples(({ key }) => { n++; last = key; if (n % 25 === 0) set(`${n} samples · last ${last}`); }); } },
-    { sig: "PCDev.map() → Promise", why: "The address map: every signal, how it's decoded, its group and units.",
+    { sig: "PCDev.onState(cb) → stop", why: "Every signal's latest value, about 10 times a second (the gauges' own feed).",
+      code: `const stop = PCDev.onState((s) => {\n  console.log(s.fps, "frames/s", s.values.rpm?.v, "rpm");\n});`,
+      live: (set) => D.onState((s) => set(`${s.fps || 0} frames/s · ${Object.keys(s.values || {}).length} signals · ${s.status || ""}`)) },
+    { sig: "PCDev.onSignal(key, cb) → stop", why: "One signal's value from that feed, each time it comes.",
+      code: `PCDev.onSignal("rpm", (v, e) => {\n  el.textContent = v + (e.stale ? " (stale)" : "");\n});`,
+      live: (set) => { set("waiting for rpm…"); return D.onSignal("rpm", (v) => set(`rpm = ${v}`)); } },
+    { sig: "PCDev.onSamples(cb, onLost?) → stop", why: "Every decoded sample as it arrives, { key, v, t } with t in Unix seconds. A heavy feed: subscribe only while needed.",
+      code: `const stop = PCDev.onSamples(({ key, v, t }) => {\n  if (key === "boost_psi") points.push([t, v]);\n});`,
+      button: () => sampleStop ? "Stop" : "Watch",
+      run: (set) => {
+        if (sampleStop) { sampleStop(); sampleStop = null; set(`stopped after ${sampleCount} samples`); return; }
+        sampleCount = 0;
+        sampleStop = D.onSamples(({ key }) => { if (++sampleCount % 25 === 0) set(`${sampleCount} samples · last ${key}`); },
+          (n) => set(`fell behind: ${n} samples lost`));
+        set("watching…");
+      } },
+    { sig: "PCDev.map() → Promise", why: "The address map in use: every signal, how it's decoded, its group and unit.",
       code: `const map = await PCDev.map();\nconsole.log(map.name, map.signals.length, "signals");`,
-      live: (set) => D.map().then((m) => set(`${m.name} · ${m.signals.length} signals`)).catch((e) => set(e.message)) },
-    { sig: "PCDev.onMap(cb) → stop", why: "The map now and again whenever it's switched — rebuild your UI on change.",
+      live: (set) => { D.map().then((m) => set(`${m.name} · ${m.signals.length} signals`), (e) => set(e.message)); } },
+    { sig: "PCDev.onMap(cb) → stop", why: "The map now, and again whenever it's switched: rebuild a tool's controls on change.",
       code: `PCDev.onMap((map) => {\n  buildControls(map.signals);\n});`,
       live: (set) => D.onMap((m) => set(`using ${m.name}`)) },
-    { sig: "PCDev.get(path) → Promise", why: "Any GET endpoint as JSON (throws on error). See the table below.",
+    { sig: "PCDev.get(path) → Promise", why: "Any GET endpoint as JSON; throws with the dashboard's message on an error. See the table below.",
       code: `const { captures } = await PCDev.get("/captures");\nconst { runs } = await PCDev.get("/runs/saved?units=us");`,
-      live: (set) => D.get("/captures").then((c) => set(`${c.captures.length} captures`)).catch((e) => set(e.message)) },
-    { sig: "PCDev.post(path, body) → Promise", why: "A POST action (this computer only). Record, analyze, switch map…",
+      live: (set) => { D.get("/captures").then((c) => set(`${c.captures.length} captures`), (e) => set(e.message)); } },
+    { sig: "PCDev.post(path, body) → Promise", why: "A POST action with a JSON body: switch the map, find runs, and the like.",
       code: `await PCDev.post("/runs/analyze",\n  { capture: name, mass_kg: 1940, units: "us" });` },
-    { sig: "PCDev.record(on) / PCDev.marker()", why: "Start or stop recording a capture, or drop a marker into it.",
+    { sig: "PCDev.record(on) / PCDev.marker()", why: "Start or stop recording a capture, or mark a moment in it.",
       code: `await PCDev.record(true);   // start\nawait PCDev.marker();       // mark a moment\nawait PCDev.record(false);  // stop` },
-    { sig: "PCDev.panel(title, hint?)", why: "A titled <section> in the build area, in the app's style. Returns it.",
-      code: `const s = PCDev.panel("Knock watch", "boost vs spark");\ns.insertAdjacentHTML("beforeend", "<div id=k></div>");`,
-      run: () => { const s = D.panel("Example tool", "Made by PCDev.panel — delete me."); s.insertAdjacentHTML("beforeend", '<p class="hint" style="margin:0">A live rpm spark:</p><div id="demoSpark"></div>'); let buf = []; D.onSignal("rpm", (v) => { buf.push(v); if (buf.length > 120) buf.shift(); D.spark($("demoSpark"), buf, { min: 0, max: 7000 }); }); flash("Added an example tool to the build area."); } },
-    { sig: "PCDev.spark(el, values, opts?)", why: "A quick sparkline of recent numbers — a live readout without the full chart engine.",
-      code: `let buf = [];\nPCDev.onSignal("rpm", (v) => {\n  buf.push(v); if (buf.length > 120) buf.shift();\n  PCDev.spark(myDiv, buf, { min: 0, max: 7000 });\n});` },
-    { sig: "PCDev.units  (window.PCUnits)", why: "The shared US/metric setting: convert, render {tokens}, react to changes.",
-      code: `const u = PCDev.units;\nel.textContent = u.show(96.56, "km/h", 0); // "60 mph"\nu.onChange(() => redraw());` ,
-      live: (set) => { const u = D.units; const show = () => set(`now ${u.system} · ${u.show(96.56064, "km/h", 0)}`); show(); u.onChange(show); } },
+    { sig: "PCDev.panel(title, hint?)", why: "A titled section in the build area, in the app's style. Returns it.",
+      code: `const s = PCDev.panel("Knock watch", "spark against boost");\ns.insertAdjacentHTML("beforeend", "<div id=k></div>");`,
+      button: () => "Try it",
+      run: (set, btn) => {
+        const s = D.panel("Example tool", "Made by PCDev.panel and PCDev.spark: delete it with Remove.");
+        s.insertAdjacentHTML("beforeend", '<p class="hint" style="margin:0 0 6px">Engine speed, the last 12 seconds:</p><div class="demoSpark"></div>' +
+          '<button class="ctl small" type="button" style="margin-top:8px">Remove</button>');
+        const box = s.querySelector(".demoSpark"), buf = [];
+        const stop = D.onSignal("rpm", (v) => { buf.push(v); if (buf.length > 120) buf.shift(); D.spark(box, buf, { min: 0, max: 7000 }); });
+        s.querySelector("button").onclick = () => { stop(); s.remove(); btn.disabled = false; set(""); };
+        btn.disabled = true;
+        set("added to the build area");
+      } },
+    { sig: "PCDev.spark(el, values, opts?)", why: "A sparkline of recent numbers, redrawn in place: a live readout without the Runs page's chart engine.",
+      code: `const buf = [];\nPCDev.onSignal("rpm", (v) => {\n  buf.push(v); if (buf.length > 120) buf.shift();\n  PCDev.spark(el, buf, { min: 0, max: 7000 });\n});` },
+    { sig: "PCDev.units (window.PCUnits)", why: "The shared US or metric setting: convert values, show {kind:value:decimals} tokens, follow changes.",
+      code: `const u = PCDev.units;\nel.textContent = u.show(96.56, "km/h", 0); // "60 mph"\nu.onChange(() => redraw());`,
+      live: (set) => { const u = D.units, show = () => set(`${u.system === "metric" ? "metric" : "US"} · 96.56 km/h shows as ${u.show(96.56064, "km/h", 0)}`); show(); u.onChange(show); } },
   ];
 
+  const LOCAL = " (this computer only)";
   const ENDPOINTS = [
-    ["GET", "/state", "snapshot: status + every signal { v, age, stale, level|on, text? }"],
-    ["GET", "/events", "same snapshot as a stream, ~10×/s (text/event-stream)"],
-    ["GET", "/events?mode=high", "every decoded sample as it arrives"],
-    ["GET", "/map", "the address map in use (signals and decoding)"],
-    ["GET", "/maps", "the available maps and which is current"],
-    ["GET", "/captures", "the captures folder, each with its speed-range tag"],
-    ["GET", "/runs/saved?units=", "saved runs, newest first, headlined in the given units"],
-    ["GET", "/runs/run?id=&units=", "one saved run with the best it compares against"],
-    ["GET", "/references", "reference logs added this session"],
-    ["GET", "/claude", "the Claude analysis job's state, key status and models"],
-    ["GET", "/bundle?capture=&ref=", "a scrubbed capture bundle as a zip (this computer only)"],
-    ["POST", "/record", "{ on } — start or stop recording"],
-    ["POST", "/marker", "drop a numbered marker into the recording"],
-    ["POST", "/map", "{ map } — switch the address map"],
-    ["POST", "/reference", "a CSV body — add a reference log"],
-    ["POST", "/runs/analyze", "{ capture, mass_kg, units } — find and time the runs"],
-    ["POST", "/match", "{ capture, ... } — rank CAN fields against a reference"],
-    ["POST", "/claude/prepare|start|cancel", "the Claude analysis job (this computer only)"],
-    ["POST", "/claude/use-map", "adopt the map Claude built"],
+    ["GET", "/state", "every signal's latest value { v, age, stale, level or on, text? } and the status"],
+    ["GET", "/events", "the same, as a stream about 10 times a second (snapshot events)"],
+    ["GET", "/events?mode=high", "every decoded sample as it arrives (samples events: { s: [[key, v, t]], lost })"],
+    ["GET", "/map", "the address map in use"],
+    ["GET", "/maps", "the maps there are, and which is in use"],
+    ["GET", "/captures", "the captures folder, newest first, each with its speed range"],
+    ["GET", "/runs/saved?units=", "the saved runs, newest first, headlined in those units"],
+    ["GET", "/runs/run?id=&units=", "one saved run with the best it compares with"],
+    ["GET", "/match", "the field search's progress and results"],
+    ["GET", "/references", "the reference logs added since the dashboard started"],
+    ["GET", "/claude", "the Claude analysis: its state, the API key's status, the models"],
+    ["GET", "/bundle?capture=&ref=", "a scrubbed capture with the analysis tools, as a zip" + LOCAL],
+    ["POST", "/record", "{ on }: start or stop recording"],
+    ["POST", "/marker", "a numbered marker into the recording"],
+    ["POST", "/map", "{ name }: switch to that map"],
+    ["POST", "/reference?filename=", "a CSV as the body: add a reference log"],
+    ["POST", "/runs/analyze", "{ capture, mass_kg, units }: find, time and coach the runs in a capture"],
+    ["POST", "/match?capture=&ref=", "rank the capture's fields against a reference: ref obd, a reference's id, or a CSV body with ?filename="],
+    ["POST", "/claude/prepare", "{ capture, ref, model, effort, max_cost }: set up a Claude analysis" + LOCAL],
+    ["POST", "/claude/start, /claude/cancel", "run or stop it" + LOCAL],
+    ["POST", "/claude/use-map", "add the map Claude built to your maps, and use it" + LOCAL],
   ];
 
-  // render hooks
   $("hooks").innerHTML = HOOKS.map((h, i) => `
     <div class="hook">
       <h3>${esc(h.sig)}</h3>
       <p>${esc(h.why)}</p>
       <pre>${esc(h.code)}</pre>
       <div class="foot">
-        <button class="ctl small" data-copy="${i}">Copy</button>
-        ${h.run ? `<button class="ctl small" data-run="${i}">Run it</button>` : ""}
-        <span class="live" data-live="${i}"></span>
+        <button class="ctl small" type="button" data-copy="${i}">Copy</button>
+        ${h.run ? `<button class="ctl small" type="button" data-run="${i}">${esc(h.button())}</button>` : ""}
+        <span class="live" data-live="${i}" aria-live="polite"></span>
       </div>
     </div>`).join("");
   $("endpoints").innerHTML = ENDPOINTS.map(([m, p, d]) =>
     `<tr><td><span class="tag ${m.toLowerCase()}">${m}</span></td><td><code>${esc(p)}</code></td><td>${esc(d)}</td></tr>`).join("");
 
+  const setter = (i) => (text) => { const el = document.querySelector(`[data-live="${i}"]`); if (el) el.textContent = text; };
   $("hooks").addEventListener("click", (e) => {
     const copy = e.target.closest("[data-copy]"), run = e.target.closest("[data-run]");
-    if (copy) { navigator.clipboard.writeText(HOOKS[+copy.dataset.copy].code).then(() => flash("Snippet copied."), () => flash("Copy failed — select the text instead.")); }
-    if (run) { try { HOOKS[+run.dataset.run].run(); run.disabled = true; } catch (err) { flash(err.message); } }
+    if (copy) {
+      const text = HOOKS[+copy.dataset.copy].code;
+      (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject())
+        .then(() => flash("Snippet copied."), () => flash("Couldn't copy here: select the snippet instead."));
+    }
+    if (run) {
+      const h = HOOKS[+run.dataset.run];
+      try { h.run(setter(+run.dataset.run), run); } catch (err) { flash(err.message); }
+      run.textContent = h.button();
+    }
   });
-  // run each hook's live demo
-  HOOKS.forEach((h, i) => { if (h.live) try { h.live((text) => { const el = document.querySelector(`[data-live="${i}"]`); if (el) el.textContent = text; }); } catch (e) {} });
+  HOOKS.forEach((h, i) => { if (h.live) h.live(setter(i)); });
 
-  // connection indicator (proves the hooks reach the dashboard)
+  // The connection: proof the hooks reach the dashboard
   let seen = false;
   D.onState((s) => { seen = true; $("connDot").className = "dot on"; $("conn").textContent = `${s.map_name || "connected"} · ${s.status || "live"}`; });
-  setTimeout(() => { if (!seen) { $("connDot").className = "dot off"; $("conn").textContent = "no live feed (is the dashboard recording a source?)"; } }, 3000);
+  setTimeout(() => { if (!seen) { $("connDot").className = "dot off"; $("conn").textContent = "no live feed from the dashboard"; } }, 3000);
 })();
 </script>
 </body>

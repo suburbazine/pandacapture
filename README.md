@@ -377,6 +377,19 @@ and every hard stop in it is timed from the car's own wheel speeds, and coached.
 There's no GPS here, so no road-grade correction or certification: the times are the car's own.
 From a terminal: `pandacapture runs CAPTURE [--units metric]`.
 
+### Developer Tools
+
+**Developer Tools** on the dashboard opens a page for building extra tools onto PandaCapture without
+touching the gauges. It lists ready-made hooks on `window.PCDev`, each running live with a snippet to
+copy:
+- **Live values:** every signal about 10 times a second, one signal, or every sample as it arrives.
+- **The map and the API:** the address map (and when it's switched), and any endpoint as JSON. The page
+  lists every endpoint.
+- **UI:** a section in the app's style, and a sparkline.
+
+A tool goes in the page's build area. The dashboard has no sign-in: with `--lan`, anyone on the network
+can use these hooks too.
+
 ## 6. Find unknown signals
 
 Record a capture while another tool logs the same drive, then let PandaCapture work out which CAN
