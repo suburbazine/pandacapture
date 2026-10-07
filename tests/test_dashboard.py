@@ -182,6 +182,28 @@ def test_replay_opens_zips(tmp_path):
         ReplaySource(empty)
 
 
+def test_developer_tools_page(tmp_path):
+    dash = Dashboard(SimulatedSource, load_map("kia-stinger-33t-pcan"), port=0, record_dir=tmp_path)
+    dash.start()
+    try:
+        get = lambda p: urllib.request.urlopen(dash.url + p, timeout=10).read()
+        page = get("devtools.html").decode()
+        # the build area a developer session drops tools into, and the hooks library it loads
+        assert 'id="toolHost"' in page and 'id="buildMarker"' in page
+        assert '<script src="/devtools.js"></script>' in page and 'window.PCDev' in page
+        lib = get("devtools.js").decode()
+        assert get("devtools.js") and "text/javascript" in \
+            urllib.request.urlopen(dash.url + "devtools.js", timeout=10).headers["Content-Type"]
+        for hook in ("onState", "onSignal", "onSamples", "onMap", "panel", "spark", "record", "marker"):
+            assert hook in lib, hook
+        # the tab is on the top row of the other pages, and the page links back to them
+        for p in ("", "captures.html", "runs.html"):
+            assert 'href="/devtools.html"' in get(p).decode(), p
+        assert 'href="/"' in page and 'href="/captures.html"' in page and 'href="/runs.html"' in page
+    finally:
+        dash.stop()
+
+
 def test_raw_sentinels_and_labels():
     s = sig(byte=0, raw_max=127)
     assert s.decode(bytes([127])) == 127 and s.decode(bytes([128])) is None

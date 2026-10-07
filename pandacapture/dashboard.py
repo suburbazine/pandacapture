@@ -424,8 +424,10 @@ def make_handler(dash):
     page = (web_dir() / "dashboard.html").read_bytes()
     captures_page = (web_dir() / "captures.html").read_bytes()
     runs_page = (web_dir() / "runs.html").read_bytes()
+    devtools_page = (web_dir() / "devtools.html").read_bytes()
     icons = {"/icon.svg": ((web_dir() / "icon.svg").read_bytes(), "image/svg+xml"),
              "/units.js": ((web_dir() / "units.js").read_bytes(), "text/javascript; charset=utf-8"),
+             "/devtools.js": ((web_dir() / "devtools.js").read_bytes(), "text/javascript; charset=utf-8"),
              "/icon-512.png": ((web_dir() / "icon-512.png").read_bytes(), "image/png")}
 
     class Handler(BaseHTTPRequestHandler):
@@ -465,6 +467,8 @@ def make_handler(dash):
                 self._send(captures_page, "text/html; charset=utf-8")
             elif path == "/runs.html":
                 self._send(runs_page, "text/html; charset=utf-8")
+            elif path == "/devtools.html":
+                self._send(devtools_page, "text/html; charset=utf-8")
             elif path == "/runs/saved":
                 from .runs import runs_dir, saved_summaries
                 units = (parse_qs(url.query).get("units") or ["us"])[0]

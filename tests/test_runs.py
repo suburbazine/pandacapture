@@ -147,6 +147,7 @@ def test_runs_page_and_routes(tmp_path):
     try:
         get = lambda p: urllib.request.urlopen(dash.url + p, timeout=10).read()
         assert b'id="runsLink"' in get("") and b"href=\"/runs.html\"" in get("")
+        assert b'id="devtoolsLink"' in get("") and b"href=\"/devtools.html\"" in get("")
         page = get("runs.html").decode()
         assert "Where it could be better" in page and "function tipChart" in page
         req = urllib.request.Request(dash.url + "runs/analyze", method="POST", headers={"Content-Type": "application/json"},

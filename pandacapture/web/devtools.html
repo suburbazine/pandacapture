@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>PandaCapture Developer Tools</title>
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-512.png">
+<style>
+  /* The same tokens as the gauge, captures and runs pages, so everything reads as one tool */
+  :root {
+    --bg: #0b0e13; --panel: #141922; --panel-2: #1b2230; --line: #2a3344;
+    --text: #e8edf5; --muted: #8b97ab; --faint: #556074; --accent: #4fb3ff;
+    --warn: #ffb020; --alert: #ff4d4f; --green: #35d07f;
+    --radius: 12px; --pad: 16px; --ctl: 40px;
+    color-scheme: dark;
+  }
+  :root[data-theme="light"] {
+    --bg: #f3f5f9; --panel: #ffffff; --panel-2: #e9edf3; --line: #d8dee8;
+    --text: #141a24; --muted: #5c6779; --faint: #9aa3b2; --accent: #0b74d1;
+    --warn: #c77700; --alert: #d92d2f; --green: #148a4b;
+    color-scheme: light;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { margin: 0; }
+  body { background: var(--bg); color: var(--text); font: 15px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+         -webkit-font-smoothing: antialiased; overflow-x: hidden; }
+
+  header { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+           padding: 10px var(--pad); background: color-mix(in srgb, var(--bg) 90%, transparent);
+           backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
+  .title { display: flex; flex-direction: column; min-width: 0; flex: 1 1 200px; }
+  .title strong { font-size: 16px; }
+  .title span { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ctl { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: var(--ctl);
+         padding: 0 14px; border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 10px;
+         font: inherit; font-size: 14px; white-space: nowrap; cursor: pointer; text-decoration: none; }
+  .ctl:hover:not(:disabled) { border-color: var(--accent); }
+  .ctl:disabled { opacity: .45; cursor: default; }
+  .ctl svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .ctl.small { min-height: 32px; padding: 0 10px; font-size: 12px; }
+
+  main { max-width: 1100px; margin: 0 auto; padding: 16px var(--pad) 40px; display: grid; gap: 16px; }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; min-width: 0; }
+  section > h2 { margin: 0 0 4px; font-size: 16px; }
+  .hint { color: var(--muted); font-size: 13px; margin: 0 0 12px; }
+  .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .grow { flex: 1 1 auto; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; }
+  .scroll { overflow-x: auto; }
+  code { background: var(--panel-2); padding: 1px 5px; border-radius: 5px; font-size: 13px; }
+  .tag { display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 11px; background: var(--panel-2); color: var(--muted); }
+  .tag.get { color: var(--green); } .tag.post { color: var(--warn); }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--faint); display: inline-block; }
+  .dot.on { background: var(--green); } .dot.off { background: var(--alert); }
+
+  /* the hook catalog */
+  .hooks { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
+  .hook { background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+  .hook h3 { margin: 0; font-size: 14px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .hook p { margin: 0; color: var(--muted); font-size: 12.5px; }
+  pre { margin: 0; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px;
+        font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow-x: auto; white-space: pre; }
+  .hook .foot { display: flex; align-items: center; gap: 8px; margin-top: auto; }
+  .hook .live { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .build { border: 1px dashed color-mix(in srgb, var(--accent) 50%, var(--line)); background: color-mix(in srgb, var(--accent) 6%, var(--panel)); }
+  .build .marker { color: var(--muted); font-size: 12px; font-family: ui-monospace, monospace; }
+
+  .banner { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 3; max-width: calc(100vw - 32px);
+            padding: 10px 14px; border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); display: none; }
+  .banner.show { display: block; }
+
+  @media (max-width: 720px) { .ctl .txt { display: none; } :root { --pad: 12px; } }
+</style>
+</head>
+<body>
+<header>
+  <div class="title"><strong>Developer Tools</strong><span id="sub">A workbench for tools built onto the dashboard</span></div>
+  <a class="ctl" href="/" target="pandacapture-gauges" title="The gauges (their own window)">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 16a8 8 0 1 1 16 0M12 16l4-5"/></svg><span class="txt">Gauges</span></a>
+  <a class="ctl" href="/captures.html" target="pandacapture-captures" title="Captures and Claude">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v4H4zM4 11h16v8H4zM8 15h8"/></svg><span class="txt">Captures</span></a>
+  <a class="ctl" href="/runs.html" target="pandacapture-runs" title="Runs">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 18l5-6 4 3 7-9M15 6h5v5"/></svg><span class="txt">Runs</span></a>
+  <button class="ctl" id="theme" type="button" title="Switch light/dark" aria-label="Switch light/dark theme">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9c0-.5 0-1-.1-1.4A6 6 0 0 1 13.4 3.1C13 3 12.5 3 12 3z"/></svg></button>
+</header>
+
+<main>
+  <section>
+    <div class="row"><h2 class="grow">Developer Tools</h2>
+      <span class="row" style="gap:6px"><span class="dot" id="connDot"></span><span class="hint" id="conn" style="margin:0">connecting…</span></span></div>
+    <p class="hint">A page for building extra tools onto PandaCapture without touching the gauges. Everything a tool
+      needs to reach the running dashboard is ready on <code>window.PCDev</code> (and units on <code>window.PCUnits</code>):
+      the live values, the address map, the JSON API and small helpers to mount UI in the app's style. Grab a hook
+      below, or drop a tool into the build area at the bottom. This runs on your computer only.</p>
+  </section>
+
+  <section>
+    <h2>Hooks</h2>
+    <p class="hint">Ready-made building blocks. Each is live on this page — call it from a tool, or copy the snippet.
+      <code>stop()</code> ends a live subscription when your tool goes away.</p>
+    <div class="hooks" id="hooks"></div>
+  </section>
+
+  <section>
+    <h2>API endpoints</h2>
+    <p class="hint">What the dashboard serves. <code>PCDev.get</code>/<code>PCDev.post</code> wrap these (POST and
+      the bundle download are this computer only). To add one, see the recipe below.</p>
+    <div class="scroll"><table><thead><tr><th>Method</th><th>Path</th><th>Gives / takes</th></tr></thead>
+      <tbody id="endpoints"></tbody></table></div>
+  </section>
+
+  <section>
+    <h2>Add a tool</h2>
+    <p class="hint">For a session building onto this page.</p>
+    <ol class="hint" style="color:var(--text);line-height:1.7">
+      <li><b>Client-only tool:</b> drop a <code>&lt;script&gt;</code> into the build area below (or a new section)
+        and use <code>PCDev</code>. No server change needed if the data is already served.</li>
+      <li><b>New data from the car or files:</b> add a route in <code>pandacapture/dashboard.py</code> —
+        a <code>GET</code> branch in <code>do_GET</code> (or <code>do_POST</code> for an action), returning
+        <code>self._json(...)</code>; gate anything that reaches the key, writes files or costs money behind
+        <code>self._local()</code>. Read live values under <code>state.lock</code>.</li>
+      <li><b>A whole new page</b> (like this one): add <code>&lt;name&gt;.html</code> under
+        <code>pandacapture/web/</code>, read it in <code>make_handler</code>, serve it from a
+        <code>do_GET</code> branch, and add a header link on the other pages. Static assets (JS/SVG) go in the
+        <code>icons</code> map. The <code>web/</code> folder is packaged whole, so new files ship with no build change.</li>
+      <li>Keep the tests green: <code>python -m pytest</code>.</li>
+    </ol>
+  </section>
+
+  <!-- ===================================================================================================== -->
+  <!-- BUILD AREA — tools go here. Append sections to #toolHost (PCDev.panel(title) makes one for you), or    -->
+  <!-- add <section> markup directly below the marker. Everything above is scaffolding; leave it in place.    -->
+  <!-- ===================================================================================================== -->
+  <div id="toolHost">
+    <section class="build" id="buildMarker">
+      <h2>Build area</h2>
+      <p class="hint">No extra tools yet. A developer session adds them here — see <b>Add a tool</b> above.
+        Quick start: <code>const s = PCDev.panel("My tool"); PCDev.onSignal("rpm", (v) =&gt; s.textContent = v);</code></p>
+      <span class="marker">&lt;!-- add tool sections after this one --&gt;</span>
+    </section>
+  </div>
+</main>
+<div class="banner" id="banner"></div>
+
+<script src="/units.js"></script>
+<script src="/devtools.js"></script>
+<script>
+(() => {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+  const root = document.documentElement;
+  const D = window.PCDev, esc = D.esc;
+  const flash = (t) => { const b = $("banner"); b.textContent = t; b.classList.add("show"); clearTimeout(flash.t); flash.t = setTimeout(() => b.classList.remove("show"), 3000); };
+  const remember = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
+  const recall = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+
+  if (recall("pc-theme")) root.dataset.theme = recall("pc-theme");
+  $("theme").onclick = () => { root.dataset.theme = root.dataset.theme === "light" ? "dark" : "light"; remember("pc-theme", root.dataset.theme); };
+
+  // ---- the hook catalog: each is live on the page, with a copyable snippet ----
+  const HOOKS = [
+    { sig: "PCDev.onState(cb) → stop", why: "Every signal's latest value, ~10×/s (the dashboard's own feed).",
+      code: `const stop = PCDev.onState((s) => {\n  console.log(s.frames, "frames", s.values.rpm?.v, "rpm");\n});`,
+      live: (set) => D.onState((s) => set(`${s.fps || 0} fps · ${Object.keys(s.values || {}).length} signals · ${s.status || ""}`)) },
+    { sig: "PCDev.onSignal(key, cb) → stop", why: "One signal's value from the live feed, as it updates.",
+      code: `PCDev.onSignal("rpm", (v, e) => {\n  myGauge.textContent = v + (e.stale ? " (stale)" : "");\n});`,
+      live: (set) => D.onSignal("rpm", (v) => set(`rpm = ${v}`)) || set("waiting for rpm…") },
+    { sig: "PCDev.onSamples(cb) → stop", why: "Every decoded sample as it arrives (high-resolution): { key, v, t }.",
+      code: `const stop = PCDev.onSamples(({ key, v, t }) => {\n  if (key === "boost_psi") push(t, v);\n});`,
+      live: (set) => { let n = 0, last = ""; return D.onSamples(({ key }) => { n++; last = key; if (n % 25 === 0) set(`${n} samples · last ${last}`); }); } },
+    { sig: "PCDev.map() → Promise", why: "The address map: every signal, how it's decoded, its group and units.",
+      code: `const map = await PCDev.map();\nconsole.log(map.name, map.signals.length, "signals");`,
+      live: (set) => D.map().then((m) => set(`${m.name} · ${m.signals.length} signals`)).catch((e) => set(e.message)) },
+    { sig: "PCDev.onMap(cb) → stop", why: "The map now and again whenever it's switched — rebuild your UI on change.",
+      code: `PCDev.onMap((map) => {\n  buildControls(map.signals);\n});`,
+      live: (set) => D.onMap((m) => set(`using ${m.name}`)) },
+    { sig: "PCDev.get(path) → Promise", why: "Any GET endpoint as JSON (throws on error). See the table below.",
+      code: `const { captures } = await PCDev.get("/captures");\nconst { runs } = await PCDev.get("/runs/saved?units=us");`,
+      live: (set) => D.get("/captures").then((c) => set(`${c.captures.length} captures`)).catch((e) => set(e.message)) },
+    { sig: "PCDev.post(path, body) → Promise", why: "A POST action (this computer only). Record, analyze, switch map…",
+      code: `await PCDev.post("/runs/analyze",\n  { capture: name, mass_kg: 1940, units: "us" });` },
+    { sig: "PCDev.record(on) / PCDev.marker()", why: "Start or stop recording a capture, or drop a marker into it.",
+      code: `await PCDev.record(true);   // start\nawait PCDev.marker();       // mark a moment\nawait PCDev.record(false);  // stop` },
+    { sig: "PCDev.panel(title, hint?)", why: "A titled <section> in the build area, in the app's style. Returns it.",
+      code: `const s = PCDev.panel("Knock watch", "boost vs spark");\ns.insertAdjacentHTML("beforeend", "<div id=k></div>");`,
+      run: () => { const s = D.panel("Example tool", "Made by PCDev.panel — delete me."); s.insertAdjacentHTML("beforeend", '<p class="hint" style="margin:0">A live rpm spark:</p><div id="demoSpark"></div>'); let buf = []; D.onSignal("rpm", (v) => { buf.push(v); if (buf.length > 120) buf.shift(); D.spark($("demoSpark"), buf, { min: 0, max: 7000 }); }); flash("Added an example tool to the build area."); } },
+    { sig: "PCDev.spark(el, values, opts?)", why: "A quick sparkline of recent numbers — a live readout without the full chart engine.",
+      code: `let buf = [];\nPCDev.onSignal("rpm", (v) => {\n  buf.push(v); if (buf.length > 120) buf.shift();\n  PCDev.spark(myDiv, buf, { min: 0, max: 7000 });\n});` },
+    { sig: "PCDev.units  (window.PCUnits)", why: "The shared US/metric setting: convert, render {tokens}, react to changes.",
+      code: `const u = PCDev.units;\nel.textContent = u.show(96.56, "km/h", 0); // "60 mph"\nu.onChange(() => redraw());` ,
+      live: (set) => { const u = D.units; const show = () => set(`now ${u.system} · ${u.show(96.56064, "km/h", 0)}`); show(); u.onChange(show); } },
+  ];
+
+  const ENDPOINTS = [
+    ["GET", "/state", "snapshot: status + every signal { v, age, stale, level|on, text? }"],
+    ["GET", "/events", "same snapshot as a stream, ~10×/s (text/event-stream)"],
+    ["GET", "/events?mode=high", "every decoded sample as it arrives"],
+    ["GET", "/map", "the address map in use (signals and decoding)"],
+    ["GET", "/maps", "the available maps and which is current"],
+    ["GET", "/captures", "the captures folder, each with its speed-range tag"],
+    ["GET", "/runs/saved?units=", "saved runs, newest first, headlined in the given units"],
+    ["GET", "/runs/run?id=&units=", "one saved run with the best it compares against"],
+    ["GET", "/references", "reference logs added this session"],
+    ["GET", "/claude", "the Claude analysis job's state, key status and models"],
+    ["GET", "/bundle?capture=&ref=", "a scrubbed capture bundle as a zip (this computer only)"],
+    ["POST", "/record", "{ on } — start or stop recording"],
+    ["POST", "/marker", "drop a numbered marker into the recording"],
+    ["POST", "/map", "{ map } — switch the address map"],
+    ["POST", "/reference", "a CSV body — add a reference log"],
+    ["POST", "/runs/analyze", "{ capture, mass_kg, units } — find and time the runs"],
+    ["POST", "/match", "{ capture, ... } — rank CAN fields against a reference"],
+    ["POST", "/claude/prepare|start|cancel", "the Claude analysis job (this computer only)"],
+    ["POST", "/claude/use-map", "adopt the map Claude built"],
+  ];
+
+  // render hooks
+  $("hooks").innerHTML = HOOKS.map((h, i) => `
+    <div class="hook">
+      <h3>${esc(h.sig)}</h3>
+      <p>${esc(h.why)}</p>
+      <pre>${esc(h.code)}</pre>
+      <div class="foot">
+        <button class="ctl small" data-copy="${i}">Copy</button>
+        ${h.run ? `<button class="ctl small" data-run="${i}">Run it</button>` : ""}
+        <span class="live" data-live="${i}"></span>
+      </div>
+    </div>`).join("");
+  $("endpoints").innerHTML = ENDPOINTS.map(([m, p, d]) =>
+    `<tr><td><span class="tag ${m.toLowerCase()}">${m}</span></td><td><code>${esc(p)}</code></td><td>${esc(d)}</td></tr>`).join("");
+
+  $("hooks").addEventListener("click", (e) => {
+    const copy = e.target.closest("[data-copy]"), run = e.target.closest("[data-run]");
+    if (copy) { navigator.clipboard.writeText(HOOKS[+copy.dataset.copy].code).then(() => flash("Snippet copied."), () => flash("Copy failed — select the text instead.")); }
+    if (run) { try { HOOKS[+run.dataset.run].run(); run.disabled = true; } catch (err) { flash(err.message); } }
+  });
+  // run each hook's live demo
+  HOOKS.forEach((h, i) => { if (h.live) try { h.live((text) => { const el = document.querySelector(`[data-live="${i}"]`); if (el) el.textContent = text; }); } catch (e) {} });
+
+  // connection indicator (proves the hooks reach the dashboard)
+  let seen = false;
+  D.onState((s) => { seen = true; $("connDot").className = "dot on"; $("conn").textContent = `${s.map_name || "connected"} · ${s.status || "live"}`; });
+  setTimeout(() => { if (!seen) { $("connDot").className = "dot off"; $("conn").textContent = "no live feed (is the dashboard recording a source?)"; } }, 3000);
+})();
+</script>
+</body>
+</html>
