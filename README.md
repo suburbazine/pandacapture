@@ -100,7 +100,14 @@ Download the program for your system from the [latest release](../../releases/la
 - **Linux:** `pandacapture-linux-x64`.
 
 It's one file: put it anywhere, for example on the laptop that goes in the car. Each release lists
-SHA-256 sums. Or run from source:
+SHA-256 sums.
+
+From 0.9.8 on, the Windows program is Authenticode-signed by **Xtremission LLC** and timestamped, so
+Windows names the publisher. The release workflow signs it and checks the signature, through Azure
+Artifact Signing. To check a copy yourself, open its Properties and look under Digital Signatures,
+or run `Get-AuthenticodeSignature pandacapture.exe` in PowerShell.
+
+Or run from source:
 
 ```bash
 pip install -e .
