@@ -264,6 +264,14 @@ listens silently. Press `Q` in the console to stop.
     cylinder's peak since the dashboard started or a replay began. Click it to reset the peaks.
   - **Transmission (01A0):** converter slip, turbine speed and ATF temperature gauges, with the output
     shaft speed, gear and ratio.
+  - **Read knock / Read transmission** (off at first, remembered): the dashboard asks for them itself
+    while it records. It sends the same requests, at the same rate and with the same rules as
+    `pandacapture obd --knock --transmission` below. You type `TRANSMIT` once per session, on the
+    computer running PandaCapture, and it needs a panda with PandaCapture firmware.
+
+    Sending ends with the recording, and the panda goes back to listening. The capture keeps the
+    requests and notes when sending started and stopped. The status shows each read's rate, or why it
+    isn't sending.
 - **US or metric:** the units button switches every page between US (mph, °F, psi, lb, ft, hp, lb-ft)
   and metric (km/h, °C, bar, kg, m, kW, Nm). Only what's shown changes: logs, run files and the map
   keep the car's own units, and a gauge's arc and zones stay where they were.

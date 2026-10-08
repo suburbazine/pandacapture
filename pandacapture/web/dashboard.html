@@ -114,6 +114,7 @@
   .rec.on .dot { animation: blink 1.2s steps(2, start) infinite; }
   @keyframes blink { to { visibility: hidden; } }
   .ctl.select { gap: 6px; padding-right: 6px; flex: 0 1 auto; }
+  .seg .short { display: none; }
   .ctl.select span { color: var(--muted); font-size: 12px; }
   .ctl select { min-width: 0; max-width: 220px; border: 0; background: transparent; color: var(--text); font: inherit; text-overflow: ellipsis; }
   .ctl select option { background: var(--panel); color: var(--text); }
@@ -291,6 +292,7 @@
   /* ---- narrow screens: a phone in a cradle ---- */
   @media (max-width: 720px) {
     .ctl .txt, .seg .txt, .ctl.select span { display: none; }
+    .seg .short { display: inline; }
     .ctl.select { flex: 1 1 100px; }
     .ctl select { width: 100%; max-width: none; }
     .ctl-group.tools { flex: 1 1 100%; order: 3; }
@@ -325,12 +327,19 @@
       <span class="pill" id="status"><span class="dot"></span><span id="statusText">connecting</span></span>
       <span class="pill" id="rate">0 frames/s</span>
       <span class="pill" id="sps" hidden>0 samples/s</span>
+      <span class="pill" id="readsPill" hidden><span class="dot"></span><span id="readsText"></span></span>
     </div>
   </div>
   <div class="bar controls">
     <div class="ctl-group">
       <button class="ctl rec" id="recBtn" type="button" title="Start or stop recording a capture"><span class="dot"></span><span id="recText">Record</span></button>
       <button class="ctl" id="markBtn" type="button" title="Marker into the recording (key M)" disabled>Marker</button>
+      <span class="seg" role="group" aria-label="Reads sent while recording">
+        <button type="button" id="readKnock" aria-pressed="false"
+                title="While recording, ask the ECU for per-cylinder knock retard (22 E019), 5-10 times a second">Read knock</button>
+        <button type="button" id="readTcu" aria-pressed="false"
+                title="While recording, ask the transmission for its speeds, slip and ATF temperature (22 01A0), 5-10 times a second">Read<span class="txt"> transmission</span><span class="short"> trans.</span></button>
+      </span>
     </div>
     <div class="ctl-group mode">
       <span class="seg" role="group" aria-label="Update rate">
@@ -821,8 +830,42 @@
   $("knockTile").addEventListener("click", resetKnock);
   $("knockTile").addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); resetKnock(); } });
 
+  // ---- the Read switches: the dashboard asks for knock and transmission data itself while recording ----
+  const READS_WARNING = "While it records, the dashboard will send read requests on the vehicle's bus:\n" +
+    "- 03 22 E0 19 to 0x7E0 (the engine's per-cylinder knock) and/or 03 22 01 A0 to 0x7E1 (the transmission),\n" +
+    "  with the flow control for their long answers, one request at a time, 5 to 10 a second each.\n" +
+    "They read values; they can't change anything in the car. While another tester asks the same module it is\n" +
+    "given way, and a bus going bus-off or counting over 50 errors a second stops all sending at once.\n" +
+    "Through a panda with PandaCapture firmware only.\n\nType TRANSMIT to allow it for this session:";
+  let reads = null;
+  function renderReads(r) {
+    reads = r || null;
+    $("readKnock").setAttribute("aria-pressed", String(!!reads?.knock));
+    $("readTcu").setAttribute("aria-pressed", String(!!reads?.transmission));
+    const on = !!(reads && (reads.knock || reads.transmission));
+    $("readsPill").hidden = !on;
+    if (!on) return;
+    $("readsPill").className = "pill " + (reads.running ? "live" : reads.problem ? "down" : "");
+    $("readsText").textContent = `Reads: ${reads.status || (reads.running ? "starting" : "")}`;
+    $("readsPill").title = reads.running ? "The dashboard is sending the reads (transmit armed)" :
+      "Not sending: " + (reads.status || "");
+  }
+  function toggleRead(key) {
+    const on = !reads?.[key];
+    const body = { [key]: on };
+    if (on && !reads?.confirmed) {
+      const word = prompt(READS_WARNING);
+      if (word === null) return;
+      body.confirm = word;
+    }
+    post("/reads", body).then((j) => renderReads(j.reads)).catch((e) => flash(e.message));
+  }
+  $("readKnock").onclick = () => toggleRead("knock");
+  $("readTcu").onclick = () => toggleRead("transmission");
+
   // ---- incoming data ----
   function status(st) {
+    renderReads(st.reads);
     applyReplay(st.replay, st.epoch);
     renderKnock(st.knock);
     const ok = st.status === "live" || !!st.replay;

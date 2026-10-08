@@ -95,7 +95,7 @@ class PandaSource:
     def _configure(self, log):
         pd = self.panda
         hw = pd.hw_type()
-        version = pd.version()
+        version = self.version = pd.version()
         hw_name = p.HW_NAMES.get(hw, f"panda type 0x{hw:02X}")
         self.serial = pd.serial
         mcu = p.MCU_BY_HW.get(hw)
@@ -177,6 +177,48 @@ class PandaSource:
             return self.panda.health()
         except UsbError:
             return None
+
+    # ---- sending, for the dashboard's reads (dashboard.ActiveReads); the reader thread owns the panda ----
+
+    @property
+    def can_transmit(self) -> bool:
+        """PandaCapture firmware: its armed transmit gate (and nothing else) lets frames out."""
+        return p.is_pandacapture_version(self.version)
+
+    def arm(self):
+        """Transmit armed, with the heartbeat the firmware needs to stay armed (beat() at least every 0.25 s)."""
+        try:
+            self.panda.heartbeat(True)
+            self.panda.set_safety(p.SAFETY_ALLOUTPUT, p.PANDACAPTURE_TX_ARM)
+            self._beat_at = time.monotonic()
+            mode = self.panda.health()["safety_mode"]
+        except UsbError as e:
+            self.disarm()
+            raise SourceError(f"couldn't arm transmit: {e}") from None
+        if mode != p.SAFETY_ALLOUTPUT:
+            self.disarm()
+            raise SourceError(f"the panda didn't arm (safety mode {mode}); nothing was sent")
+
+    def beat(self):
+        from .transmit import HEARTBEAT_EVERY
+        now = time.monotonic()
+        if now - getattr(self, "_beat_at", 0.0) >= HEARTBEAT_EVERY:
+            self.panda.heartbeat(True)
+            self._beat_at = now
+
+    def send(self, frames):
+        self.beat()
+        for chunk in p.pack_frames(frames):
+            self.panda.write_can(chunk)
+
+    def disarm(self):
+        """Back to listening as before (silent, or acknowledging), heartbeat off again."""
+        want = p.SAFETY_NOOUTPUT if self.setup.mode == "ack" else p.SAFETY_SILENT
+        try:
+            self.panda.set_safety(want)
+            self.panda.disable_heartbeat()
+        except UsbError:
+            pass   # the firmware disarms itself within about 2 s without a heartbeat
 
     def close(self):
         panda = getattr(self, "panda", None)

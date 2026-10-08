@@ -38,11 +38,13 @@ from urllib.parse import parse_qs, urlsplit
 from .capture import RollingLog, candump_line, default_out_dir, restart_note
 from .firmware import bundled_dir
 from .logs import replay_file
+from .policy import PolicyRefused, Sender, VehicleState
 from .replay import FAILED, STOPPED, ReplayPlayer
 from .signals import Evaluator, MapError, Signal, builtin_maps, load_map
 from .sources import SourceError
-from .udsread import CYLINDERS, Watch as UdsWatch
 from .speedrange import SpeedTags
+from .udsread import CYLINDERS, BusWatch, UdsPoller, Watch as UdsWatch, knock_target, transmission_target, uds_text
+from .usbdev import UsbError
 
 STALE_SECONDS = 1.5
 PUSH_EVERY = 0.1        # normal mode
@@ -73,6 +75,8 @@ TCU_SIGNALS = [
 _TCU_VALUES = {"tcu_slip": "slip_rpm", "tcu_turbine": "turbine_rpm", "tcu_atf": "atf_c", "tcu_output": "output_rpm",
                "tcu_gear": "gear", "tcu_ratio": "ratio"}
 KNOCK_STALE = 3.0   # s without an E019 answer before the knock tile dims
+READS_FILE = ".pandacapture-reads.json"   # the Read switches, kept in the captures folder across launches
+CONFIRM_WORD = "TRANSMIT"
 
 
 def web_dir() -> Path:
@@ -108,6 +112,7 @@ class LiveState:
         self.knock = None      # (latest reading, the clock's time)
         self.knock_peak = [0.0] * CYLINDERS   # since the dashboard started, a replay began or went back, or a reset
         self.tcu_heard = False   # 01A0 answers have come: its signals show (pages rebuild once to add them)
+        self.reads = None      # the Read switches (ActiveReads), set by the Reader
         self._load(address_map)
 
     def _load(self, address_map):
@@ -251,7 +256,7 @@ class LiveState:
                     "recording_for": round(now - self.recording_since) if self.recording_since else None,
                     "markers": self.markers, "map_version": self.map_version, "map_name": self.map.name,
                     "epoch": self.epoch, "replay": dict(self.replay, epoch=self.epoch) if self.replay else None,
-                    "knock": self._knock_json()}
+                    "knock": self._knock_json(), "reads": self.reads.info() if self.reads else None}
 
     def _knock_json(self):
         if self.knock is None:
@@ -300,7 +305,8 @@ class Recorder:
 
     def write(self, frames, t):
         for f in frames:
-            if not (f.returned or f.rejected):
+            # Returned frames went out on the bus: the Read switches' requests (listening, nothing else is sent)
+            if not f.rejected:
                 self.log.write(candump_line(t, f) + "\n")
                 self.log.track(f, t)
         if time.monotonic() - self._last_flush > 1.0:
@@ -339,6 +345,8 @@ class Reader(threading.Thread):
         self.rec_lock = threading.Lock()
         self.description = "waiting for the source"
         self.saved = []   # captures recorded this session
+        self.reads = ActiveReads(self.record_dir)
+        state.reads = self.reads
         self.processor = threading.Thread(target=self._process, daemon=True, name="pandacapture-decoder")
         if record:
             self.start_recording()
@@ -414,6 +422,7 @@ class Reader(threading.Thread):
             try:
                 frames = source.read()
             except SourceError as e:
+                self.reads.lost(f"the source failed: {e}")
                 lost_at = time.monotonic()
                 self.log(f"[{_clock()}] {getattr(source, 'kind', 'Panda')} error: {e}. Reconnecting every {RECONNECT_EVERY:g} s...")
                 self._note(f"adapter error: {e} ({time.time():.6f})")
@@ -423,8 +432,11 @@ class Reader(threading.Thread):
                 continue
             if frames:
                 self._put(("frames", frames, time.monotonic(), time.time()))
-            else:
+            # The Read switches' requests, sent from here: this thread owns the panda
+            self.reads.step(source, frames, self.recorder, self._note, self.state)
+            if not frames:
                 time.sleep(0.001)
+        self.reads.stop(source, self._note)
         if source is not None:
             source.close()
         self._put(("stop",))
@@ -461,6 +473,145 @@ class Reader(threading.Thread):
 
 def _clock():
     return dt.datetime.now().strftime("%H:%M:%S")
+
+
+class _SourceLink:
+    """What the policy's Sender sends through: the panda the dashboard reads."""
+
+    def __init__(self, source):
+        self.source = source
+
+    def send(self, frames):
+        self.source.send(frames)
+
+
+class ActiveReads:
+    """The dashboard's Read switches: its own reads of per-cylinder knock (22 E019) and the transmission (22 01A0),
+    with every recording. Through a panda with PandaCapture firmware, once TRANSMIT has been typed on this computer
+    this session; the same requests, scheduling and coexistence as pandacapture obd --knock --transmission
+    (udsread.UdsPoller), and the same cut-off: a bus going bus-off, or counting over 50 errors in a second, ends
+    all sending. Sending ends with the recording, and the panda goes back to listening. The switches are kept
+    across launches; TRANSMIT isn't. Driven by the reader thread, which owns the panda."""
+
+    def __init__(self, record_dir):
+        self.path = Path(record_dir) / READS_FILE
+        self.lock = threading.Lock()
+        self.want = self._load()
+        self.confirmed = False
+        self.poller = self.watch = self.vehicle = None
+        self.running = ()          # the targets' names while sending
+        self.watch_at = 0.0
+        self.status = ""
+        self.problem = None        # why sending stopped during this recording (it waits for the next one)
+        self.problem_rec = None
+
+    def _load(self):
+        try:
+            d = json.loads(self.path.read_text(encoding="utf-8"))
+            return {"knock": bool(d.get("knock")), "transmission": bool(d.get("transmission"))}
+        except (OSError, ValueError, AttributeError):
+            return {"knock": False, "transmission": False}
+
+    def set(self, knock=None, transmission=None, confirm=None):
+        with self.lock:
+            if knock is not None:
+                self.want["knock"] = bool(knock)
+            if transmission is not None:
+                self.want["transmission"] = bool(transmission)
+            if confirm is not None:
+                if confirm.strip().upper() != CONFIRM_WORD:
+                    raise ValueError(f"Type {CONFIRM_WORD} to let the dashboard send the reads.")
+                self.confirmed = True
+            try:
+                self.path.parent.mkdir(parents=True, exist_ok=True)
+                self.path.write_text(json.dumps(self.want), encoding="utf-8")
+            except OSError:
+                pass
+            return self._info()
+
+    def info(self):
+        with self.lock:
+            return self._info()
+
+    def _info(self):
+        return dict(self.want, confirmed=self.confirmed, running=bool(self.running), status=self.status,
+                    problem=self.problem)
+
+    def step(self, source, frames, recorder, note, state):
+        """One pass of the reader: the frames it just read, the recording (or None), note(text) into it."""
+        with self.lock:
+            names = tuple(k for k in ("knock", "transmission") if self.want[k])
+            confirmed = self.confirmed
+        if recorder is not None and recorder is not self.problem_rec:
+            self.problem = None                     # a new recording: try again
+        why = (None if names else "") if recorder is not None else ("waiting for a recording" if names else "")
+        if why is None and not confirmed:
+            why = f"waiting for {CONFIRM_WORD} to be typed (on this computer)"
+        if why is None and not getattr(source, "can_transmit", False):
+            why = ("listening only: sending needs PandaCapture firmware (pandacapture flash)" if hasattr(source, "arm")
+                   else "listening only: no panda to send through")
+        if why is None and self.problem:
+            why = f"stopped: {self.problem}"
+        if why is None and self.running and self.running != names:
+            self._end(source, note, "the switches changed")    # starts again with the new set below
+        if why is not None:
+            if self.running:
+                self._end(source, note, why or "switched off")
+            self.status = why
+            return
+        try:
+            if not self.running:
+                self._begin(source, note, names, state)
+            now = time.monotonic()
+            for f in frames:
+                if not (f.returned or f.rejected):
+                    self.vehicle.frame(f)
+                self.poller.frame(f, now)
+            self.poller.tick(now)
+            source.beat()
+            if now - self.watch_at >= 1.0:
+                self.watch_at = now
+                trouble = self.watch.check()
+                if trouble:
+                    raise SourceError(trouble)
+            if self.poller.stopped:
+                raise SourceError(f"every read stopped ({self.poller.status})")
+            self.status = self.poller.status
+        except (SourceError, UsbError, PolicyRefused) as e:
+            self.problem, self.problem_rec = str(e), recorder
+            self._end(source, note, str(e))
+            self.status = f"stopped: {e}"
+
+    def _begin(self, source, note, names, state):
+        targets = [{"knock": knock_target, "transmission": transmission_target}[n]() for n in names]
+        with state.lock:
+            busiest = sorted(state.bus_frames.items(), key=lambda x: -x[1])
+        bus = busiest[0][0] if busiest else 0
+        self.vehicle = VehicleState()
+        self.poller = UdsPoller(Sender(_SourceLink(source), self.vehicle), bus, targets)
+        self.watch = BusWatch(source.panda, [bus])
+        self.watch_at = time.monotonic()
+        source.arm()
+        self.running = names
+        note(f"active polling, not silent: transmit armed (PandaCapture firmware), {uds_text(targets)}, one request "
+             f"on the bus at a time, with the flow control for their long answers, on bus {bus} ({time.time():.6f})")
+
+    def _end(self, source, note, why):
+        if not self.running:
+            return
+        self.running, self.poller = (), None
+        source.disarm()
+        note(f"reads stopped ({why}): transmit disarmed, listening again ({time.time():.6f})")
+
+    def lost(self, why):
+        """The source failed: the panda (and its armed state) is gone; it disarms itself without a heartbeat."""
+        if self.running:
+            self.running, self.poller = (), None
+            self.status = f"stopped: {why}"
+
+    def stop(self, source, note):
+        if self.running and source is not None:
+            self._end(source, note, "the dashboard stopped")
 
 
 class ReplayJob:
@@ -734,7 +885,13 @@ def make_handler(dash):
             url = urlsplit(self.path)
             try:
                 body = self._body()
-                if url.path == "/knock/reset":
+                if url.path == "/reads":
+                    # The Read switches: turning one on (and typing TRANSMIT) only on this computer
+                    req = json.loads(body or b"{}")
+                    if (req.get("knock") or req.get("transmission") or req.get("confirm")) and not self._local():
+                        return
+                    self._json({"reads": reader.reads.set(req.get("knock"), req.get("transmission"), req.get("confirm"))})
+                elif url.path == "/knock/reset":
                     state.reset_knock()
                     self._json({"ok": True})
                 elif url.path == "/replay":

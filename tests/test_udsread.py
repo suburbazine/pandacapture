@@ -304,3 +304,142 @@ def test_the_poll_shares_the_bus_and_holds_for_another_tester(monkeypatch, tmp_p
     for _, f in link.log:
         assert (f.addr == 0x7DF and f.data[1] == 0x01) or f.data[:4] in (b"\x03\x22\xe0\x19", b"\x03\x22\x01\xa0") \
             or f.data[:3] == b"\x30\x00\x00"
+
+
+# ---------------------------------------------------------------- the dashboard's Read switches
+
+class FakePanda:
+    def __init__(self):
+        self.errors, self.bus_off = 0, False
+
+    def can_health(self, bus):
+        return {"total_errors": self.errors, "bus_off": self.bus_off}
+
+
+class FakeSource:
+    """A panda with PandaCapture firmware: arm/disarm, and a car answering what's sent."""
+
+    def __init__(self, can_transmit=True):
+        import time as _t
+        self.time = _t
+        self.can_transmit = can_transmit
+        self.panda = FakePanda()
+        self.armed = False
+        self.arms = 0
+        self.sent = []
+        self.car = Car(delay=0.005)
+
+    def arm(self):
+        self.armed, self.arms = True, self.arms + 1
+
+    def disarm(self):
+        self.armed = False
+
+    def beat(self):
+        pass
+
+    def send(self, frames):
+        assert self.armed, "nothing goes out unarmed"
+        self.sent += frames
+        self.car.t = self.time.monotonic()
+        self.car.send(frames)
+
+    def read(self):
+        now = self.time.monotonic()
+        due = [f for t, f in sorted(self.car.queue, key=lambda x: x[0]) if t <= now]
+        self.car.queue = [x for x in self.car.queue if x[0] > now]
+        return due
+
+
+class Stand:
+    """What the reader hands ActiveReads: the state (bus counts) and a note() into the recording."""
+    def __init__(self):
+        import threading
+        self.lock = threading.Lock()
+        self.bus_frames = {0: 1000, 1: 10}
+        self.notes = []
+
+
+def steps(reads, source, recorder, stand, seconds):
+    import time
+    end = time.monotonic() + seconds
+    while time.monotonic() < end:
+        reads.step(source, source.read(), recorder, stand.notes.append, stand)
+        time.sleep(0.001)
+
+
+def test_the_read_switches(tmp_path):
+    from pandacapture.dashboard import READS_FILE, ActiveReads
+    reads, source, stand, rec = ActiveReads(tmp_path), FakeSource(), Stand(), object()
+    assert reads.info() == {"knock": False, "transmission": False, "confirmed": False, "running": False,
+                            "status": "", "problem": None}
+    steps(reads, source, rec, stand, 0.05)
+    assert not source.arms                                     # off by default: nothing sent
+    reads.set(knock=True, transmission=True)
+    steps(reads, source, rec, stand, 0.05)
+    assert not source.arms and reads.status.startswith("waiting for TRANSMIT")
+    with pytest.raises(ValueError):
+        reads.set(confirm="yes")
+    reads.set(confirm="transmit")
+    assert ActiveReads(tmp_path).want == {"knock": True, "transmission": True}      # kept across launches
+    assert not ActiveReads(tmp_path).confirmed                                      # TRANSMIT isn't
+    assert (tmp_path / READS_FILE).is_file()
+    # Not recording: waits
+    steps(reads, source, None, stand, 0.05)
+    assert not source.arms and reads.status == "waiting for a recording"
+    # Recording: armed, both read, the note says so
+    steps(reads, source, rec, stand, 1.2)
+    assert source.arms == 1 and source.armed and reads.info()["running"]
+    assert any(n.startswith("active polling, not silent: transmit armed") for n in stand.notes)
+    assert {f.addr for f in source.sent} >= {0x7E0, 0x7E1} and "a second" in reads.status
+    assert all(f.data[:4] in (b"\x03\x22\xe0\x19", b"\x03\x22\x01\xa0") or f.data[:3] == b"\x30\x00\x00"
+               for f in source.sent)
+    # The recording ends: disarmed, listening again
+    steps(reads, source, None, stand, 0.05)
+    assert not source.armed and any(n.startswith("reads stopped (waiting for a recording)") for n in stand.notes)
+    # Bus trouble stops it for the rest of that recording; the next recording tries again
+    steps(reads, source, rec, stand, 0.2)
+    assert source.armed
+    source.panda.errors += 500
+    steps(reads, source, rec, stand, 1.2)
+    assert not source.armed and reads.status == "stopped: bus 0 counted 500 errors in a second"
+    assert reads.info()["problem"] and source.arms == 2
+    steps(reads, source, object(), stand, 0.2)
+    assert source.armed and source.arms == 3
+    reads.set(knock=False, transmission=False)                  # switched off: disarmed at once
+    steps(reads, source, rec, stand, 0.05)
+    assert not source.armed
+
+
+def test_the_read_switches_need_pandacapture_firmware(tmp_path):
+    from pandacapture.dashboard import ActiveReads
+    reads, source, stand = ActiveReads(tmp_path), FakeSource(can_transmit=False), Stand()
+    reads.set(knock=True, confirm="TRANSMIT")
+    steps(reads, source, object(), stand, 0.1)
+    assert not source.arms and reads.status.startswith("listening only: sending needs PandaCapture firmware")
+    class Listening:                                            # the simulator, a replay: nothing to send through
+        def read(self):
+            return []
+    steps(reads, Listening(), object(), stand, 0.05)
+    assert reads.status == "listening only: no panda to send through"
+
+
+def test_the_read_switches_over_http(tmp_path):
+    import json
+    import urllib.request
+    from pandacapture.dashboard import Dashboard
+    from pandacapture.sources import SimulatedSource
+    dash = Dashboard(SimulatedSource, load_map("kia-stinger-33t-pcan"), port=0, record_dir=tmp_path)
+    dash.start()
+    try:
+        def post(body):
+            req = urllib.request.Request(dash.url + "reads", method="POST", headers={"Content-Type": "application/json"},
+                                         data=json.dumps(body).encode())
+            return json.loads(urllib.request.urlopen(req, timeout=10).read())
+        assert post({"knock": True, "confirm": "TRANSMIT"})["reads"]["confirmed"]
+        state = json.loads(urllib.request.urlopen(dash.url + "state", timeout=10).read())
+        assert state["reads"]["knock"] and not state["reads"]["running"]
+        page = urllib.request.urlopen(dash.url, timeout=10).read().decode()
+        assert 'id="readKnock"' in page and 'id="readTcu"' in page and "Type TRANSMIT" in page
+    finally:
+        dash.stop()

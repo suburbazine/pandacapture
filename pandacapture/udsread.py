@@ -28,6 +28,7 @@ KNOCK_DID, KNOCK_REQUEST = 0xE019, 0x7E0
 TCU_DID, TCU_REQUEST = 0x01A0, 0x7E1
 CYLINDERS = 6
 DEG_PER_COUNT = 0.75
+MAX_BUS_ERRORS = 50   # a bus counting more errors than this in a second ends all sending at once
 
 KNOCK_COLUMNS = ([f"knock_cyl{i}" for i in range(1, 7)] + [f"knock_mem{i}" for i in range(1, 7)]
                  + [f"knock_noise{i}" for i in range(1, 7)] + ["spark_deg"])
@@ -342,3 +343,29 @@ class UdsPoller:
             self.asking, self.sent_at, self.deadline = x, t, t + self.TIMEOUT
             x.next_at = t + x.period
             return
+
+
+class BusWatch:
+    """Ends all sending at once when a bus goes bus-off, or counts over MAX_BUS_ERRORS errors in a second
+    (the panda's CAN health): a request of ours may be what's disturbing it."""
+
+    def __init__(self, panda, buses):
+        self.panda, self.buses = panda, list(buses)
+        self.last = {b: panda.can_health(b)["total_errors"] for b in self.buses}
+
+    def check(self):
+        """None while the buses are healthy, else why sending stops. Call about once a second."""
+        for b in self.buses:
+            h = self.panda.can_health(b)
+            if h["bus_off"]:
+                return f"bus {b} went bus-off"
+            errors, self.last[b] = h["total_errors"] - self.last[b], h["total_errors"]
+            if errors > MAX_BUS_ERRORS:
+                return f"bus {b} counted {errors} errors in a second"
+        return None
+
+
+def uds_text(targets) -> str:
+    """What the reads send, for warnings and log notes."""
+    what = {KNOCK_DID: "UDS 03 22 E0 19 (per-cylinder knock) to 0x7E0", TCU_DID: "UDS 03 22 01 A0 (transmission) to 0x7E1"}
+    return " and ".join(what[g.did] for g in targets)

@@ -19,11 +19,10 @@ from .keys import KeyReader
 from .obd import MAX_SCAN_RPM, PIDS, Found, ScanBlocked, Scanner, describe, pid_name
 from .policy import VehicleState
 from .transmit import ArmedPanda, TransmitRefused, TxLog, acknowledge
-from .udsread import UdsPoller, knock_target, transmission_target
+from .udsread import BusWatch, UdsPoller, knock_target, transmission_target, uds_text
 from .usbdev import UsbError
 
 LISTEN_FIRST = 1.0   # s of silent listening for the broadcast engine speed before anything is sent
-MAX_BUS_ERRORS = 50  # a bus counting more errors than this in a second ends all sending at once
 
 OBD_WARNING = """\
 This sends standard OBD-II requests (mode 01, "show current data") onto the vehicle's bus, the same
@@ -100,31 +99,6 @@ def vehicle_map(args):
 
 def uds_targets(args) -> list:
     return ([knock_target()] if args.knock else []) + ([transmission_target()] if args.transmission else [])
-
-
-def uds_text(targets) -> str:
-    what = {0xE019: "UDS 03 22 E0 19 (per-cylinder knock) to 0x7E0", 0x01A0: "UDS 03 22 01 A0 (transmission) to 0x7E1"}
-    return " and ".join(what[g.did] for g in targets)
-
-
-class BusWatch:
-    """Ends all sending at once when a bus goes bus-off, or counts over MAX_BUS_ERRORS errors in a second
-    (the panda's CAN health): a request of ours may be what's disturbing it."""
-
-    def __init__(self, panda, buses):
-        self.panda, self.buses = panda, list(buses)
-        self.last = {b: panda.can_health(b)["total_errors"] for b in self.buses}
-
-    def check(self):
-        """None while the buses are healthy, else why sending stops. Call about once a second."""
-        for b in self.buses:
-            h = self.panda.can_health(b)
-            if h["bus_off"]:
-                return f"bus {b} went bus-off"
-            errors, self.last[b] = h["total_errors"] - self.last[b], h["total_errors"]
-            if errors > MAX_BUS_ERRORS:
-                return f"bus {b} counted {errors} errors in a second"
-        return None
 
 
 def planned_poll(args):
