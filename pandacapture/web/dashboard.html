@@ -115,6 +115,8 @@
   @keyframes blink { to { visibility: hidden; } }
   .ctl.select { gap: 6px; padding-right: 6px; flex: 0 1 auto; }
   .seg .short { display: none; }
+  .fwdot { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); }
+  .fwdot.install { background: var(--accent); }
   .ctl.select span { color: var(--muted); font-size: 12px; }
   .ctl select { min-width: 0; max-width: 220px; border: 0; background: transparent; color: var(--text); font: inherit; text-overflow: ellipsis; }
   .ctl select option { background: var(--panel); color: var(--text); }
@@ -357,6 +359,9 @@
       <a class="ctl" id="runsLink" href="/runs.html" target="pandacapture-runs"
          title="Runs: performance runs from your captures, timed and coached (opens its own window)">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 18l5-6 4 3 7-9M15 6h5v5"/></svg><span class="txt">Runs</span></a>
+      <a class="ctl" id="firmwareLink" href="/firmware.html" target="pandacapture-firmware"
+         title="Firmware: flash, update and back up the panda (opens its own window)">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7h10v10H7zM10 3v4M14 3v4M10 17v4M14 17v4M3 10h4M3 14h4M17 10h4M17 14h4"/></svg><span class="txt">Firmware</span><span class="fwdot" id="fwDot" hidden></span></a>
       <a class="ctl" id="devtoolsLink" href="/devtools.html" target="pandacapture-devtools"
          title="Developer Tools: a workbench for tools built onto the dashboard (opens its own window)">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6l-4 6 4 6M16 6l4 6-4 6M13 4l-2 16"/></svg><span class="txt">Developer Tools</span></a>
@@ -875,8 +880,18 @@
     if (calm !== attention.calm) { attention.calm = calm; attention.sig = null; dirty = true; }
   }
 
+  // ---- the panda's firmware: a dot on the Firmware link when it needs PandaCapture's, or an update ----
+  function firmwareNote(fw) {
+    const dot = $("fwDot"), link = $("firmwareLink");
+    const show = !!fw && (fw.state === "install" || fw.state === "update");
+    dot.hidden = !show;
+    if (show) dot.className = "fwdot " + fw.state;
+    link.title = show ? `Firmware: ${fw.why}. Open to flash it.` : "Firmware: flash, update and back up the panda (opens its own window)";
+  }
+
   // ---- incoming data ----
   function status(st) {
+    firmwareNote(st.firmware);
     quietHint(st);
     renderReads(st.reads);
     applyReplay(st.replay, st.epoch);

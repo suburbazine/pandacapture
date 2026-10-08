@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>PandaCapture Firmware</title>
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-512.png">
+<style>
+  /* The same tokens as the gauge, captures and runs pages */
+  :root {
+    --bg: #0b0e13; --panel: #141922; --panel-2: #1b2230; --line: #2a3344;
+    --text: #e8edf5; --muted: #8b97ab; --faint: #556074; --accent: #4fb3ff;
+    --warn: #ffb020; --alert: #ff4d4f; --green: #35d07f;
+    --radius: 12px; --pad: 16px; --ctl: 40px;
+    color-scheme: dark;
+  }
+  :root[data-theme="light"] {
+    --bg: #f3f5f9; --panel: #ffffff; --panel-2: #e9edf3; --line: #d8dee8;
+    --text: #141a24; --muted: #5c6779; --faint: #9aa3b2; --accent: #0b74d1;
+    --warn: #c77700; --alert: #d92d2f; --green: #148a4b;
+    color-scheme: light;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { margin: 0; }
+  body { background: var(--bg); color: var(--text); font: 15px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+         -webkit-font-smoothing: antialiased; overflow-x: hidden; }
+  header { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+           padding: 10px var(--pad); background: color-mix(in srgb, var(--bg) 90%, transparent);
+           backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
+  .title { display: flex; flex-direction: column; min-width: 0; flex: 1 1 200px; }
+  .title strong { font-size: 16px; }
+  .title span { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ctl { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: var(--ctl);
+         padding: 0 14px; border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 10px;
+         font: inherit; font-size: 14px; white-space: nowrap; cursor: pointer; text-decoration: none; }
+  .ctl:hover:not(:disabled) { border-color: var(--accent); }
+  .ctl:disabled { opacity: .45; cursor: default; }
+  .ctl.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .ctl svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .ctl.small { min-height: 32px; padding: 0 10px; font-size: 12px; }
+  main { max-width: 1000px; margin: 0 auto; padding: 16px var(--pad) 40px; display: grid; gap: 16px; }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; min-width: 0; }
+  section > h2, section > .row > h2 { margin: 0 0 4px; font-size: 16px; }
+  .hint { color: var(--muted); font-size: 13px; margin: 0 0 12px; }
+  .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .grow { flex: 1 1 auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; }
+  tbody tr.pick { cursor: pointer; }
+  tbody tr.pick:hover { background: var(--panel-2); }
+  tbody tr.sel { background: color-mix(in srgb, var(--accent) 14%, var(--panel)); }
+  .scroll { overflow-x: auto; }
+  .empty { color: var(--muted); padding: 12px 0; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; }
+  .tag { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px; background: var(--panel-2); color: var(--muted); white-space: nowrap; }
+  .tag.current { color: var(--green); }
+  .tag.update { color: var(--warn); }
+  .tag.install { color: var(--accent); }
+  .tag.unsupported, .tag.unknown { color: var(--alert); }
+  .plan { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; background: var(--panel-2); }
+  .plan ol { margin: 6px 0 0; padding-left: 20px; }
+  .plan li { margin: 2px 0; }
+  .opt { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; margin-top: 10px; }
+  .opt input { margin-top: 3px; }
+  .confirm { margin-top: 14px; }
+  .confirm input[type=text] { min-height: var(--ctl); width: 140px; background: var(--panel); color: var(--text);
+    border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; font: inherit; letter-spacing: .05em; }
+  pre.log { background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin: 10px 0 0;
+    max-height: 320px; overflow: auto; white-space: pre-wrap; font: 12px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace; }
+  .result { margin-top: 10px; font-weight: 600; }
+  .result.ok { color: var(--green); }
+  .result.bad { color: var(--alert); font-weight: 500; }
+  .warnbox { border-left: 3px solid var(--warn); padding: 6px 10px; margin: 0 0 12px; color: var(--text); font-size: 13px;
+             background: color-mix(in srgb, var(--warn) 10%, var(--panel)); border-radius: 0 8px 8px 0; }
+  .banner { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 4; max-width: calc(100vw - 32px);
+            padding: 10px 14px; border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); display: none; }
+  .banner.show { display: block; }
+  @media (max-width: 720px) { .ctl .txt { display: none; } }
+</style>
+</head>
+<body>
+<header>
+  <div class="title"><strong>Firmware</strong><span id="sub">Put PandaCapture's firmware on your panda, keep it current, back it up</span></div>
+  <a class="ctl" href="/" target="pandacapture-gauges" title="The gauges (their own window)">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 16a8 8 0 1 1 16 0M12 16l4-5"/></svg><span class="txt">Gauges</span></a>
+  <a class="ctl" href="/captures.html" target="pandacapture-captures" title="Captures and Claude">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v4H4zM4 11h16v8H4zM8 15h8"/></svg><span class="txt">Captures</span></a>
+  <button class="ctl" id="theme" type="button" title="Switch light/dark" aria-label="Switch light/dark theme">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9c0-.5 0-1-.1-1.4A6 6 0 0 1 13.4 3.1C13 3 12.5 3 12 3z"/></svg></button>
+</header>
+
+<main>
+  <section>
+    <div class="row"><h2 class="grow">Your panda</h2>
+      <button class="ctl small" id="refresh" type="button">Look again</button></div>
+    <p class="hint" id="carried">Connected by USB. PandaCapture records with any firmware; sending requests (OBD, the Read switches,
+      diagnostics) needs its own.</p>
+    <div class="scroll"><table><thead><tr><th>Panda</th><th>Hardware</th><th>Runs</th><th>Firmware</th></tr></thead>
+      <tbody id="devList"><tr><td colspan="4" class="empty">Looking…</td></tr></tbody></table></div>
+  </section>
+
+  <section id="flashBox">
+    <h2>Flash</h2>
+    <p class="hint">PandaCapture's firmware is the panda project's own, with a gate that lets frames out only when PandaCapture
+      arms it on purpose: it listens silently otherwise.</p>
+    <div class="warnbox" id="localOnly" hidden>Flashing works from the computer running PandaCapture only: open this page there.</div>
+    <div class="warnbox" id="recWarn" hidden>A recording is running: stop it on the gauges first.</div>
+    <div class="plan" id="plan"><span class="empty">Pick a panda above.</span></div>
+    <label class="opt" id="optRecover" hidden><input type="checkbox" id="recover">
+      <span>Reinstall the bootstub through the STM32 bootloader (DFU), as a first install does. Only if an update won't start.</span></label>
+    <label class="opt" id="optSkip" hidden><input type="checkbox" id="skipBackup">
+      <span>Skip the backup of the whole flash. Only if the chip won't read back (read protection); without one, its old firmware can't be put back.</span></label>
+    <div class="row confirm">
+      <label for="flashWord" class="hint" style="margin:0">Type <b>FLASH</b> to go ahead</label>
+      <input type="text" id="flashWord" autocomplete="off" spellcheck="false" aria-label="Type FLASH">
+      <button class="ctl primary" id="flashBtn" type="button" disabled>Flash</button>
+      <button class="ctl" id="backupBtn" type="button" disabled title="Save the whole flash, writing nothing">Back up only</button>
+    </div>
+  </section>
+
+  <section id="jobBox" hidden>
+    <div class="row"><h2 class="grow" id="jobTitle">Working</h2></div>
+    <p class="hint">Keep the panda plugged in and powered until this says it's done. The gauges pause meanwhile.</p>
+    <pre class="log" id="jobLog"></pre>
+    <div class="result" id="jobResult"></div>
+  </section>
+
+  <section>
+    <h2>Backups</h2>
+    <p class="hint" id="backupFolder">Before the first install replaces a panda's bootstub, its whole flash is saved here: bootstub,
+      firmware and settings, byte for byte, so a clone maker's or fork's firmware can be put back exactly.</p>
+    <div class="scroll"><table><thead><tr><th>Backup</th><th>Panda</th><th>It ran</th><th>Made</th></tr></thead>
+      <tbody id="bkList"><tr><td colspan="4" class="empty">None yet.</td></tr></tbody></table></div>
+    <div class="row confirm">
+      <label for="restoreWord" class="hint" style="margin:0">Type <b>RESTORE</b> to put the picked backup back</label>
+      <input type="text" id="restoreWord" autocomplete="off" spellcheck="false" aria-label="Type RESTORE">
+      <button class="ctl" id="restoreBtn" type="button" disabled>Restore</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>If it stops</h2>
+    <ul class="hint" style="margin:0;padding-left:18px">
+      <li><b>On Windows, the first install needs a driver</b> for the STM32 bootloader (USB 0483:DF11): install WinUSB for it with Zadig
+        (see "Windows driver" in the README), then flash again. Nothing is erased before that step.</li>
+      <li><b>Unplugged or interrupted?</b> Plug it back in and flash again: a panda left in its bootstub or the bootloader carries on
+        from there.</li>
+      <li><b>Other firmware back:</b> restore its backup from the list above.</li>
+    </ul>
+  </section>
+</main>
+<div class="banner" id="banner"></div>
+
+<script>
+(() => {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+  const root = document.documentElement;
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+  const post = (path, body) => fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) })
+    .then(async (r) => { const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || r.statusText); return j; });
+  const flash = (text) => { const b = $("banner"); b.textContent = text; b.classList.add("show"); clearTimeout(flash.t); flash.t = setTimeout(() => b.classList.remove("show"), 5000); };
+  const remember = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
+  const recall = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+  if (recall("pc-theme")) root.dataset.theme = recall("pc-theme");
+  $("theme").onclick = () => { root.dataset.theme = root.dataset.theme === "light" ? "dark" : "light"; remember("pc-theme", root.dataset.theme); };
+
+  const STATE = { current: "up to date", update: "update available", install: "needs PandaCapture firmware",
+                  unsupported: "can't flash here", unknown: "unknown" };
+  let info = null, pick = null, backup = null, polling = null;
+
+  function render(j) {
+    info = j;
+    const running = j.job?.state === "running";
+    $("carried").textContent = "This program carries " + (Object.entries(j.bundled).map(([m, v]) => `${v} for the ${m}`).join(" and ") || "no firmware") +
+      ". PandaCapture records with any firmware; sending requests (OBD, the Read switches, diagnostics) needs its own.";
+    if (!running) {
+      if (!j.devices.some((d) => d.serial === pick)) pick = (j.devices.find((d) => d.state !== "unsupported") || j.devices[0])?.serial ?? null;
+      $("devList").innerHTML = j.devices.length ? j.devices.map((d) => `
+        <tr class="pick${d.serial === pick ? " sel" : ""}" data-serial="${esc(d.serial)}">
+          <td><label><input type="radio" name="dev"${d.serial === pick ? " checked" : ""}> <span class="mono">${esc(d.serial)}</span></label>
+            ${d.kind === "bootstub" ? ' <span class="tag">bootstub</span>' : d.kind === "dfu" ? ' <span class="tag">STM32 bootloader</span>' : ""}
+            ${d.reading ? ' <span class="tag">the gauges are reading it</span>' : ""}</td>
+          <td>${esc(d.hardware || (d.kind === "dfu" ? "in DFU" : "–"))}</td>
+          <td>${esc(d.firmware || "–")}</td>
+          <td><span class="tag ${esc(d.state)}">${esc(STATE[d.state] || d.state)}</span><div class="hint" style="margin:4px 0 0">${esc(d.why || "")}</div></td></tr>`).join("")
+        : `<tr><td colspan="4" class="empty">No panda found. Connect it by USB (and see the README's driver notes), then look again.</td></tr>`;
+      $("devList").querySelectorAll("tr.pick").forEach((tr) => tr.onclick = () => { pick = tr.dataset.serial; render(info); });
+    }
+    if (!j.backups.some((b) => b.name === backup)) backup = null;
+    $("backupFolder").textContent = `Before the first install replaces a panda's bootstub, its whole flash is saved in ${j.backup_folder}: ` +
+      "bootstub, firmware and settings, byte for byte, so a clone maker's or fork's firmware can be put back exactly.";
+    $("bkList").innerHTML = j.backups.length ? j.backups.map((b) => `
+      <tr class="pick${b.name === backup ? " sel" : ""}" data-name="${esc(b.name)}">
+        <td><label><input type="radio" name="bk"${b.name === backup ? " checked" : ""}> <span class="mono">${esc(b.name)}</span></label></td>
+        <td class="mono">${esc(b.serial || "?")} <span class="tag">${esc(b.mcu || "")}</span></td><td>${esc(b.firmware || "?")}</td>
+        <td>${esc(b.created ? new Date(b.created).toLocaleString() : "")}</td></tr>`).join("")
+      : `<tr><td colspan="4" class="empty">None yet.</td></tr>`;
+    $("bkList").querySelectorAll("tr.pick").forEach((tr) => tr.onclick = () => { backup = tr.dataset.name; render(info); });
+    plan();
+    job(j.job);
+  }
+
+  // What flashing the picked panda will do, in steps
+  function plan() {
+    const j = info, d = j?.devices.find((x) => x.serial === pick);
+    const running = j?.job?.state === "running";
+    $("localOnly").hidden = !j || j.local;
+    $("recWarn").hidden = !j?.recording;
+    const can = !!d && d.state !== "unsupported" && d.state !== "unknown" && j.local && !j.recording && !running;
+    const dfu = d && (d.kind === "dfu" || d.state === "install" || $("recover").checked);
+    $("optRecover").hidden = !d || d.state === "install" || d.kind === "dfu";
+    $("optSkip").hidden = !dfu;
+    let html;
+    if (!d) html = `<span class="empty">${j?.devices.length ? "Pick a panda above." : "No panda connected."}</span>`;
+    else if (!can && (d.state === "unsupported" || d.state === "unknown")) html = `<b>Can't flash this one here:</b> ${esc(d.why)}`;
+    else {
+      const to = d.bundled || Object.values(j.bundled)[0] || "PandaCapture's firmware";
+      const steps = dfu ? [
+        "Restart the panda into its bootstub, then the STM32's own bootloader (DFU).",
+        $("skipBackup").checked ? "<b>No backup</b> (you chose to skip it)." : `Save its whole flash to the backups folder (about a minute).`,
+        "Write PandaCapture's bootstub, which starts firmware signed with the panda project's development key.",
+        `Write ${esc(to)} through that bootstub, restart, and check the exact build is running.`,
+      ] : [
+        "Restart the panda into PandaCapture's bootstub.",
+        `Write ${esc(to)}, restart, and check the exact build is running.`,
+      ];
+      const lead = d.state === "current" ? `Already runs ${esc(d.firmware)}: flashing reinstalls it.` :
+        d.state === "update" ? `Update from ${esc(d.firmware)} to ${esc(to)}.` :
+        d.kind === "dfu" ? "Carry on from the STM32 bootloader." : `First install: from ${esc(d.firmware)} to ${esc(to)}.`;
+      html = `<b>${lead}</b><ol>${steps.map((s) => `<li>${s}</li>`).join("")}</ol>`;
+    }
+    $("plan").innerHTML = html;
+    $("flashBtn").disabled = !can || $("flashWord").value.trim().toUpperCase() !== "FLASH";
+    $("backupBtn").disabled = !can || d.kind === "dfu";
+    $("restoreBtn").disabled = !backup || !j.local || j.recording || running || $("restoreWord").value.trim().toUpperCase() !== "RESTORE";
+  }
+  for (const id of ["recover", "skipBackup"]) $(id).onchange = plan;
+  for (const id of ["flashWord", "restoreWord"]) $(id).oninput = plan;
+
+  // The running (or last) job's log
+  let shownLines = -1;
+  function job(s) {
+    const box = $("jobBox");
+    if (!s || s.state === "idle") { box.hidden = true; return; }
+    box.hidden = false;
+    $("jobTitle").textContent = { flash: "Flashing", backup: "Backing up", restore: "Restoring" }[s.action] +
+      (s.state === "running" ? "…" : s.state === "done" ? ": done" : ": stopped");
+    if (s.log.length !== shownLines) {
+      shownLines = s.log.length;
+      $("jobLog").textContent = s.log.join("\n");
+      $("jobLog").scrollTop = $("jobLog").scrollHeight;
+    }
+    const r = $("jobResult");
+    r.className = "result" + (s.state === "done" ? " ok" : s.state === "error" ? " bad" : "");
+    r.textContent = s.state === "done" ? s.result : s.state === "error" ? s.error : "";
+    clearTimeout(polling);
+    if (s.state === "running") polling = setTimeout(load, 700);
+  }
+
+  function load() { return fetch("/firmware").then((r) => r.json()).then(render).catch((e) => flash(e.message)); }
+  const start = (body) => post("/firmware", body).then((j) => { $("flashWord").value = ""; $("restoreWord").value = ""; job(j.job); load(); })
+    .catch((e) => flash(e.message));
+  $("flashBtn").onclick = () => start({ action: "flash", serial: pick, recover: $("recover").checked, skip_backup: $("skipBackup").checked,
+                                         confirm: $("flashWord").value });
+  $("backupBtn").onclick = () => start({ action: "backup", serial: pick });
+  $("restoreBtn").onclick = () => start({ action: "restore", serial: null, backup, confirm: $("restoreWord").value });
+  $("refresh").onclick = load;
+  load();
+})();
+</script>
+</body>
+</html>

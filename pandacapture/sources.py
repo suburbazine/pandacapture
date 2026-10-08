@@ -98,7 +98,7 @@ class PandaSource:
 
     def _configure(self, log):
         pd = self.panda
-        hw = pd.hw_type()
+        hw = self.hw = pd.hw_type()
         version = self.version = pd.version()
         hw_name = p.HW_NAMES.get(hw, f"panda type 0x{hw:02X}")
         self.serial = pd.serial

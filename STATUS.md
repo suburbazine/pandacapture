@@ -1,6 +1,10 @@
 # Status
 
 ## Verified
+- Firmware page (2026-10-08): flash, back up and restore from the dashboard, through the same flasher.py steps
+  as the commands; tested against the simulated panda (first install through DFU with its backup, update through
+  the bootstub, backup, restore, a refused comma-device panda), and the dashboard letting go of the panda and
+  reopening it. Not yet run against a real panda from the page.
 - Per-cylinder knock (E019) and transmission data (01A0), 2026-10-08: the same decodes as PandaCapture Android;
   on its 2026-10-04 15:34 capture, 437 knock and 440 transmission answers (worst retard 6.75 deg). The reads
   (pandacapture obd --knock --transmission) are tested against a simulated ECU and transmission only: not yet

@@ -148,6 +148,16 @@ version this program was tested against, and is needed for transmitting.
 pandacapture flash
 ```
 
+Or open **Firmware** on the dashboard.
+- **What it shows:** each panda connected, what it runs, and whether that's this program's
+  firmware, an update, or a first install. A dot on the Firmware button flags a panda that needs
+  one.
+- **Flash:** the page lays out the steps for that panda, and you type `FLASH` to go ahead.
+- **Back up only:** saves the whole flash without writing anything.
+- **Restore:** puts a backup back after you type `RESTORE`.
+- **While it runs:** the gauges let go of the panda and pick it up again afterwards. It works only
+  on the computer running PandaCapture, and not while a recording is running.
+
 - **The first time**, comma's bootstub only starts comma-signed firmware. PandaCapture puts the
   panda into the STM32's ROM bootloader (DFU), writes its own bootstub, then the firmware.
 - **Later updates** only rewrite the firmware.

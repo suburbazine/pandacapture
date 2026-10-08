@@ -113,6 +113,7 @@ class LiveState:
         self.knock_peak = [0.0] * CYLINDERS   # since the dashboard started, a replay began or went back, or a reset
         self.tcu_heard = False   # 01A0 answers have come: its signals show (pages rebuild once to add them)
         self.reads = None      # the Read switches (ActiveReads), set by the Reader
+        self.firmware = None   # the panda being read: what it runs against the firmware this program carries
         self._load(address_map)
 
     def _load(self, address_map):
@@ -257,7 +258,7 @@ class LiveState:
                     "markers": self.markers, "map_version": self.map_version, "map_name": self.map.name,
                     "epoch": self.epoch, "replay": dict(self.replay, epoch=self.epoch) if self.replay else None,
                     "knock": self._knock_json(), "reads": self.reads.info() if self.reads else None,
-                    "bench_hint": BENCH_HINT}
+                    "bench_hint": BENCH_HINT, "firmware": self.firmware}
 
     def _knock_json(self):
         if self.knock is None:
@@ -348,6 +349,9 @@ class Reader(threading.Thread):
         self.saved = []   # captures recorded this session
         self.reads = ActiveReads(self.record_dir)
         state.reads = self.reads
+        self.hold_why = None              # the Firmware page has the panda: don't read it until released
+        self.holding = threading.Event()  # set once the source is closed for it
+        self.held = None                  # the panda being read: {serial, hw, version}, for the Firmware page
         self.processor = threading.Thread(target=self._process, daemon=True, name="pandacapture-decoder")
         if record:
             self.start_recording()
@@ -400,10 +404,34 @@ class Reader(threading.Thread):
 
     # ---- reading the source (this thread) ----
 
+    # ---- the Firmware page takes the panda (called from its job's thread) ----
+
+    def hold(self, why, timeout=10.0):
+        """Stops reading the source and closes it, so the panda can be flashed; returns once it's closed."""
+        self.holding.clear()
+        self.hold_why = why
+        if not self.holding.wait(timeout):
+            raise SourceError("the dashboard didn't let go of the panda")
+
+    def release(self):
+        self.hold_why = None
+
     def run(self):
         self.processor.start()
         source, lost_at = None, None
         while not self.stop_event.is_set():
+            if self.hold_why is not None:
+                if source is not None:
+                    self.reads.stop(source, self._note)
+                    self._note(f"source closed: {self.hold_why} ({time.time():.6f})")
+                    source.close()
+                    source, self.held = None, None
+                    with self.state.lock:
+                        self.state.firmware = None
+                self._status("paused", self.hold_why)
+                self.holding.set()
+                self.stop_event.wait(0.1)
+                continue
             if source is None:
                 try:
                     source = self.open_source()
@@ -420,6 +448,7 @@ class Reader(threading.Thread):
                     lost_at = None
                 self._note(f"source: {source.description}" + (f". {why}" if why else ""))
                 self._status("idle" if getattr(source, "idle", False) else "live", "")
+                self._firmware(source)
             try:
                 frames = source.read()
             except SourceError as e:
@@ -462,6 +491,19 @@ class Reader(threading.Thread):
                 with self.rec_lock:
                     if self.recorder:
                         self.recorder.note(item[1])
+
+    def _firmware(self, source):
+        """What the panda being read runs, against the firmware this program carries (the gauges' notice)."""
+        hw, version = getattr(source, "hw", None), getattr(source, "version", None)
+        if hw is None or version is None:
+            self.held, fw = None, None
+        else:
+            from .flashjob import bundled, describe
+            self.held = {"serial": source.serial, "hw": hw, "version": version}
+            d = describe(source.serial, "panda", hw, version, bundled())
+            fw = {k: d.get(k) for k in ("state", "why", "firmware", "bundled")}
+        with self.state.lock:
+            self.state.firmware = fw
 
     def _status(self, status, error):
         with self.state.lock:
@@ -755,6 +797,7 @@ def make_handler(dash):
     page = (web_dir() / "dashboard.html").read_bytes()
     captures_page = (web_dir() / "captures.html").read_bytes()
     runs_page = (web_dir() / "runs.html").read_bytes()
+    firmware_page = (web_dir() / "firmware.html").read_bytes()
     devtools_page = (web_dir() / "devtools.html").read_bytes()
     icons = {"/icon.svg": ((web_dir() / "icon.svg").read_bytes(), "image/svg+xml"),
              "/units.js": ((web_dir() / "units.js").read_bytes(), "text/javascript; charset=utf-8"),
@@ -796,6 +839,19 @@ def make_handler(dash):
                 self._send(page, "text/html; charset=utf-8")
             elif path == "/captures.html":
                 self._send(captures_page, "text/html; charset=utf-8")
+            elif path == "/firmware.html":
+                self._send(firmware_page, "text/html; charset=utf-8")
+            elif path == "/firmware":
+                from .flashjob import backups, bundled, devices
+                job = dash.firmware.snapshot()
+                try:
+                    found = devices(None if job.get("state") == "running" else reader.held)
+                except UsbError as e:
+                    found = [{"serial": "?", "kind": "?", "state": "unknown", "why": f"can't list USB devices: {e}"}]
+                self._json({"devices": found if job.get("state") != "running" else [], "bundled": bundled(),
+                            "backups": backups(dash.firmware.backup_dir), "backup_folder": str(dash.firmware.backup_dir),
+                            "job": job, "recording": reader.recorder is not None,
+                            "local": self.client_address[0] in LOCAL})
             elif path == "/runs.html":
                 self._send(runs_page, "text/html; charset=utf-8")
             elif path == "/devtools.html":
@@ -886,7 +942,15 @@ def make_handler(dash):
             url = urlsplit(self.path)
             try:
                 body = self._body()
-                if url.path == "/reads":
+                if url.path == "/firmware":
+                    # Flash, back up or restore the panda: only on the computer running PandaCapture
+                    if not self._local():
+                        return
+                    req = json.loads(body or b"{}")
+                    dash.firmware.start(req.get("action", ""), req.get("serial") or None, req.get("backup"),
+                                        bool(req.get("recover")), bool(req.get("skip_backup")), req.get("confirm", ""))
+                    self._json({"job": dash.firmware.snapshot()})
+                elif url.path == "/reads":
                     # The Read switches: turning one on (and typing TRANSMIT) only on this computer
                     req = json.loads(body or b"{}")
                     if (req.get("knock") or req.get("transmission") or req.get("confirm")) and not self._local():
@@ -1023,6 +1087,9 @@ class Dashboard:
         self.reader = Reader(open_source, self.state, record_dir=record_dir, record=record, split_mb=split_mb,
                              log=log)
         self.match = MatchJob()
+        from .flashjob import FlashJob
+        self.firmware = FlashJob(self.reader.hold, self.reader.release,
+                                 recording=lambda: self.reader.recorder is not None)
         self.speed_tags = SpeedTags(self.reader.record_dir)
         from .workbench import ClaudeJob, References
         self.references = References()
