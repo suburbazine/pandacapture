@@ -97,18 +97,101 @@ jobs:
             dist/pandacapture-windows-x64.zip
           if-no-files-found: warn
 
-  release:
+  # Windows Authenticode through Azure Artifact Signing, authenticated with FEDERATED CREDENTIALS over OIDC: no
+  # long-lived Azure secret in this repository. The three AZURE_* secrets are identifiers, not credentials; the
+  # token that authorizes signing is minted per run by GitHub and exchanged by azure/login. The same
+  # Xtremission LLC signing account and certificate profile as the owner's other projects.
+  #
+  # The federated credential's subject is pinned to the `release` environment, and the environment only admits
+  # v* tags (its deployment tag policy), so no branch push or pull request can reach the signing identity:
+  # `environment: release` below is load-bearing. There's no required reviewer, by the owner's choice: pushing a
+  # release tag is the decision to sign.
+  sign-windows:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: package
+    runs-on: windows-latest
+    environment: release
+    permissions:
+      id-token: write   # the OIDC token azure/login exchanges
+      contents: read
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: pandacapture-windows-x64.exe
+          path: unsigned
+      # Only the program goes in the folder the action signs: the zip is rebuilt around it afterwards
+      - name: stage the exe
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory sign, signed | Out-Null
+          Copy-Item unsigned/pandacapture-windows-x64.exe sign/
+      - name: azure login (OIDC, no secret)
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: sign
+        uses: Azure/artifact-signing-action@v2
+        with:
+          endpoint: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.AZURE_CERT_PROFILE }}
+          files-folder: ${{ github.workspace }}\sign
+          files-folder-filter: exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+      # The timestamp is what keeps the signature valid after the certificate expires: an untimestamped program
+      # starts failing validation on that day, on machines that ran it the day before
+      - name: verify the signature, its timestamp and the signer
+        shell: pwsh
+        run: |
+          $sig = Get-AuthenticodeSignature sign/pandacapture-windows-x64.exe
+          $sig | Format-List Status, StatusMessage, SignerCertificate, TimeStamperCertificate
+          if ($sig.Status -ne 'Valid') { throw "Authenticode status is $($sig.Status)" }
+          if (-not $sig.TimeStamperCertificate) { throw "signature is not timestamped" }
+          $who = $sig.SignerCertificate.Subject -replace '^CN=([^,]+).*','$1'
+          if ($who -ne 'Xtremission LLC') { throw "signed by '$who', not Xtremission LLC" }
+      # A one-file program carries its contents after the executable; check the signature didn't cut it off
+      - name: the signed program still runs
+        shell: pwsh
+        run: |
+          sign/pandacapture-windows-x64.exe --version
+          sign/pandacapture-windows-x64.exe selftest
+          if ($LASTEXITCODE -ne 0) { throw "selftest failed on the signed program" }
+      - name: the zip, around the signed program
+        shell: pwsh
+        run: |
+          Expand-Archive unsigned/pandacapture-windows-x64.zip bundle
+          Copy-Item sign/pandacapture-windows-x64.exe bundle/pandacapture.exe -Force
+          $s = Get-AuthenticodeSignature bundle/pandacapture.exe
+          if ($s.Status -ne 'Valid') { throw "the zip's pandacapture.exe is $($s.Status)" }
+          Compress-Archive -Path bundle/* -DestinationPath signed/pandacapture-windows-x64.zip
+          Copy-Item sign/pandacapture-windows-x64.exe signed/
+          Get-ChildItem signed | Select-Object Name, Length
+      - uses: actions/upload-artifact@v4
+        with:
+          name: signed-windows-x64
+          path: signed/*
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [package, sign-windows]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
+      # The Linux program, and the Windows program and zip as signed (never the unsigned build)
       - uses: actions/download-artifact@v4
         with:
-          pattern: pandacapture-*
+          name: pandacapture-linux-x64
           path: out
-          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: signed-windows-x64
+          path: out
       - uses: actions/download-artifact@v4
         with:
           name: firmware
