@@ -11,10 +11,22 @@ them live as gauges, numbers and status lights.
   controller needs (RPM, MAP/boost, intake temperature). PandaCapture's own signal finder, SavvyCAN
   and can-utils all read them.
 - **The live dashboard** decodes the traffic in your browser with an address map for your vehicle.
-  A Kia Stinger 3.3T map is built in.
+  A Kia Stinger 3.3T map is built in, with 115 signals.
+  - It also shows per-cylinder knock and the transmission's slip, speeds and temperature.
+  - It plays captures back on a timeline you can scrub, in US or metric units.
+- **Finding signals:** lines a capture up with a logger's CSV or the car's own OBD answers, ranks the
+  fields, and hands you map entries. Claude can study a capture with your API key, or you can pack it
+  for another agent.
+- **Runs:** times each full-throttle pull and stop in a capture (0-60, 60 ft to 1/4 mile, 60-0) and
+  says where it could be better, against your best run, with a chart for each point.
+- **Diagnostics, reads first:**
+  - OBD PIDs, codes and freeze frames;
+  - each module's own codes and identification;
+  - per-cylinder knock and transmission data.
+
+  Clearing codes and engine-off sessions only go out with the engine off and the car stopped.
 - **The panda's firmware:** PandaCapture flashes its own onto the panda, backing up what was there
-  first.
-- **Transmitting:** it can send frames once you acknowledge a warning.
+  first, from the command line or the dashboard's Firmware page.
 
 - **Listen-only by default.** The panda's CAN controllers sit in bus-monitoring mode: no ACKs, no
   error frames, nothing transmitted. The bus can't tell the panda is there.
@@ -25,20 +37,22 @@ them live as gauges, numbers and status lights.
   CAN only.
 - **Windows and Linux** now; macOS is planned. On Android, see PandaCapture Android. The USB
   protocol is in [docs/protocol.md](docs/protocol.md).
-- **Transmitting is gated.** You type `TRANSMIT` after a warning. Only PandaCapture's firmware can
-  transmit at all, and it stops by itself within about 2 seconds if this program goes away.
+- **Transmitting is gated.** Anything PandaCapture sends is checked against a table of what it may
+  send, and you type `TRANSMIT` after a warning. Only PandaCapture's firmware can transmit at all, and
+  it stops by itself within about 2 seconds if this program goes away.
 - **Other adapters too (Windows):** RP1210 and J2534 tools such as a NEXIQ USB-Link 2, a Tactrix
   OpenPort or a Mongoose can record and drive the dashboard instead of a panda. See
   [Other adapters](#other-adapters-rp1210-and-j2534).
 - **One file, nothing to install.** The program carries the firmware for both panda families, the
-  dashboard and the built-in maps.
+  dashboard and the built-in maps. On Windows it's signed by Xtremission LLC.
 
 > **Status:** tested on a oneclone mini blackpanda (STM32F4):
 > - flash backup, flashing and updating, and the transmit gate
 > - capture from a Kia Stinger's P-CAN: about 2,430 frames/s for 165 s, with no dropouts
-> - the dashboard: replaying real Stinger captures at full rate, with all 88 map signals decoding
+> - the dashboard: replaying real Stinger captures at full rate, with the map's signals decoding
 >
-> Not yet tested: a Red Panda, transmitting on a real bus, and the dashboard live in the car.
+> Not yet tested: a Red Panda, sending anything on a real car's bus (OBD, diagnostics, the knock and
+> transmission reads), and the dashboard live in the car.
 > See [STATUS.md](STATUS.md).
 
 ## Hardware
@@ -313,12 +327,13 @@ On a phone (with `--lan`), the controls fold into two rows:
 <img src="docs/images/dashboard-phone.png" alt="The dashboard on a phone" width="300">
 
 An **address map** says which CAN IDs and bits mean what for your vehicle:
-- **Built in:** `kia-stinger-33t-pcan`, 113 signals from comma's DBC, tracing of the ECU's CAN code, and captures of the car. It covers:
+- **Built in:** `kia-stinger-33t-pcan`, 115 signals from comma's DBC, tracing of the ECU's CAN code, and captures of the car. It covers:
   - engine and boost; torque and spark
   - an idle and lope panel: idle target, 5 s RPM swing and low, alternator duty
   - cam phasers in degrees, with overlap, off-target (red) and tracking-lag (amber) lamps
   - temperatures, battery, fuel pressures, with a low-side fuel pressure lamp
-  - drive mode and gear; wheel speeds and rear slip; the AWD coupling's duty and torque
+  - drive mode, gear, the gear the transmission is shifting to, and its own drive mode
+  - wheel speeds and rear slip; the AWD coupling's duty and torque
   - brake pressure and pedal, accelerations, yaw rate and steering angle
   - traction control's torque requests, and engine and chassis lamps
 
@@ -336,10 +351,18 @@ The bar at the top of the page:
 |---|---|
 | **Record / Stop** | records a capture while you watch, with the elapsed time. It rolls over to a new file every 100 MB, as above |
 | **Marker** | drops a numbered marker into the recording. The `M` key does the same |
-| **Map** | switches address map. Every open page reloads with it |
-| **Captures** | opens the Captures & Claude page in its own window (below); the gauges keep running |
+| **Read knock / Read transmission** | the dashboard asks for them itself while it records (above) |
 | **Normal / High resolution** | Normal updates each value 10 times a second. High resolution streams every sample as fast as the bus sends it, with a 10-second trace and the update rate on each tile |
-| **Theme, Full screen** | light or dark, and the whole screen for the car |
+| **Map** | switches address map. Every open page reloads with it |
+| **Replay** | plays a capture from the captures folder on a timeline ([below](#5-watch-it-live)) |
+| **Captures** | the Captures & Claude page (below) |
+| **Runs** | the Runs page: [runs timed and coached](#runs-timed-and-coached) |
+| **Firmware** | the Firmware page: flash, update, back up and restore the panda ([section 2](#2-flash-the-pandacapture-firmware-once)). A dot on it means the panda needs PandaCapture's firmware or an update |
+| **Modules** | the Modules page: every module that answers, what it is and its own codes ([below](#each-modules-own-codes-and-data-uds)) |
+| **Developer Tools** | hooks for building your own tools onto PandaCapture ([below](#developer-tools)) |
+| **US / Metric, Theme, Full screen** | the units every page shows, light or dark, and the whole screen for the car |
+
+Each page opens in its own window, and the gauges keep running.
 
 The gauge page holds only what's needed while driving. Everything else is on the **Captures & Claude**
 page:
@@ -368,7 +391,7 @@ as the page does.
 | Option | Does |
 |---|---|
 | `--record` | starts recording straight away (the Record button does the same) |
-| `--replay LOG` | plays back a capture instead of reading the panda: try maps at your desk |
+| `--replay LOG` | plays back a capture (or a zip holding one) on a timeline instead of reading the panda: try maps at your desk |
 | `--simulate` | fake traffic |
 | `--lan` | serves the page to other devices on your network, such as a phone on the dash. Only this computer can open it otherwise |
 
@@ -831,7 +854,7 @@ pandacapture match CAPTURE [REFERENCE.csv | --obd] [options]     find which fiel
   --column NAME                 match only this column (repeatable)
   --top N, --min-r R            how many matches to show, and the weakest to show
 
-pandacapture list | info | dashboard | maps | match | analyze | apikey | bundle | obd | codes | modules | did | flash | backup | restore | send | replay | selftest      (each has --help)
+pandacapture list | info | dashboard | maps | match | analyze | apikey | bundle | runs | obd | codes | modules | did | diag | flash | backup | restore | send | replay | selftest      (each has --help)
 ```
 
 ## Documentation

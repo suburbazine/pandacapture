@@ -820,7 +820,7 @@
     if (key === knockShown) return;
     knockShown = key;
     $("knockTile").classList.toggle("stale", !!k.stale);
-    const top = Math.max(6, ...k.peak, ...k.retard);
+    const top = Math.max(6, ...k.peak, ...k.retard) * 1.15;   // headroom, so a peak mark shows below the top
     k.retard.forEach((deg, i) => {
       const c = kcyls[i];
       const fill = c.querySelector(".kfill");
