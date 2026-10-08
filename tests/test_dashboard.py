@@ -391,3 +391,38 @@ def test_dropout_is_logged_and_recorded(tmp_path, monkeypatch):
     assert any("Reconnected after" in x and "restarted" in x for x in lines), lines
     rec = "".join(p.read_text(encoding="utf-8") for p in dash.reader.saved)
     assert "# adapter error: simulated dropout" in rec and "The panda had restarted" in rec
+
+
+def test_the_bench_hint_only_when_nothing_arrives(monkeypatch):
+    from pandacapture import sources
+    from pandacapture.sources import BENCH_HINT, detect_rates
+
+    class Quiet:
+        """A panda hearing nothing, or traffic on bus 0 only at 500 kbit/s."""
+        def __init__(self, traffic=False):
+            self.traffic, self.rate = traffic, {}
+
+        def set_can_speed(self, b, r):
+            self.rate[b] = r
+
+        def reset_comms(self):
+            pass
+
+        def clear_rx(self):
+            pass
+
+        def can_health(self, b):
+            return {"total_errors": 0}
+
+        def read_can(self, n):
+            if self.traffic and self.rate.get(0) == 500:
+                return p.pack_frames([p.Frame(0, 0x316, bytes(8))])[0]
+            return b""
+    monkeypatch.setattr(sources.time, "sleep", lambda s: None)
+    lines = []
+    detect_rates(Quiet(), [0, 1, 2], 0.02, lines.append)
+    assert any(BENCH_HINT in x and x.strip().startswith("No traffic on any bus") for x in lines)
+    lines.clear()
+    detect_rates(Quiet(traffic=True), [0, 1, 2], 0.02, lines.append)
+    assert not any(BENCH_HINT in x for x in lines) and any("bus 0: 500 kbit/s" in x for x in lines)
+    assert "120 Ω" in BENCH_HINT

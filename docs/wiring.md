@@ -153,7 +153,9 @@ The oneclone mini blackpanda measured about 32 kΩ: only the transceivers' input
 termination.
 - **Car bus:** it can tap one directly.
 - **Bench ECU on its own:** needs a 120 Ω resistor across CAN-H and CAN-L, unless the ECU
-  terminates internally (unpowered, about 120 Ω between its CAN-H and CAN-L).
+  terminates internally (unpowered, about 120 Ω between its CAN-H and CAN-L). The panda can't do it:
+  pandas have no termination they can switch on. Without one, the bus can look live while no frames
+  come through and errors pile up.
 
 ### comma power (RJ45)
 

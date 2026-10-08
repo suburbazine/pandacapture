@@ -41,7 +41,7 @@ from .logs import replay_file
 from .policy import PolicyRefused, Sender, VehicleState
 from .replay import FAILED, STOPPED, ReplayPlayer
 from .signals import Evaluator, MapError, Signal, builtin_maps, load_map
-from .sources import SourceError
+from .sources import BENCH_HINT, SourceError
 from .speedrange import SpeedTags
 from .udsread import CYLINDERS, BusWatch, UdsPoller, Watch as UdsWatch, knock_target, transmission_target, uds_text
 from .usbdev import UsbError
@@ -256,7 +256,8 @@ class LiveState:
                     "recording_for": round(now - self.recording_since) if self.recording_since else None,
                     "markers": self.markers, "map_version": self.map_version, "map_name": self.map.name,
                     "epoch": self.epoch, "replay": dict(self.replay, epoch=self.epoch) if self.replay else None,
-                    "knock": self._knock_json(), "reads": self.reads.info() if self.reads else None}
+                    "knock": self._knock_json(), "reads": self.reads.info() if self.reads else None,
+                    "bench_hint": BENCH_HINT}
 
     def _knock_json(self):
         if self.knock is None:

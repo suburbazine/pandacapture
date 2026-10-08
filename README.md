@@ -194,6 +194,10 @@ With a comma car harness, the bus to record goes on the harness's 26-pin connect
 
 The OBD-C port isn't USB: never connect it to a computer or a charger.
 
+**On a bench** (the panda wired straight to an ECU or a programmer, no car), put a 120 Ω resistor
+across CAN-H and CAN-L. A car terminates its own bus, and pandas have no termination they can switch
+on. Without one, the bus can look live while no frames come through and errors pile up.
+
 ## 4. Record
 
 ```bash

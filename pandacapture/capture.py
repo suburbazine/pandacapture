@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .keys import KeyReader
-from .sources import SourceError
+from .sources import BENCH_HINT, SourceError
 from .speedrange import SpeedTracker
 from .udsread import KnockLog, stamp_of
 
@@ -358,7 +358,8 @@ def capture(open_source, opts: CaptureOptions, console: Console = None, keys: Ke
                         last_overflow = overflow
                     if not warned_silent and now > 5 and session.frames == 0:
                         warned_silent = True
-                        console.line("  No CAN traffic yet. Check CAN-H/CAN-L, ignition/ECU power, and the bit rate.")
+                        console.line("  No CAN traffic yet. Check CAN-H/CAN-L, ignition/ECU power, and the bit rate. "
+                                     + BENCH_HINT)
                     if (not warned_diag and now > 5 and session.frames
                             and all(0x600 <= i <= 0x7FF for i in session.ids())):
                         warned_diag = True

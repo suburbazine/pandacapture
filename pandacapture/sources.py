@@ -12,6 +12,8 @@ from .panda import Panda
 from .usbdev import UsbError
 
 AUTO_RATES = (500, 250, 125, 1000, 100, 50)
+# Said only when nothing is arriving on any bus, so it doesn't clutter use in a car
+BENCH_HINT = ("On a bench (the panda wired straight to an ECU or programmer, no car), the bus also needs a 120 Ω resistor across CAN-H and CAN-L: a car terminates its own bus, and pandas have no termination they can switch on.")
 
 
 class SourceError(Exception):
@@ -71,6 +73,8 @@ def detect_rates(panda, buses, dwell, log, candidates=AUTO_RATES) -> dict:
                 log(f"  bus {b}: not {rate} kbit/s ({frames[b]} frames, {errors} errors)")
     for b in pending:
         log(f"  bus {b}: no traffic heard")
+    if pending and len(pending) == len(buses):
+        log(f"  No traffic on any bus. Check CAN-H/CAN-L, ignition/ECU power, and the bit rate. {BENCH_HINT}")
     return result
 
 

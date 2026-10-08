@@ -694,7 +694,7 @@
   // A chip stays HOLD_MS after its condition clears, and keeps its place, so a value hovering at a
   // threshold (spark on its minimum at idle) doesn't make the strip flicker
   const HOLD_MS = 3000;
-  const attention = { sig: "", vals: {}, held: new Map() };   // key -> { item, until }, in first-seen order
+  const attention = { sig: "", vals: {}, held: new Map(), calm: "No warnings" };   // key -> { item, until }, in first-seen order
   function showAttention(items) {
     const now = performance.now();
     for (const i of items) {
@@ -710,7 +710,7 @@
       attention.vals = {};
       strip.innerHTML = shown.length ? shown.map((i) => `<span class="chip ${i.cls}"><span class="dot"></span>${esc(i.label)}` +
         (i.value !== undefined ? ` <span class="val" data-k="${esc(i.key)}"></span>` : "") + `</span>`).join("")
-        : `<span class="calm">No warnings</span>`;
+        : `<span class="calm">${esc(attention.calm)}</span>`;
       strip.querySelectorAll(".val").forEach((el) => attention.vals[el.dataset.k] = el);
     }
     for (const i of shown) if (i.value !== undefined) attention.vals[i.key].textContent = i.value;
@@ -863,8 +863,21 @@
   $("readKnock").onclick = () => toggleRead("knock");
   $("readTcu").onclick = () => toggleRead("transmission");
 
+  // No frames at all for a while from a live panda: what to check, the bench's terminator included. Only then,
+  // so it doesn't clutter use in a car
+  let liveSince = null;
+  function quietHint(st) {
+    const live = st.status === "live" && !st.replay;
+    if (!live) liveSince = null; else if (liveSince === null) liveSince = performance.now();
+    const quiet = live && !st.frames && performance.now() - liveSince > 5000;
+    const calm = quiet ? `No CAN traffic yet. Check CAN-H/CAN-L, ignition/ECU power, and the bit rate. ${st.bench_hint || ""}`.trim()
+      : "No warnings";
+    if (calm !== attention.calm) { attention.calm = calm; attention.sig = null; dirty = true; }
+  }
+
   // ---- incoming data ----
   function status(st) {
+    quietHint(st);
     renderReads(st.reads);
     applyReplay(st.replay, st.epoch);
     renderKnock(st.knock);
