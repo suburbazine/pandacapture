@@ -1,6 +1,9 @@
 # Status
 
 ## Verified
+- Modules page (2026-10-08): module scan (OBD modules, the 700-7F7 sweep with its 900 rpm gate, identification,
+  each module's own codes) and identifier reads through the dashboard's panda; tested against the simulated car
+  (including the whole job through the dashboard and its files), not yet on the car.
 - Firmware page (2026-10-08): flash, back up and restore from the dashboard, through the same flasher.py steps
   as the commands; tested against the simulated panda (first install through DFU with its backup, update through
   the bootstub, backup, restore, a refused comma-device panda), and the dashboard letting go of the panda and

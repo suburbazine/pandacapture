@@ -721,7 +721,19 @@ Reads data identifiers from one module, such as the `22 E0xx` reads some tuning 
 until `Q`. Results go to `did-….json`, and the answers are in the capture too.
 
 Modules are addressed by request id (700-7F7), answering on id + 8, the usual convention. PandaCapture
-never sends to an id the bus is already using for ordinary traffic.
+never sends to an id the bus is already using for ordinary traffic, nor to one whose answers would land on
+such an id.
+
+**On the dashboard,** **Modules** does the same through the panda the gauges are reading, so the gauges keep
+running and a recording keeps every frame.
+- **Scan modules:** finds every module (the OBD ones, then each id from 700 to 7F7, key-on or at idle
+  only), then reads what each one is and its own codes.
+- **Read identifiers:** reads data identifiers from one module, at any engine speed. Click a module in the
+  scan results to fill it in.
+- **Gates:** you type `TRANSMIT` once per session, on the computer running PandaCapture, and it needs a
+  panda with PandaCapture firmware.
+- **Files:** each run saves `obd-modules-….json` or `obd-did-….json`, and a `.log` of every diagnostic
+  frame exchanged, in the captures folder. The page shows the last scan again when it opens.
 
 ## Transmitting
 

@@ -89,10 +89,16 @@ def obd_modules(client, bus) -> list:
     return sorted(m - 8 for m in client.request(0x01, b"\x00", bus).positive)
 
 
+def free(client, bus, target) -> bool:
+    """A module id that may be asked: physical, and neither it nor its answer id carries other traffic."""
+    traffic = client.state.traffic.get(bus, ())
+    return is_physical(target) and target not in traffic and target + 8 not in traffic
+
+
 def find_modules(client, bus, ids=range(0x700, 0x7F8), log=print) -> list:
     """Every id that answers a read request (positive or not): one request per free id."""
     found = []
-    candidates = [i for i in ids if is_physical(i) and i not in client.state.traffic.get(bus, ())]
+    candidates = [i for i in ids if free(client, bus, i)]
     log(f"Bus {bus}: asking {len(candidates)} ids (700-7F7) for their part number...")
     for target in candidates:
         a = client.request(0x22, PROBE_DID.to_bytes(2, "big"), bus, target, expect=(target + 8,), wait=PROBE_WAIT)

@@ -435,6 +435,10 @@ class Sender:
         if can_id in self.state.traffic.get(bus, ()):
             raise PolicyRefused(f"{can_id:03X} carries other traffic on bus {bus}: a request there could pass "
                                 "for another module's message, so nothing is sent to it.")
+        # Nor to a module whose answers would land on an id that carries other traffic: they couldn't be told apart
+        if is_physical(can_id) and answer_id(can_id) in self.state.traffic.get(bus, ()):
+            raise PolicyRefused(f"{answer_id(can_id):03X}, where {can_id:03X} would answer, carries other traffic on "
+                                f"bus {bus}: its answers couldn't be told apart, so nothing is sent to it.")
 
     def flow_control(self, answering, bus=0):
         """Lets a module send the rest of a long answer (ISO-TP). Not a request: no state needed."""

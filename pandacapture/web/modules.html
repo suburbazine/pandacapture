@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>PandaCapture Modules</title>
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-512.png">
+<style>
+  /* The same tokens as the gauge, captures, runs and firmware pages */
+  :root {
+    --bg: #0b0e13; --panel: #141922; --panel-2: #1b2230; --line: #2a3344;
+    --text: #e8edf5; --muted: #8b97ab; --faint: #556074; --accent: #4fb3ff;
+    --warn: #ffb020; --alert: #ff4d4f; --green: #35d07f;
+    --radius: 12px; --pad: 16px; --ctl: 40px;
+    color-scheme: dark;
+  }
+  :root[data-theme="light"] {
+    --bg: #f3f5f9; --panel: #ffffff; --panel-2: #e9edf3; --line: #d8dee8;
+    --text: #141a24; --muted: #5c6779; --faint: #9aa3b2; --accent: #0b74d1;
+    --warn: #c77700; --alert: #d92d2f; --green: #148a4b;
+    color-scheme: light;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { margin: 0; }
+  body { background: var(--bg); color: var(--text); font: 15px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+         -webkit-font-smoothing: antialiased; overflow-x: hidden; }
+  header { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+           padding: 10px var(--pad); background: color-mix(in srgb, var(--bg) 90%, transparent);
+           backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
+  .title { display: flex; flex-direction: column; min-width: 0; flex: 1 1 200px; }
+  .title strong { font-size: 16px; }
+  .title span { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ctl { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: var(--ctl);
+         padding: 0 14px; border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 10px;
+         font: inherit; font-size: 14px; white-space: nowrap; cursor: pointer; text-decoration: none; }
+  .ctl:hover:not(:disabled) { border-color: var(--accent); }
+  .ctl:disabled { opacity: .45; cursor: default; }
+  .ctl.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .ctl svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  main { max-width: 1000px; margin: 0 auto; padding: 16px var(--pad) 40px; display: grid; gap: 16px; }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; min-width: 0; }
+  section > h2 { margin: 0 0 4px; font-size: 16px; }
+  .hint { color: var(--muted); font-size: 13px; margin: 0 0 12px; }
+  .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  input[type=text] { min-height: var(--ctl); background: var(--panel-2); color: var(--text); border: 1px solid var(--line);
+    border-radius: 8px; padding: 6px 10px; font: inherit; }
+  input.mono, .mono { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+  .warnbox { border-left: 3px solid var(--warn); padding: 6px 10px; margin: 0 0 12px; font-size: 13px;
+             background: color-mix(in srgb, var(--warn) 10%, var(--panel)); border-radius: 0 8px 8px 0; }
+  .progress { margin: 12px 0 0; font-size: 14px; }
+  .progress.bad { color: var(--alert); }
+  .summary { margin: 14px 0 6px; font-weight: 600; }
+  .module { border-top: 1px solid var(--line); padding: 10px 0; cursor: pointer; }
+  .module:hover { background: var(--panel-2); }
+  .module .id { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-weight: 600; }
+  .module .info { color: var(--muted); font-size: 13px; margin-top: 3px; }
+  .module .info b { color: var(--text); font-weight: 500; }
+  .module .codes { font-size: 13px; margin-top: 4px; }
+  .codes.some { color: var(--alert); }
+  .codes.none { color: var(--green); }
+  .codes.unread { color: var(--muted); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 12px; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; }
+  .banner { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 4; max-width: calc(100vw - 32px);
+            padding: 10px 14px; border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); display: none; }
+  .banner.show { display: block; }
+  @media (max-width: 720px) { .ctl .txt { display: none; } }
+</style>
+</head>
+<body>
+<header>
+  <div class="title"><strong>Modules</strong><span>Every module that answers diagnostic requests: what it is, and its own codes</span></div>
+  <a class="ctl" href="/" target="pandacapture-gauges" title="The gauges (their own window)">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 16a8 8 0 1 1 16 0M12 16l4-5"/></svg><span class="txt">Gauges</span></a>
+  <a class="ctl" href="/firmware.html" target="pandacapture-firmware" title="Firmware">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7h10v10H7zM10 3v4M14 3v4M10 17v4M14 17v4M3 10h4M3 14h4M17 10h4M17 14h4"/></svg><span class="txt">Firmware</span></a>
+  <button class="ctl" id="theme" type="button" title="Switch light/dark" aria-label="Switch light/dark theme">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9c0-.5 0-1-.1-1.4A6 6 0 0 1 13.4 3.1C13 3 12.5 3 12 3z"/></svg></button>
+</header>
+
+<main>
+  <section>
+    <h2>Modules (UDS)</h2>
+    <p class="hint">Finds every module that answers diagnostic requests (each id from 700 to 7F7, about 20 s a bus), then reads what
+      each is (part, hardware and software numbers) and its own trouble codes. Only key-on or at idle: the search won't start,
+      and stops, above 900 rpm. Reads only: nothing is cleared or changed.</p>
+    <div class="warnbox" id="localOnly" hidden>These send requests on the vehicle's bus, so they work from the computer running PandaCapture only.</div>
+    <div class="warnbox" id="noSend" hidden>Sending needs a panda with PandaCapture firmware being read by the gauges (see Firmware).</div>
+    <div class="row" id="confirmRow" hidden>
+      <label class="hint" for="word" style="margin:0">These send requests on the vehicle's bus. Type <b>TRANSMIT</b> to allow them this session</label>
+      <input type="text" id="word" autocomplete="off" spellcheck="false" style="width:140px" aria-label="Type TRANSMIT">
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button class="ctl primary" id="scan" type="button">Scan modules</button>
+    </div>
+    <div class="progress" id="progress"></div>
+    <div class="summary" id="summary"></div>
+    <div id="modules"></div>
+  </section>
+
+  <section>
+    <h2>Read identifiers</h2>
+    <p class="hint">Data by identifier (UDS 22) from one module, at any engine speed. Click a module above to fill it in.</p>
+    <div class="row">
+      <label class="hint" for="module" style="margin:0">Module</label>
+      <input type="text" id="module" class="mono" placeholder="7E0" maxlength="3" style="width:80px">
+      <label class="hint" for="dids" style="margin:0">Identifiers</label>
+      <input type="text" id="dids" class="mono" placeholder="E019 F187" style="flex:1 1 200px">
+      <button class="ctl" id="read" type="button">Read</button>
+    </div>
+    <div class="progress" id="readProgress"></div>
+    <table id="reads" hidden><thead><tr><th>Identifier</th><th>Answer</th><th>As text</th></tr></thead><tbody></tbody></table>
+  </section>
+
+  <section>
+    <p class="hint" style="margin:0">Pause other diagnostic tools while these run: modules answer every request. Nothing is sent to an id
+      the bus already uses for its own messages. Requests and answers go into a capture being recorded, and each run saves its
+      results (.json) and every frame exchanged (.log) in the captures folder.</p>
+  </section>
+</main>
+<div class="banner" id="banner"></div>
+
+<script>
+(() => {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+  const root = document.documentElement;
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+  const post = (path, body) => fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) })
+    .then(async (r) => { const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || r.statusText); return j; });
+  const flash = (text) => { const b = $("banner"); b.textContent = text; b.classList.add("show"); clearTimeout(flash.t); flash.t = setTimeout(() => b.classList.remove("show"), 5000); };
+  const recall = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+  const remember = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
+  if (recall("pc-theme")) root.dataset.theme = recall("pc-theme");
+  $("theme").onclick = () => { root.dataset.theme = root.dataset.theme === "light" ? "dark" : "light"; remember("pc-theme", root.dataset.theme); };
+
+  let state = null, polling = null;
+  const title = (name) => name.charAt(0).toUpperCase() + name.slice(1);
+
+  function showModules(result) {
+    if (!result) { $("summary").textContent = ""; $("modules").innerHTML = ""; return; }
+    $("summary").textContent = `Found ${result.modules.length} modules (${result.requests} requests)` +
+      (result.stopped ? `: stopped, ${result.stopped}` : "") + (result.file ? ` · ${result.file}` : "");
+    $("modules").innerHTML = result.modules.map((m) => {
+      const info = Object.entries(m.info || {});
+      const codes = m.codes ? (m.codes.length
+        ? `<div class="codes some">${m.codes.map((c) => `${esc(c.code)} (${esc(c.status)})`).join("<br>")}</div>`
+        : `<div class="codes none">No codes</div>`)
+        : `<div class="codes unread">Codes not read: ${esc(m.codes_refused || "no answer")}</div>`;
+      return `<div class="module" data-id="${esc(m.request_id)}" title="Click to read identifiers from ${esc(m.request_id)}">
+        <div><span class="id">${esc(m.request_id)} → ${esc(m.answer_id)}</span>&nbsp; ${esc(title(m.name))}${m.bus ? ` (bus ${m.bus})` : ""}</div>
+        <div class="info">${info.length ? info.map(([k, v]) => `${esc(k)}: <b>${esc(v)}</b>`).join("<br>") : "Answered, but gave none of the identification data"}</div>
+        ${codes}</div>`;
+    }).join("");
+    $("modules").querySelectorAll(".module").forEach((el) => el.onclick = () => { $("module").value = el.dataset.id; $("dids").focus(); });
+  }
+
+  function showReads(result) {
+    const t = $("reads");
+    t.hidden = !result;
+    if (!result) return;
+    t.querySelector("tbody").innerHTML = result.reads.map((r) => `<tr><td class="mono">${esc(r.did)}</td>` +
+      (r.hex !== null ? `<td class="mono">${esc(r.hex.match(/../g)?.join(" ").toUpperCase() || "(empty)")}</td><td>${esc(r.text)}</td>`
+        : `<td colspan="2" class="hint" style="margin:0">not read: ${esc(r.refused)}</td>`) + `</tr>`).join("");
+  }
+
+  function render(j) {
+    state = j;
+    const job = j.job, running = job.state === "running";
+    $("localOnly").hidden = j.local;
+    $("noSend").hidden = j.can_send;
+    $("confirmRow").hidden = j.confirmed || !j.local;
+    $("scan").disabled = $("read").disabled = running || !j.local || !j.can_send;
+    const scanJob = job.kind === "scan", where = scanJob || !job.kind ? "progress" : "readProgress";
+    for (const id of ["progress", "readProgress"]) if (id !== where) $(id).textContent = "";
+    $(where).textContent = job.state === "idle" ? "" : running ? job.progress : job.state === "done" ? job.progress : job.error;
+    $(where).className = "progress" + (job.state === "error" ? " bad" : "");
+    if (job.state === "done" && job.kind === "did") showReads(job.result);
+    showModules(job.state === "done" && scanJob ? job.result : (running && scanJob ? null : j.last));
+    clearTimeout(polling);
+    if (running) polling = setTimeout(load, 400);
+  }
+
+  function load() { return fetch("/uds").then((r) => r.json()).then(render).catch((e) => flash(e.message)); }
+  const start = (body) => {
+    if (!state?.confirmed) body.confirm = $("word").value;
+    return post("/uds", body).then(() => { $("word").value = ""; load(); }).catch((e) => flash(e.message));
+  };
+  $("scan").onclick = () => start({ action: "scan" });
+  $("read").onclick = () => start({ action: "did", module: $("module").value, dids: $("dids").value });
+  load();
+})();
+</script>
+</body>
+</html>

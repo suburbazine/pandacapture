@@ -352,6 +352,8 @@ class Reader(threading.Thread):
         self.hold_why = None              # the Firmware page has the panda: don't read it until released
         self.holding = threading.Event()  # set once the source is closed for it
         self.held = None                  # the panda being read: {serial, hw, version}, for the Firmware page
+        self.source = None                # the source being read, for the Modules page
+        self.uds_link = None              # the Modules page's link while it sends: fed what's read
         self.processor = threading.Thread(target=self._process, daemon=True, name="pandacapture-decoder")
         if record:
             self.start_recording()
@@ -425,7 +427,7 @@ class Reader(threading.Thread):
                     self.reads.stop(source, self._note)
                     self._note(f"source closed: {self.hold_why} ({time.time():.6f})")
                     source.close()
-                    source, self.held = None, None
+                    source, self.held, self.source = None, None, None
                     with self.state.lock:
                         self.state.firmware = None
                 self._status("paused", self.hold_why)
@@ -457,11 +459,15 @@ class Reader(threading.Thread):
                 self.log(f"[{_clock()}] {getattr(source, 'kind', 'Panda')} error: {e}. Reconnecting every {RECONNECT_EVERY:g} s...")
                 self._note(f"adapter error: {e} ({time.time():.6f})")
                 source.close()
-                source = None
+                source = self.source = None
                 self._status("disconnected", f"{e} (reconnecting)")
                 continue
+            self.source = source
             if frames:
                 self._put(("frames", frames, time.monotonic(), time.time()))
+                link = self.uds_link
+                if link is not None:
+                    link.feed(frames)
             # The Read switches' requests, sent from here: this thread owns the panda
             self.reads.step(source, frames, self.recorder, self._note, self.state)
             if not frames:
@@ -547,6 +553,7 @@ class ActiveReads:
         self.status = ""
         self.problem = None        # why sending stopped during this recording (it waits for the next one)
         self.problem_rec = None
+        self.paused = None         # why the Modules page has the panda for a while
 
     def _load(self):
         try:
@@ -593,6 +600,8 @@ class ActiveReads:
         if why is None and not getattr(source, "can_transmit", False):
             why = ("listening only: sending needs PandaCapture firmware (pandacapture flash)" if hasattr(source, "arm")
                    else "listening only: no panda to send through")
+        if why is None and self.paused:
+            why = self.paused
         if why is None and self.problem:
             why = f"stopped: {self.problem}"
         if why is None and self.running and self.running != names:
@@ -645,6 +654,10 @@ class ActiveReads:
         self.running, self.poller = (), None
         source.disarm()
         note(f"reads stopped ({why}): transmit disarmed, listening again ({time.time():.6f})")
+
+    def pause(self, why):
+        """The Modules page sends through the same panda for a while (None: carry on)."""
+        self.paused = why
 
     def lost(self, why):
         """The source failed: the panda (and its armed state) is gone; it disarms itself without a heartbeat."""
@@ -798,6 +811,7 @@ def make_handler(dash):
     captures_page = (web_dir() / "captures.html").read_bytes()
     runs_page = (web_dir() / "runs.html").read_bytes()
     firmware_page = (web_dir() / "firmware.html").read_bytes()
+    modules_page = (web_dir() / "modules.html").read_bytes()
     devtools_page = (web_dir() / "devtools.html").read_bytes()
     icons = {"/icon.svg": ((web_dir() / "icon.svg").read_bytes(), "image/svg+xml"),
              "/units.js": ((web_dir() / "units.js").read_bytes(), "text/javascript; charset=utf-8"),
@@ -841,6 +855,13 @@ def make_handler(dash):
                 self._send(captures_page, "text/html; charset=utf-8")
             elif path == "/firmware.html":
                 self._send(firmware_page, "text/html; charset=utf-8")
+            elif path == "/modules.html":
+                self._send(modules_page, "text/html; charset=utf-8")
+            elif path == "/uds":
+                from .udsjob import latest_modules
+                self._json({"job": dash.uds.snapshot(), "last": latest_modules(reader.record_dir),
+                            "confirmed": dash.uds.confirmed, "local": self.client_address[0] in LOCAL,
+                            "can_send": bool(getattr(reader.source, "can_transmit", False))})
             elif path == "/firmware":
                 from .flashjob import backups, bundled, devices
                 job = dash.firmware.snapshot()
@@ -942,7 +963,14 @@ def make_handler(dash):
             url = urlsplit(self.path)
             try:
                 body = self._body()
-                if url.path == "/firmware":
+                if url.path == "/uds":
+                    # The Modules page: a module scan or an identifier read, only on this computer
+                    if not self._local():
+                        return
+                    req = json.loads(body or b"{}")
+                    dash.uds.start(req.get("action", ""), req.get("module"), req.get("dids"), req.get("confirm"))
+                    self._json({"job": dash.uds.snapshot()})
+                elif url.path == "/firmware":
                     # Flash, back up or restore the panda: only on the computer running PandaCapture
                     if not self._local():
                         return
@@ -1091,6 +1119,8 @@ class Dashboard:
         self.firmware = FlashJob(self.reader.hold, self.reader.release,
                                  recording=lambda: self.reader.recorder is not None)
         self.speed_tags = SpeedTags(self.reader.record_dir)
+        from .udsjob import UdsJob
+        self.uds = UdsJob(self.reader, self.state)
         from .workbench import ClaudeJob, References
         self.references = References()
         self.claude = ClaudeJob(self.reader.record_dir)

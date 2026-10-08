@@ -73,7 +73,8 @@ def test_find_modules_skips_ids_with_other_traffic():
     assert found == [0x7D1, 0x7E0, 0x7E1]
     asked = {f.addr for f in car.sent if not is_flow_control(f)}
     assert 0x7A0 not in asked and 0x7D7 not in asked and not asked & set(range(0x7E8, 0x7F0))
-    assert len(asked) == 248 - 1 - 2 - 8      # 700-7F7, less 7A0, 7D7/7DF, 7E8-7EF
+    assert 0x798 not in asked                 # it would answer on 7A0, which carries other traffic
+    assert len(asked) == 248 - 2 - 2 - 8      # 700-7F7, less 7A0 and 798, 7D7/7DF, 7E8-7EF
     for f in car.sent:
         assert is_flow_control(f) or recognize(f).payload == b"\x22\xf1\x87"
 
