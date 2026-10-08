@@ -14,6 +14,7 @@ from pathlib import Path
 from .keys import KeyReader
 from .sources import SourceError
 from .speedrange import SpeedTracker
+from .udsread import KnockLog, stamp_of
 
 STALL_SECONDS = 2.0
 RECONNECT_INTERVAL = 2.0
@@ -54,7 +55,9 @@ class CaptureOptions:
 class RollingLog:
     """A candump log that continues in a new file once it passes a size. Each part repeats the
     header and names the file before and after it, so the parts read as one recording. Given a map with speed
-    signals, each part ends with the speed range it heard (track() each frame, speed_note() before the summary)."""
+    signals, each part ends with the speed range it heard (track() each frame, speed_note() before the summary).
+    The per-cylinder knock (E019) and transmission (01A0) answers heard go to obd-knock- and obd-tcu-<stamp>.csv
+    beside it, one pair across the parts, named in the log's end notes (end_notes() before the summary)."""
 
     def __init__(self, out_dir: Path, header, split_mb=100.0, stamp=None, speed_map=None):
         self.speed_map = speed_map if speed_map is not None and SpeedTracker(speed_map).available else None
@@ -66,6 +69,7 @@ class RollingLog:
         self.paths = []
         self._f = None
         self._open(stamp)
+        self.knock = KnockLog(self.out_dir, stamp_of(self.paths[0]), speed_map)
 
     @property
     def path(self) -> Path:
@@ -98,11 +102,20 @@ class RollingLog:
 
     def flush(self):
         self._f.flush()
+        self.knock.flush()
 
-    def track(self, frame):
-        """A frame written to this part, for its speed range."""
+    def track(self, frame, t=None):
+        """A frame written to this part (at Unix time t), for its speed range and the knock and transmission CSVs."""
         if self.speed is not None:
             self.speed.feed(frame)
+        self.knock.frame(frame, time.time() if t is None else t)
+
+    def end_notes(self):
+        """The recording's end: the last part's speed range and the knock and transmission files it made."""
+        self.speed_note()
+        for line in self.knock.notes():
+            self.write(f"# {line}\n")
+        self.knock.close()
 
     def speed_note(self):
         """This part's speed range, as the line it ends with (before the summary), once."""
@@ -297,7 +310,7 @@ def capture(open_source, opts: CaptureOptions, console: Console = None, keys: Ke
                         session.frames += 1
                         bus_counts[f.bus] = bus_counts.get(f.bus, 0) + 1
                         w.write(candump_line(t, f) + "\n")
-                        w.track(f)
+                        w.track(f, t)
                         st = session.stats.get((f.bus, f.addr))
                         if st is None:
                             st = session.stats[(f.bus, f.addr)] = IdStats(first=t)
@@ -358,7 +371,7 @@ def capture(open_source, opts: CaptureOptions, console: Console = None, keys: Ke
         finally:
             signal.signal(signal.SIGINT, old_handler)
             source.close()
-            w.speed_note()
+            w.end_notes()
             lines = summary(session, time.monotonic() - t0)
             if len(w.paths) > 1:
                 lines.insert(1, f"Recorded in {len(w.paths)} parts: {', '.join(x.name for x in w.paths)}")

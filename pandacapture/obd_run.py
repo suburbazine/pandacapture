@@ -1,6 +1,10 @@
 """pandacapture obd: scan for the standard OBD PIDs every module answers, then poll the ones that give
 real values, recording what's received and a CSV of the decoded answers. Through a panda (PandaCapture
-firmware) or an ELM327. See obd.py for the rules."""
+firmware) or an ELM327. See obd.py for the rules.
+
+With --knock and --transmission it also reads the engine's per-cylinder knock (22 E019 on 0x7E0) and the
+transmission's speeds and temperature (22 01A0 on 0x7E1) itself, through a panda, sharing the bus one request at
+a time (udsread.UdsPoller). A bus going bus-off, or counting over 50 errors in a second, ends all sending."""
 
 import argparse
 import csv
@@ -15,9 +19,11 @@ from .keys import KeyReader
 from .obd import MAX_SCAN_RPM, PIDS, Found, ScanBlocked, Scanner, describe, pid_name
 from .policy import VehicleState
 from .transmit import ArmedPanda, TransmitRefused, TxLog, acknowledge
+from .udsread import UdsPoller, knock_target, transmission_target
 from .usbdev import UsbError
 
 LISTEN_FIRST = 1.0   # s of silent listening for the broadcast engine speed before anything is sent
+MAX_BUS_ERRORS = 50  # a bus counting more errors than this in a second ends all sending at once
 
 OBD_WARNING = """\
 This sends standard OBD-II requests (mode 01, "show current data") onto the vehicle's bus, the same
@@ -53,6 +59,12 @@ def parser():
     what.add_argument("--poll", metavar="SCAN.json",
                       help="skip the scan: poll the PIDs an earlier scan kept (its obd-scan-….json)")
     what.add_argument("--pids", metavar="LIST", help="skip the scan: poll these PIDs, e.g. 0C,0D,05")
+    ap.add_argument("--knock", action="store_true", help=(
+        "also read the engine's per-cylinder knock retard (UDS 22 E019 on 0x7E0) about 5-10 times a second, "
+        "through a panda. Without --pids or --poll: only that, no PID scan"))
+    ap.add_argument("--transmission", action="store_true", help=(
+        "also read the transmission's turbine and output speeds, converter slip and ATF temperature "
+        "(UDS 22 01A0 on 0x7E1), the same way"))
     ap.add_argument("--seconds", type=float, default=0, help="stop polling after this many seconds")
     ap.add_argument("--out", help="folder for the results (default: captures next to the program)")
     ap.add_argument("--i-accept-transmit-risk", action="store_true",
@@ -74,6 +86,45 @@ def state_signals(args):
     def first(*keys):
         return next((s for k in keys for s in m.signals if s.key == k and not s.derived), None)
     return first(args.rpm_key), first("speed_kmh", "speed"), first("gear"), m.name
+
+
+def vehicle_map(args):
+    """The vehicle's address map, if there's one (the knock CSV takes its spark signal, the log its speed range)."""
+    from .signals import MapError, builtin_maps, load_map
+    name = args.map or (next(iter(builtin_maps())) if len(builtin_maps()) == 1 else None)
+    try:
+        return load_map(name) if name else None
+    except MapError:
+        return None
+
+
+def uds_targets(args) -> list:
+    return ([knock_target()] if args.knock else []) + ([transmission_target()] if args.transmission else [])
+
+
+def uds_text(targets) -> str:
+    what = {0xE019: "UDS 03 22 E0 19 (per-cylinder knock) to 0x7E0", 0x01A0: "UDS 03 22 01 A0 (transmission) to 0x7E1"}
+    return " and ".join(what[g.did] for g in targets)
+
+
+class BusWatch:
+    """Ends all sending at once when a bus goes bus-off, or counts over MAX_BUS_ERRORS errors in a second
+    (the panda's CAN health): a request of ours may be what's disturbing it."""
+
+    def __init__(self, panda, buses):
+        self.panda, self.buses = panda, list(buses)
+        self.last = {b: panda.can_health(b)["total_errors"] for b in self.buses}
+
+    def check(self):
+        """None while the buses are healthy, else why sending stops. Call about once a second."""
+        for b in self.buses:
+            h = self.panda.can_health(b)
+            if h["bus_off"]:
+                return f"bus {b} went bus-off"
+            errors, self.last[b] = h["total_errors"] - self.last[b], h["total_errors"]
+            if errors > MAX_BUS_ERRORS:
+                return f"bus {b} counted {errors} errors in a second"
+        return None
 
 
 def planned_poll(args):
@@ -238,6 +289,12 @@ def run(argv) -> int:
     except TransmitRefused as e:
         print(f"ERROR: {e}")
         return 2
+    targets = uds_targets(args)
+    if targets and args.elm:
+        print("ERROR: --knock and --transmission read through a panda (an ELM327 doesn't pass the long answers on).")
+        return 2
+    if targets and planned is None and not args.scan_only:
+        planned = []          # the identifiers alone: no PID scan
     scanning = planned is None
     out_dir = Path(args.out) if args.out else default_out_dir()
     stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -246,7 +303,7 @@ def run(argv) -> int:
     log = rec = None
     try:
         session.open(rpm_sig, map_name)
-        if planned is not None:
+        if planned:
             planned = [Found(b, f.pid, f.modules) for f in planned
                        for b in ([f.bus] if f.bus is not None else session.buses[:1]) if b in session.buses]
             if not planned:
@@ -254,20 +311,36 @@ def run(argv) -> int:
 
         what = ("scan the standard PIDs (key-on or idle, up to 900 rpm), then "
                 + ("stop" if args.scan_only else "poll the ones that answer until you press Q")) if scanning \
-            else f"poll {len(planned)} PIDs until you press Q (no scan first)"
+            else f"poll {len(planned)} PIDs until you press Q (no scan first)" if planned \
+            else "read them until you press Q (no PIDs)"
+        asked = (["OBD mode 01 requests (02 01 PID) to 0x7DF"] if scanning or planned else []) + \
+            ([uds_text(targets) + ", one request on the bus at a time, with the flow control (30 00 00) for their "
+              f"long answers, on bus {session.buses[0]}"] if targets else [])
         acknowledge(args.i_accept_transmit_risk, (
-            f"About to send OBD mode 01 requests (02 01 PID) to 0x7DF through {session.kind}: {session.rate_text}.\n"
+            f"About to send {'; and '.join(asked)} through {session.kind}: {session.rate_text}.\n"
             f"It will {what}."), warning=OBD_WARNING)
 
         log = TxLog(out_dir, f"{session.kind}: {session.description}")
         rec = RollingLog(out_dir, ["# PandaCapture candump log (OBD " + ("scan and poll)" if scanning else "poll)"),
-                                   *session.header], stamp=stamp)
+                                   *session.header], stamp=stamp, speed_map=vehicle_map(args))
+        if targets:
+            note = f"active polling, not silent: {'; '.join(asked)}"
+            rec.write(f"# {note}\n")
+            log.note(note)
         columns = Columns(out_dir / f"obd-{stamp}.csv")
-        scanner = None
+        scanner = uds = None
+        tester = {"until": 0.0}   # another tester on an engine computer's request id holds the PID poll off
 
         def received(f):
-            rec.write(candump_line(time.time(), f) + "\n")
+            t = time.time()
+            rec.write(candump_line(t, f) + "\n")
+            rec.track(f, t)
             scanner.frame(f)
+            if uds is not None:
+                now = time.monotonic()
+                if not f.extended and 0x7E0 <= f.addr <= 0x7E7:   # never ours: the panda's echoes don't come here
+                    tester["until"] = now + UdsPoller.QUIET
+                uds.frame(f, now)
 
         def sent(f):
             log.sent(f)
@@ -276,6 +349,8 @@ def run(argv) -> int:
         stopped = None
         with session.link(received) as link:
             scanner = Scanner(link, guard, session.buses, on_sent=sent)
+            if targets:
+                uds = UdsPoller(scanner.sender, session.buses[0], targets)
             if scanning:
                 print(f"{'Transmit armed. ' if session.kind == 'panda' else ''}Scanning...")
                 try:
@@ -292,12 +367,16 @@ def run(argv) -> int:
                     print(f"  (next time, poll these without scanning: pandacapture obd --poll {report.name})")
             else:
                 keep = planned
-            if not stopped and keep and not args.scan_only:
-                poll(scanner, keep, columns, args.seconds, rec.maybe_rotate)
+            if not stopped and (keep or uds) and not args.scan_only:
+                watch = BusWatch(session.pd, session.buses) if uds is not None and session.kind == "panda" else None
+                stopped = poll(scanner, keep or [], columns, args.seconds, rec.maybe_rotate, uds, tester, watch)
         if session.kind == "panda":
             print("Disarmed.")
         if stopped:
             print(f"Stopped: {stopped}")
+            rec.write(f"# stopped sending: {stopped} ({time.time():.6f})\n")
+        if uds is not None:
+            print(f"  {uds.answers} identifier answers ({uds.status})")
         print(f"  {scanner.result.requests} requests sent, logged in {log.path}")
         print(f"  Everything received: {rec.path}")
         if columns.save():
@@ -313,6 +392,10 @@ def run(argv) -> int:
         print(f"ERROR: {e}")
         return 1
     finally:
+        if rec:
+            rec.end_notes()
+            for line in rec.knock.notes():
+                print(f"  {line[0].upper()}{line[1:]}")
         for f in (log, rec):
             if f:
                 f.close()
@@ -320,9 +403,13 @@ def run(argv) -> int:
     return 0
 
 
-def poll(scanner, keep, columns, seconds, rotate=lambda: None):
-    """Polls until Q or the time limit."""
-    print(f"\nPolling {len(keep)} PIDs. Press Q to stop.")
+def poll(scanner, keep, columns, seconds, rotate=lambda: None, uds=None, tester=None, watch=None):
+    """Polls until Q or the time limit; returns why it stopped early (a bus in trouble), else None. With uds (a
+    UdsPoller) the identifier reads share the bus with the PIDs, one request at a time: they go first when due,
+    the PIDs in between, and the PIDs not at all while another tester asks an engine computer."""
+    print(f"\nPolling {len(keep)} PIDs" + (f" and {', '.join(g.name.lower() for g in uds.targets)}" if uds else "")
+          + ". Press Q to stop.")
+    trouble = {"why": None}
     start = last = time.monotonic()
     answers = {"n": 0, "at_last": 0}
     latest = {}
@@ -345,9 +432,30 @@ def poll(scanner, keep, columns, seconds, rotate=lambda: None):
                 answers["at_last"], last = answers["n"], now
                 shown = ", ".join(f"{pid_name(pid).split(',')[0]} {describe(pid, d)}"
                                   for (b, m, pid), d in list(latest.items())[:4])
+                if uds is not None:
+                    shown = uds.status + ("   " + shown if shown else "")
                 print(f"\r  {rate:5.1f} answers/s   {shown}"[:118].ljust(118), end="", flush=True)
                 rotate()
-            return quit_["q"] or (seconds and now - start >= seconds)
+                if watch is not None:
+                    trouble["why"] = watch.check()
+            return quit_["q"] or bool(trouble["why"]) or (seconds and now - start >= seconds) \
+                or (uds is not None and not keep and uds.stopped)
 
-        scanner.poll(keep, should_stop, on_answer)
+        if uds is None:
+            scanner.poll(keep, should_stop, on_answer)
+        else:
+            link, i = scanner.link, 0
+            while not should_stop():
+                # The identifier reads first when they're due: one request on the bus at a time
+                while not should_stop() and (uds.in_flight or uds.due(time.monotonic())):
+                    uds.tick(time.monotonic())
+                    link.wait(0.002)
+                uds.tick(time.monotonic(), can_send=False)
+                if keep and time.monotonic() >= tester["until"]:
+                    f, i = keep[i % len(keep)], i + 1
+                    for module, data in scanner.ask(f).items():
+                        on_answer(f.bus, module, f.pid, data)
+                else:
+                    link.wait(0.005)
     print()
+    return trouble["why"]

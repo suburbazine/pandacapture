@@ -258,6 +258,12 @@ Your browser opens on gauges, numbers and status lights, decoded from the panda'
 listens silently. Press `Q` in the console to stop.
 
 - **Gauges** come first, as the view to drive with.
+- **Per-cylinder knock and the transmission,** whenever they're on the bus (another tester asking, or
+  `pandacapture obd --knock --transmission`):
+  - **Knock retard (E019):** a bar per cylinder (blue under 1.5°, amber to 3°, red beyond), with each
+    cylinder's peak since the dashboard started or a replay began. Click it to reset the peaks.
+  - **Transmission (01A0):** converter slip, turbine speed and ATF temperature gauges, with the output
+    shaft speed, gear and ratio.
 - **US or metric:** the units button switches every page between US (mph, °F, psi, lb, ft, hp, lb-ft)
   and metric (km/h, °C, bar, kg, m, kW, Nm). Only what's shown changes: logs, run files and the map
   keep the car's own units, and a gauge's arc and zones stay where they were.
@@ -545,9 +551,41 @@ It saves three files in the captures folder:
 - **`obd-….csv`:** the decoded answers, with engine speed as `RPM`, ready to use as a Find signals
   reference.
 
+### Per-cylinder knock and the transmission
+
+Through a panda, it can also read two of the modules' own data identifiers, several times a second:
+
+```bash
+pandacapture obd --knock --transmission
+```
+
+- **`--knock`:** the engine's knock retard per cylinder (`22 E019` to `0x7E0`), with two raw
+  per-cylinder figures that are probably a knock count and the knock sensors' noise.
+- **`--transmission`:** the transmission's turbine and output shaft speeds, converter slip, ATF
+  temperature and gear (`22 01A0` to `0x7E1`).
+
+Alone they skip the PID scan; with `--pids` or `--poll` they share the bus with the PIDs.
+- **One request at a time:** the reads go first when they're due, with the PIDs in between.
+- **Rate:** five reads a second each, rising to ten while the answers come back quickly. They slow down
+  when a module says it's busy or doesn't answer.
+- **Stopping:** a read stops after any other refusal, or after 8 unanswered requests in a row.
+- **Another tester:** while one asks a module, that module isn't asked until 2 s after its last request.
+  Its answers are read instead, and the PIDs wait too.
+- **Bus trouble:** a bus going bus-off, or counting over 50 errors in a second, ends all sending at
+  once.
+
+Every recording also saves these answers whenever they're heard, whoever asked, beside the capture:
+- **`obd-knock-….csv`:** knock retard per cylinder in degrees, the two raw figures, and the spark
+  advance at the time.
+- **`obd-tcu-….csv`:** engine and turbine speed, slip, output shaft speed, ATF temperature, ratio and
+  gear.
+
+The capture's end notes name each file and how many readings it holds.
+
 Rules it keeps to:
-- **Read-only:** the only request it sends is mode 01 "current data" (`02 01 PID`) to `0x7DF`, one
-  at a time. Nothing that clears codes, changes settings or writes.
+- **Read-only:** the only requests it sends are mode 01 "current data" (`02 01 PID`) to `0x7DF`,
+  and with `--knock` or `--transmission` the two reads above, with the flow control for their long
+  answers, one at a time. Nothing that clears codes, changes settings or writes.
 - **The scan runs key-on or at idle only:** it's blocked above 900 rpm, and no option changes
   that. Engine speed is checked before and after every scan request, and any reading above 900 rpm
   between checks stops it. With no RPM signal in the map (or through an ELM327), it reads RPM over
@@ -726,6 +764,7 @@ pandacapture obd [options]      scan the standard OBD PIDs (key-on or idle), the
   --bus N                       panda bus to use (repeatable; default: every bus with traffic)
   --map NAME|FILE, --rpm-key K  where the engine's broadcast RPM comes from (default: the built-in map's rpm)
   --scan-only                   don't poll
+  --knock, --transmission       also read per-cylinder knock (22 E019) and the transmission (22 01A0); alone, only those
   --seconds N                   stop polling after N seconds
 
 pandacapture codes [options]    read stored, pending and permanent codes, freeze frame, vehicle info

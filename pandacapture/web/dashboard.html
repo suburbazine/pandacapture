@@ -166,6 +166,21 @@
   .chip .dot { background: var(--lc); box-shadow: 0 0 8px var(--lc); }
   .chip .val { color: var(--lc); font-variant-numeric: tabular-nums; }
   .band { margin-top: 12px; }
+
+  /* Per-cylinder knock retard (E019): a bar per cylinder with its peak since the session (or replay) began */
+  .knocktile { cursor: pointer; }
+  .knocktile .kpeak { font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .kbars { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; margin-top: 8px; }
+  .kcyl { display: grid; justify-items: center; gap: 3px; font-size: 12px; }
+  .kcol { position: relative; width: 100%; max-width: 46px; height: 78px; border-radius: 6px; background: var(--panel-2); overflow: hidden; }
+  .kfill { position: absolute; left: 0; right: 0; bottom: 0; border-radius: 6px 6px 0 0; background: var(--ok); }
+  .kfill.warn { background: var(--warn); }
+  .kfill.alert { background: var(--alert); }
+  .kmark { position: absolute; left: 0; right: 0; height: 2px; background: var(--text); opacity: .7; }
+  .kcyl .kv { font-weight: 600; }
+  .kcyl .kn { color: var(--faint); font-size: 11px; }
+  .knocktile.stale .kfill, .knocktile.stale .kmark { opacity: .35; }
+  .knocktile.stale .kv { color: var(--faint); }
   .grid { display: grid; gap: var(--gap); grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
   .grid.gauges { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
   .grid.lights { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }
@@ -351,6 +366,13 @@
   <div class="attention" id="attention"><span class="calm">No warnings</span></div>
   <section class="band pinned" id="pinned" hidden><div class="band-title">Pinned</div>
     <div class="grid gauges"></div><div class="grid"></div></section>
+  <section class="band" id="knock" hidden>
+    <div class="tile knocktile" id="knockTile" role="button" tabindex="0"
+         title="Knock retard per cylinder, from the ECU's answers to 22 E019 (whoever asks). The mark is each cylinder's peak since this session or replay began; click to reset the peaks.">
+      <div class="head"><div class="label">Knock retard (E019)</div><div class="kpeak" id="knockPeak"></div></div>
+      <div class="kbars" id="knockBars"></div>
+    </div>
+  </section>
   <section class="band" id="gauges" hidden><div class="grid gauges"></div></section>
   <div class="groups-bar" id="groupsBar" hidden><span>Details</span>
     <button class="link" id="openAll" type="button">Expand all</button>
@@ -767,9 +789,42 @@
     if (name) replay({ capture: name }).then(() => flash(`Replaying ${name}`));
   });
 
+  // ---- per-cylinder knock (E019): shown once the first answer is heard ----
+  const KNOCK_CYLS = 6;
+  $("knockBars").innerHTML = Array.from({ length: KNOCK_CYLS }, (_, i) =>
+    `<div class="kcyl"><div class="kcol"><div class="kfill"></div><div class="kmark"></div></div>` +
+    `<span class="kv">–</span><span>${i + 1}</span><span class="kn" title="Raw knock-sensor noise (unverified)"></span></div>`).join("");
+  const kcyls = [...$("knockBars").querySelectorAll(".kcyl")];
+  let knockShown = "";
+  function renderKnock(k) {
+    $("knock").hidden = !k;
+    if (!k) { knockShown = ""; return; }
+    const key = JSON.stringify([k.retard, k.peak, k.noise, k.stale]);
+    if (key === knockShown) return;
+    knockShown = key;
+    $("knockTile").classList.toggle("stale", !!k.stale);
+    const top = Math.max(6, ...k.peak, ...k.retard);
+    k.retard.forEach((deg, i) => {
+      const c = kcyls[i];
+      const fill = c.querySelector(".kfill");
+      fill.style.height = `${Math.min(100, deg / top * 100)}%`;
+      fill.className = "kfill" + (deg > 3 ? " alert" : deg >= 1.5 ? " warn" : "");
+      c.querySelector(".kmark").style.bottom = `calc(${Math.min(100, k.peak[i] / top * 100)}% - 1px)`;
+      c.querySelector(".kmark").hidden = !(k.peak[i] > 0);
+      c.querySelector(".kv").textContent = `${fmt(deg, 2)}°`;
+      c.querySelector(".kn").textContent = `noise ${k.noise[i]}`;
+    });
+    const worst = Math.max(...k.peak);
+    $("knockPeak").textContent = worst > 0 ? `peak ${fmt(worst, 2)}° on ${k.peak.indexOf(worst) + 1}` : "no retard";
+  }
+  const resetKnock = () => post("/knock/reset").then(() => { renderKnock(null); flash("Knock peaks reset"); }).catch((e) => flash(e.message));
+  $("knockTile").addEventListener("click", resetKnock);
+  $("knockTile").addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); resetKnock(); } });
+
   // ---- incoming data ----
   function status(st) {
     applyReplay(st.replay, st.epoch);
+    renderKnock(st.knock);
     const ok = st.status === "live" || !!st.replay;
     $("status").className = "pill " + (ok ? "live" : st.status === "disconnected" ? "down" : "");
     $("statusText").textContent = st.replay ? "replay" : st.status === "idle" ? "no panda" : ok ? "live" : st.status;

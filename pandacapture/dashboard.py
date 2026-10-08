@@ -39,8 +39,9 @@ from .capture import RollingLog, candump_line, default_out_dir, restart_note
 from .firmware import bundled_dir
 from .logs import replay_file
 from .replay import FAILED, STOPPED, ReplayPlayer
-from .signals import Evaluator, MapError, builtin_maps, load_map
+from .signals import Evaluator, MapError, Signal, builtin_maps, load_map
 from .sources import SourceError
+from .udsread import CYLINDERS, Watch as UdsWatch
 from .speedrange import SpeedTags
 
 STALE_SECONDS = 1.5
@@ -50,6 +51,28 @@ SAMPLE_BUFFER = 50000   # samples kept for high-resolution clients that fall beh
 RECONNECT_EVERY = 2.0
 QUEUE_BATCHES = 200000  # USB reads waiting to be decoded (minutes of a busy bus) before any are dropped
 MAX_UPLOAD = 20 * 1024 * 1024
+
+
+# The transmission's 01A0 answers (whoever asked, see udsread.py), shown as signals of their own once heard
+TCU_GROUP = "Transmission (01A0)"
+_TCU_NOTE = "From the transmission's answers to 22 01A0 (another tester's or pandacapture obd --transmission's)."
+TCU_SIGNALS = [
+    Signal("tcu_slip", "Converter slip", short="Slip", unit="rpm", display="gauge", group=TCU_GROUP, min=-500,
+           max=2000, warn_above=600, alert_above=1200, decimals=0, source="observed",
+           note="Engine speed less turbine speed: near 0 with the converter locked, hundreds of rpm on a launch. " + _TCU_NOTE),
+    Signal("tcu_turbine", "Turbine speed", short="Turbine", unit="rpm", display="gauge", group=TCU_GROUP, min=0,
+           max=7000, decimals=0, source="observed", note=_TCU_NOTE),
+    Signal("tcu_atf", "ATF temperature", short="ATF", unit="°C", display="gauge", group=TCU_GROUP, min=0, max=150,
+           warn_above=110, alert_above=125, decimals=0, source="observed", note=_TCU_NOTE),
+    Signal("tcu_output", "Output shaft speed", short="Output shaft", unit="rpm", group=TCU_GROUP, decimals=0,
+           source="observed", note="Turbine speed over this is the gear's ratio. " + _TCU_NOTE),
+    Signal("tcu_gear", "Gear (01A0)", group=TCU_GROUP, decimals=0, source="observed", note=_TCU_NOTE),
+    Signal("tcu_ratio", "Ratio (coarse)", short="Ratio", group=TCU_GROUP, decimals=2, source="observed",
+           note="The transmission's own ratio figure, in quarters. " + _TCU_NOTE),
+]
+_TCU_VALUES = {"tcu_slip": "slip_rpm", "tcu_turbine": "turbine_rpm", "tcu_atf": "atf_c", "tcu_output": "output_rpm",
+               "tcu_gear": "gear", "tcu_ratio": "ratio"}
+KNOCK_STALE = 3.0   # s without an E019 answer before the knock tile dims
 
 
 def web_dir() -> Path:
@@ -80,6 +103,11 @@ class LiveState:
         self.clock = time.monotonic
         self.replay = None     # the replay's state for the page, while one runs
         self.epoch = 0         # counts the times shown values were forgotten (a replay's start, rewind, end)
+        # Per-cylinder knock and the transmission's data, from E019 and 01A0 answers whoever asked (udsread.py)
+        self.uds = UdsWatch()
+        self.knock = None      # (latest reading, the clock's time)
+        self.knock_peak = [0.0] * CYLINDERS   # since the dashboard started, a replay began or went back, or a reset
+        self.tcu_heard = False   # 01A0 answers have come: its signals show (pages rebuild once to add them)
         self._load(address_map)
 
     def _load(self, address_map):
@@ -100,7 +128,42 @@ class LiveState:
     def _forget(self):
         self.values, self.current = {}, {}
         self.evaluator = Evaluator(self.map)
+        self.uds = UdsWatch()
+        self.knock, self.knock_peak = None, [0.0] * CYLINDERS
         self.epoch += 1
+
+    def reset_knock(self):
+        """Forgets the knock reading and its peaks (the tile's tap)."""
+        with self.lock:
+            self.knock, self.knock_peak = None, [0.0] * CYLINDERS
+
+    def signals(self):
+        """The map's signals, and the transmission's once its answers have come."""
+        return self.map.signals + (TCU_SIGNALS if self.tcu_heard else [])
+
+    def map_json(self) -> dict:
+        with self.lock:
+            d = self.map.to_json()
+            if self.tcu_heard:
+                d["signals"] += [s.to_json() for s in TCU_SIGNALS]
+            return d
+
+    def _uds(self, f, now, unix) -> bool:
+        """An E019 or 01A0 answer this frame completes: the knock reading, or the transmission's values."""
+        got = self.uds.frame(f)
+        if got is None:
+            return False
+        kind, r = got
+        if kind == "knock":
+            self.knock = (r, now)
+            self.knock_peak = [max(a, b) for a, b in zip(self.knock_peak, r["retard"])]
+            return False
+        if not self.tcu_heard:
+            self.tcu_heard = True
+            self.map_version += 1      # pages rebuild with the Transmission section
+        for key, field_ in _TCU_VALUES.items():
+            self._sample(key, r[field_], now, unix)
+        return True
 
     def begin_replay(self, clock, name):
         with self.lock:
@@ -136,6 +199,8 @@ class LiveState:
                     continue
                 self.frames += 1
                 self.bus_frames[f.bus] = self.bus_frames.get(f.bus, 0) + 1
+                if 0x7E8 <= f.addr <= 0x7E9 and self._uds(f, now, unix):
+                    added = True
                 changed = set()
                 for s in self.map.by_id.get(f.addr, ()):
                     if s.bus is not None and s.bus != f.bus:
@@ -185,14 +250,23 @@ class LiveState:
                     "recording": self.recording,
                     "recording_for": round(now - self.recording_since) if self.recording_since else None,
                     "markers": self.markers, "map_version": self.map_version, "map_name": self.map.name,
-                    "epoch": self.epoch, "replay": dict(self.replay, epoch=self.epoch) if self.replay else None}
+                    "epoch": self.epoch, "replay": dict(self.replay, epoch=self.epoch) if self.replay else None,
+                    "knock": self._knock_json()}
+
+    def _knock_json(self):
+        if self.knock is None:
+            return None
+        r, t = self.knock
+        age = self.clock() - t
+        return {"retard": [round(x, 2) for x in r["retard"]], "peak": [round(x, 2) for x in self.knock_peak],
+                "noise": r["noise"], "memory": r["memory"], "age": round(age, 2), "stale": age > KNOCK_STALE}
 
     def snapshot(self) -> dict:
         status = self.info()
         now = self.clock()
         with self.lock:
             out = {}
-            for s in self.map.signals:
+            for s in self.signals():
                 if s.key not in self.values:
                     continue
                 v, t = self.values[s.key]
@@ -228,7 +302,7 @@ class Recorder:
         for f in frames:
             if not (f.returned or f.rejected):
                 self.log.write(candump_line(t, f) + "\n")
-                self.log.track(f)
+                self.log.track(f, t)
         if time.monotonic() - self._last_flush > 1.0:
             self.log.flush()
             self._last_flush = time.monotonic()
@@ -239,7 +313,7 @@ class Recorder:
         self.log.flush()
 
     def close(self):
-        self.log.speed_note()
+        self.log.end_notes()
         self.log.close()
 
 
@@ -614,8 +688,7 @@ def make_handler(dash):
                 self.end_headers()
                 self.wfile.write(data)
             elif path == "/map":
-                with state.lock:
-                    self._json(state.map.to_json())
+                self._json(state.map_json())
             elif path == "/state":
                 self._json(state.snapshot())
             elif path == "/maps":
@@ -661,7 +734,10 @@ def make_handler(dash):
             url = urlsplit(self.path)
             try:
                 body = self._body()
-                if url.path == "/replay":
+                if url.path == "/knock/reset":
+                    state.reset_knock()
+                    self._json({"ok": True})
+                elif url.path == "/replay":
                     # A capture from the captures folder, or play / pause / seek / stop the one running
                     req = json.loads(body or b"{}")
                     if req.get("capture"):

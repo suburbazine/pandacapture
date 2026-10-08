@@ -356,6 +356,10 @@ class Scanner:
                     r.values[(bus, module)][pid] = data
         return r
 
+    def ask(self, f) -> dict:
+        """One request for a kept PID, its answers by module (a poll's step, for a caller that interleaves)."""
+        return self._ask(f.bus, f.pid, f.modules)
+
     def poll(self, keep, should_stop, on_answer):
         """Asks for each kept PID in turn until should_stop(); on_answer(bus, module, pid, data) for
         every answer. Unlike the scan, it runs at any engine speed: these PIDs are known to answer."""

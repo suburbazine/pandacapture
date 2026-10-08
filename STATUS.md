@@ -1,6 +1,10 @@
 # Status
 
 ## Verified
+- Per-cylinder knock (E019) and transmission data (01A0), 2026-10-08: the same decodes as PandaCapture Android;
+  on its 2026-10-04 15:34 capture, 437 knock and 440 transmission answers (worst retard 6.75 deg). The reads
+  (pandacapture obd --knock --transmission) are tested against a simulated ECU and transmission only: not yet
+  on the car.
 - Replay timeline (2026-10-07): the same player as PandaCapture Android (index every 0.25 s, the 2 s lead-up on
   a seek, the replay's clock holding paused values). Checked in the browser on the 2026-10-05 boost capture:
   play, pause (values stay bright past the stale limit), scrub, rewind and stop, in both update modes.
