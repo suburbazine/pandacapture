@@ -1,6 +1,9 @@
 # Status
 
 ## Verified
+- Replay timeline (2026-10-07): the same player as PandaCapture Android (index every 0.25 s, the 2 s lead-up on
+  a seek, the replay's clock holding paused values). Checked in the browser on the 2026-10-05 boost capture:
+  play, pause (values stay bright past the stale limit), scrub, rewind and stop, in both update modes.
 - Units, US or metric (2026-10-06): the same conversions and `{kind:value:decimals}` tokens as
   PandaCapture Android, so run text from either shows in the units set. On the 2026-10-05 0-60 capture
   the new shift coaching gives what Android's does: 1-2 at 5,722 rpm no advice (0.69 g against 0.71 g),

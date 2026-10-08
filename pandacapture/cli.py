@@ -546,7 +546,7 @@ def open_app_window(url) -> bool:
 def cmd_dashboard(argv) -> int:
     from .dashboard import Dashboard
     from .signals import MapError, builtin_maps, load_map
-    from .sources import ReplaySource
+    from .sources import IdleSource
 
     ap = argparse.ArgumentParser(prog="pandacapture dashboard", description=(
         "Live gauges, numbers and status lights in your browser, decoded from the panda's traffic (listen-only) "
@@ -600,7 +600,7 @@ def cmd_dashboard(argv) -> int:
             return SimulatedSource()
     elif args.replay:
         def open_source():
-            return ReplaySource(args.replay, speed=args.speed, loop=not args.no_loop)
+            return IdleSource()     # the replay is the dashboard's, with its timeline
     elif args.adapter:
         open_source, error = adapter_opener(args.adapter, rates)
         if error:
@@ -618,15 +618,22 @@ def cmd_dashboard(argv) -> int:
 
     try:
         dash = Dashboard(open_source, address_map, host="0.0.0.0" if args.lan else "127.0.0.1", port=args.port,
-                         record=args.record, record_dir=args.out, split_mb=args.split_mb)
+                         record=args.record, record_dir=args.out, split_mb=args.split_mb,
+                         replay={"path": args.replay, "speed": args.speed, "loop": not args.no_loop} if args.replay else None)
     except OSError as e:
         print(f"ERROR: can't serve on port {args.port}: {e}. Try --port with another number.")
         return 1
-    dash.start()
+    try:
+        dash.start()
+    except (ValueError, OSError) as e:
+        print(f"ERROR: can't replay {args.replay}: {e}")
+        dash.stop()
+        return 2
     print(f"Dashboard for {address_map.name}: {dash.url}")
     if args.lan:
         print("  Serving to this network too: open http://<this computer's address>:%d/ on the other device." % args.port)
-    print("  The adapter acknowledges frames; nothing is sent. Press Q or Ctrl+C to stop." if args.adapter
+    print(f"  Replaying {args.replay}: play, pause, scrub and stop on the page. Press Q or Ctrl+C to quit." if args.replay
+          else "  The adapter acknowledges frames; nothing is sent. Press Q or Ctrl+C to stop." if args.adapter
           else "  Listen-only. Press Q or Ctrl+C to stop.")
     if not args.no_browser:
         url = dash.url + (f"?mode={args.mode}" if args.mode else "")

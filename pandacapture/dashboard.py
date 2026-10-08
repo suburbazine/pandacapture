@@ -15,7 +15,12 @@ Controls (POST, JSON bodies):
   /marker  {}                      numbered marker into the recording
   /map     {"name": "..."}         switch address map
   /match?capture=NAME&ref=obd|csv  find signals in a capture (CSV reference in the body)
-and GET /maps, /captures, /match (the running or last match: progress and results).
+  /replay  {"capture": "..."}      replay a capture from the captures folder, with a timeline
+           {"action": "play"|"pause"|"stop"} or {"action": "seek", "s": seconds}
+and GET /maps, /captures, /match (the running or last match: progress and results), /replay.
+
+While a replay runs the page shows it alone (live frames aren't shown, though a recording keeps them), and
+values are judged fresh by the replay's clock, which stops while it's paused.
 """
 
 import collections
@@ -32,6 +37,8 @@ from urllib.parse import parse_qs, urlsplit
 
 from .capture import RollingLog, candump_line, default_out_dir, restart_note
 from .firmware import bundled_dir
+from .logs import replay_file
+from .replay import FAILED, STOPPED, ReplayPlayer
 from .signals import Evaluator, MapError, builtin_maps, load_map
 from .sources import SourceError
 from .speedrange import SpeedTags
@@ -69,6 +76,10 @@ class LiveState:
         self.fps = 0.0
         self.seq = 0
         self.samples = collections.deque(maxlen=SAMPLE_BUFFER)  # (sequence, key, value, unix time)
+        # The clock values are judged fresh by: the wall clock, or a replay's (it stops while paused)
+        self.clock = time.monotonic
+        self.replay = None     # the replay's state for the page, while one runs
+        self.epoch = 0         # counts the times shown values were forgotten (a replay's start, rewind, end)
         self._load(address_map)
 
     def _load(self, address_map):
@@ -84,9 +95,41 @@ class LiveState:
             self.map_version += 1
             self.samples.clear()
 
-    def feed(self, frames, now, unix=None):
+    # ---- replays: the replay's frames alone, by its clock ----
+
+    def _forget(self):
+        self.values, self.current = {}, {}
+        self.evaluator = Evaluator(self.map)
+        self.epoch += 1
+
+    def begin_replay(self, clock, name):
+        with self.lock:
+            self.clock = clock
+            self.replay = {"name": name, "phase": "indexing", "position": 0.0, "duration": 0.0, "speed": 1.0,
+                           "message": None}
+            self._forget()
+
+    def set_replay(self, st):
+        with self.lock:
+            if self.replay is not None:
+                self.replay = dict(self.replay, **st)
+
+    def rewind(self):
+        """The replay went back: what's shown belongs to later."""
+        with self.lock:
+            self._forget()
+
+    def end_replay(self):
+        with self.lock:
+            self.clock = time.monotonic
+            self.replay = None
+            self._forget()
+
+    def feed(self, frames, now, unix=None, replay=False):
         unix = time.time() if unix is None else unix
         with self.lock:
+            if self.replay is not None and not replay:
+                return             # live frames while a replay runs: the page shows the replay alone
             added = False
             for f in frames:
                 if f.returned or f.rejected:
@@ -141,11 +184,12 @@ class LiveState:
                     "status": self.status, "error": self.error, "source": self.source, "dropped": self.dropped,
                     "recording": self.recording,
                     "recording_for": round(now - self.recording_since) if self.recording_since else None,
-                    "markers": self.markers, "map_version": self.map_version, "map_name": self.map.name}
+                    "markers": self.markers, "map_version": self.map_version, "map_name": self.map.name,
+                    "epoch": self.epoch, "replay": dict(self.replay, epoch=self.epoch) if self.replay else None}
 
     def snapshot(self) -> dict:
         status = self.info()
-        now = time.monotonic()
+        now = self.clock()
         with self.lock:
             out = {}
             for s in self.map.signals:
@@ -292,7 +336,7 @@ class Reader(threading.Thread):
                     self.log(f"[{_clock()}] Reconnected after {time.monotonic() - lost_at:.1f} s. {why}")
                     lost_at = None
                 self._note(f"source: {source.description}" + (f". {why}" if why else ""))
-                self._status("live", "")
+                self._status("idle" if getattr(source, "idle", False) else "live", "")
             try:
                 frames = source.read()
             except SourceError as e:
@@ -343,6 +387,67 @@ class Reader(threading.Thread):
 
 def _clock():
     return dt.datetime.now().strftime("%H:%M:%S")
+
+
+class ReplayJob:
+    """The dashboard's replay: one at a time, with a timeline (replay.py). Its frames go to the LiveState by the
+    replay's clock; stopping it goes back to the live source."""
+
+    def __init__(self, state: LiveState):
+        self.state = state
+        self.player = None
+
+    def start(self, path, name=None, speed=1.0, loop=False) -> dict:
+        file = replay_file(path)              # a zip's log is copied out, so it can be seeked in
+        temp = file if file != Path(path) else None
+        self.stop()
+        name = name or Path(path).name
+
+        def on_frames(frames):
+            if self.player is player:
+                self.state.feed(frames, player.clock(), time.time(), replay=True)
+
+        def on_rewind():
+            if self.player is player:
+                self.state.rewind()
+
+        def on_state(st):
+            if st["phase"] in (STOPPED, FAILED) and temp is not None:
+                temp.unlink(missing_ok=True)
+            if self.player is not player:
+                return
+            if st["phase"] == STOPPED:
+                self.player = None
+                self.state.end_replay()
+            else:
+                self.state.set_replay(st)
+        player = ReplayPlayer(file, on_frames, on_rewind, on_state, speed=speed, loop=loop)
+        self.player = player
+        self.state.begin_replay(player.clock, name)
+        player.start()
+        return self.state.info()["replay"]
+
+    def control(self, action, s=None) -> dict:
+        player = self.player
+        if player is None:
+            raise ValueError("No replay is running.")
+        if action == "play":
+            player.play()
+        elif action == "pause":
+            player.pause()
+        elif action == "seek":
+            player.seek(float(s))
+        elif action == "stop":
+            self.stop()
+        else:
+            raise ValueError(f"unknown replay action {action!r}")
+        return self.state.info()["replay"]
+
+    def stop(self):
+        player, self.player = self.player, None
+        if player is not None:
+            player.stop()
+            self.state.end_replay()
 
 
 class MatchJob:
@@ -526,6 +631,8 @@ def make_handler(dash):
                             "captures": list_captures(reader.record_dir, state.recording, dash.speed_tags, current)})
             elif path == "/match":
                 self._json(dash.match.snapshot())
+            elif path == "/replay":
+                self._json({"replay": state.info()["replay"]})
             elif path == "/events":
                 high = parse_qs(url.query).get("mode") == ["high"]
                 self.send_response(200)
@@ -554,7 +661,14 @@ def make_handler(dash):
             url = urlsplit(self.path)
             try:
                 body = self._body()
-                if url.path == "/record":
+                if url.path == "/replay":
+                    # A capture from the captures folder, or play / pause / seek / stop the one running
+                    req = json.loads(body or b"{}")
+                    if req.get("capture"):
+                        self._json({"replay": dash.replay.start(self._capture(req["capture"]))})
+                    else:
+                        self._json({"replay": dash.replay.control(req.get("action", ""), req.get("s", 0))})
+                elif url.path == "/record":
                     on = json.loads(body or b"{}").get("on", True)
                     if on:
                         self._json({"recording": str(reader.start_recording())})
@@ -667,8 +781,10 @@ class Dashboard:
     """The reader thread plus the web server, started and stopped together."""
 
     def __init__(self, open_source, address_map, host="127.0.0.1", port=8765, record=False, record_dir=None,
-                 split_mb=100.0, log=print):
+                 split_mb=100.0, log=print, replay=None):
         self.state = LiveState(address_map)
+        self.replay = ReplayJob(self.state)
+        self._replay_at_start = replay   # {"path", "speed", "loop"}: --replay
         self.stopping = threading.Event()
         self.reader = Reader(open_source, self.state, record_dir=record_dir, record=record, split_mb=split_mb,
                              log=log)
@@ -683,11 +799,14 @@ class Dashboard:
         self.url = f"http://{'127.0.0.1' if host in ('127.0.0.1', '0.0.0.0') else host}:{self.server.server_address[1]}/"
 
     def start(self):
+        if self._replay_at_start:
+            self.replay.start(**self._replay_at_start)   # a bad zip says why before anything starts
         self.reader.start()
         threading.Thread(target=self.server.serve_forever, daemon=True, name="pandacapture-web").start()
 
     def stop(self):
         self.stopping.set()
+        self.replay.stop()
         self.reader.stop()
         self.server.shutdown()
         self.server.server_close()

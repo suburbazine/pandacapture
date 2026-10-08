@@ -1,6 +1,9 @@
 """Reading candump logs. Pure Python (no USB), so capture bundles can carry it with the analysis tools."""
 
+import os
 import re
+import shutil
+import tempfile
 import zipfile
 from pathlib import Path
 
@@ -17,19 +20,36 @@ def zip_logs(path) -> list:
                 and n.lower().endswith(LOG_EXTENSIONS)]
 
 
+def zip_log(path) -> str:
+    """The log a zip is played or read from: its only log, else a bundle's capture.log; with several and no
+    capture.log it says which, to unzip and pick one."""
+    logs = zip_logs(path)
+    named = [n for n in logs if n.rsplit("/", 1)[-1] == "capture.log"]
+    pick = logs[0] if len(logs) == 1 else named[0] if len(named) == 1 else None
+    if pick is None:
+        raise ValueError(f"{Path(path).name} holds " + (f"several logs ({', '.join(logs)}): unzip it and pick one"
+                                                         if logs else "no candump log"))
+    return pick
+
+
 def log_text(path) -> str:
-    """A log's text. A zip (a shared capture with its OBD CSVs, or an exported bundle) gives its only log, else a
-    bundle's capture.log; with several and no capture.log it says which, to unzip and pick one."""
+    """A log's text, or a zip's (a shared capture with its OBD CSVs, or an exported bundle; see zip_log)."""
     if zipfile.is_zipfile(path):
-        logs = zip_logs(path)
-        named = [n for n in logs if n.rsplit("/", 1)[-1] == "capture.log"]
-        pick = logs[0] if len(logs) == 1 else named[0] if len(named) == 1 else None
-        if pick is None:
-            raise ValueError(f"{Path(path).name} holds " + (f"several logs ({', '.join(logs)}): unzip it and pick one"
-                                                             if logs else "no candump log"))
         with zipfile.ZipFile(path) as z:
-            return z.read(pick).decode("utf-8", errors="replace")
+            return z.read(zip_log(path)).decode("utf-8", errors="replace")
     return Path(path).read_text(encoding="utf-8", errors="replace")
+
+
+def replay_file(path) -> Path:
+    """A log the replay can seek in: the file itself, or a zip's log (see zip_log) copied to a temporary file,
+    which the caller deletes when done with it."""
+    if not zipfile.is_zipfile(path):
+        return Path(path)
+    pick = zip_log(path)
+    fd, tmp = tempfile.mkstemp(prefix="pandacapture-replay-", suffix=".log")
+    with os.fdopen(fd, "wb") as out, zipfile.ZipFile(path) as z, z.open(pick) as src:
+        shutil.copyfileobj(src, out, 1 << 20)
+    return Path(tmp)
 
 
 def read_replay(path, bus_map=None, ids=None) -> list:

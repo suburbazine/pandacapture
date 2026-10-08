@@ -337,14 +337,20 @@ as the page does.
 | `--simulate` | fake traffic |
 | `--lan` | serves the page to other devices on your network, such as a phone on the dash. Only this computer can open it otherwise |
 
-To look at a recorded drive at your desk:
+To look at a recorded drive at your desk, pick a capture under **Replay** on the gauges, or start with one:
 
 ```bash
 pandacapture dashboard --map kia-stinger-33t-pcan --replay captures/capture-20261003-080200.log
 ```
 
-`--replay` also opens a zip holding a capture: a shared capture with its OBD CSVs, or an exported
-bundle (its `capture.log`).
+While a replay runs, a timeline stays at the top of the gauges: play or pause, where it is and how long
+the log is, a slider to scrub to any moment, and stop to go back to the panda.
+- **Scrubbing** lands showing that moment: the 2 s before it are read at once, even while paused.
+- **Pausing holds the gauges** bright: they go by the replay's clock, which stops while paused.
+- **Only the replay shows** while it runs: the panda's frames are ignored on screen, though a recording
+  started before keeps them.
+- `--replay` and the picker also open a zip holding a capture: a shared capture with its OBD CSVs, or an
+  exported bundle (its `capture.log`).
 
 ### Runs: timed and coached
 
@@ -702,7 +708,7 @@ pandacapture [options]          record
 
 pandacapture dashboard [options]      live gauges in the browser
   --map NAME|FILE               address map (see: pandacapture maps)
-  --replay LOG [--speed X] [--no-loop]   play back a capture instead of the panda
+  --replay LOG [--speed X] [--no-loop]   play back a capture instead of the panda, with a timeline
   --simulate                    fake traffic
   --adapter NAME                an RP1210 or J2534 adapter instead of the panda
   --record [--out DIR]          start recording straight away

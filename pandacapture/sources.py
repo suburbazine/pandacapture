@@ -189,37 +189,21 @@ class PandaSource:
             self.panda = None
 
 
-class ReplaySource:
-    """Frames from a candump log, at their recorded pace (times speed), looping at the end."""
+class IdleSource:
+    """No traffic: a dashboard opened to replay a log (--replay) with no panda to read. The replay itself is the
+    dashboard's (replay.py), with its timeline."""
 
-    def __init__(self, path, speed=1.0, loop=True):
-        from .transmit import read_replay
-        try:
-            self.frames = read_replay(path)   # a candump log, or a zip holding one
-        except (OSError, ValueError) as e:
-            raise SourceError(f"Can't replay {Path(path).name}: {e}") from None
-        if not self.frames:
-            raise SourceError(f"Nothing to replay in {Path(path).name}: it has no candump frames")
-        self.speed = speed
-        self.loop = loop
-        self.index = 0
-        self.start = time.monotonic()
-        self.unpacker = p.CanUnpacker()
-        self.description = f"replay of {Path(path).name} ({len(self.frames)} frames, x{speed:g})"
-        self.header = [f"replaying {path}"]
-        self.serial = "replay"
+    idle = True
+
+    def __init__(self):
+        self.description = "no panda (replay only)"
+        self.header = []
+        self.serial = "none"
         self.rates = {}
 
     def read(self) -> list:
-        now = (time.monotonic() - self.start) * self.speed
-        out = []
-        while self.index < len(self.frames) and self.frames[self.index][0] <= now:
-            out.append(self.frames[self.index][1])
-            self.index += 1
-        if self.index >= len(self.frames) and self.loop:
-            self.index = 0
-            self.start = time.monotonic()
-        return out
+        time.sleep(0.05)
+        return []
 
     def health(self):
         return None

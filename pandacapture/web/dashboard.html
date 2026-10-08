@@ -136,6 +136,18 @@
 
   /* ---- page body: attention strip, gauges, then the groups ---- */
   main { padding: 4px var(--pad) 32px; max-width: 1400px; margin: 0 auto; }
+
+  /* The replay's timeline: at the top of the (sticky) header for as long as a replay runs, so it's always in
+     view and the page moves down under it */
+  .replay { margin: 6px var(--pad) 2px; padding: 4px 6px 4px 12px; border: 1px solid var(--line); border-radius: 14px;
+            background: var(--panel-2); box-shadow: 0 2px 10px rgb(0 0 0 / .18); }
+  .replay[hidden] { display: none; }
+  .replay .rtitle { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .replay .rrow { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .replay .rtime { font: 12px ui-monospace, SFMono-Regular, Consolas, monospace; color: var(--text); min-width: 44px; text-align: center; }
+  .replay input[type=range] { flex: 1; min-width: 60px; accent-color: var(--accent); height: var(--ctl); }
+  .replay .ctl.icon { flex: none; }
+  .replay.failed .rtitle { color: var(--alert); }
   /* Always one row of fixed height, so chips coming and going never move the gauges below; more chips
      than fit scroll sideways rather than wrapping onto a second row */
   .attention {
@@ -280,6 +292,18 @@
 </head>
 <body>
 <header>
+  <div class="replay" id="replayBar" hidden role="group" aria-label="Replay timeline">
+    <div class="rtitle" id="replayTitle">Replay</div>
+    <div class="rrow">
+      <button class="ctl icon" id="replayPlay" type="button" title="Pause" aria-label="Pause">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path id="replayIcon" d="M8 5v14M16 5v14"/></svg></button>
+      <span class="rtime" id="replayPos">0:00</span>
+      <input type="range" id="replaySlider" min="0" max="1" step="0.01" value="0" aria-label="Position in the replay">
+      <span class="rtime" id="replayDur">0:00</span>
+      <button class="ctl icon" id="replayStop" type="button" title="Stop the replay" aria-label="Stop the replay">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="1.5"/></svg></button>
+    </div>
+  </div>
   <div class="bar">
     <div class="title"><strong id="mapName">PandaCapture</strong><span id="vehicle">Loading address map…</span></div>
     <div class="strip">
@@ -301,6 +325,8 @@
     </div>
     <div class="ctl-group tools">
       <label class="ctl select" title="Address map"><span>Map</span><select id="mapSel" aria-label="Address map"></select></label>
+      <label class="ctl select" title="Replay a capture from the captures folder, with a timeline to play, pause, scrub and stop">
+        <span>Replay</span><select id="replaySel" aria-label="Replay a capture"><option value="">a capture…</option></select></label>
       <a class="ctl" id="capturesLink" href="/captures.html" target="pandacapture-captures"
          title="Captures: find signals, bundles, Claude (opens its own window; the gauges keep running)">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v4H4zM4 11h16v8H4zM8 15h8"/></svg><span class="txt">Captures</span></a>
@@ -659,11 +685,94 @@
     for (const i of shown) if (i.value !== undefined) attention.vals[i.key].textContent = i.value;
   }
 
+  // ---- the replay ----
+  // While a replay runs the page judges freshness and draws traces by the replay's clock (the server's
+  // CLOCK_BASE plus the position), which stops while it's paused, so paused values stay bright. Rates per
+  // second stay on the wall clock.
+  const REPLAY_BASE_MS = 10000 * 1000;
+  let rp = null, rpAt = 0, epoch = null, dragging = null;
+  const replayPos = () => {
+    if (!rp) return 0;
+    const pos = rp.phase === "playing" ? rp.position + (performance.now() - rpAt) / 1000 * (rp.speed || 1) : rp.position;
+    return Math.max(0, Math.min(rp.duration || 0, pos));
+  };
+  const clockNow = () => rp && rp.phase !== "failed" ? REPLAY_BASE_MS + replayPos() * 1000 : performance.now();
+  // Seconds as m:ss (h:mm:ss past an hour)
+  const hms = (secs) => {
+    const t = Math.max(0, Math.floor(secs));
+    const two = (n) => String(n).padStart(2, "0");
+    return t >= 3600 ? `${Math.floor(t / 3600)}:${two(Math.floor(t / 60) % 60)}:${two(t % 60)}` : `${Math.floor(t / 60)}:${two(t % 60)}`;
+  };
+  // A replay starting, going back or ending: what's shown belongs to another time, so forget it
+  function forget() {
+    for (const l of Object.values(live)) { l.v = null; l.seen = 0; l.hist = []; }
+    for (const t of [...Object.values(tiles), ...Object.values(pins)]) { t.shown = false; t.el.classList.add("nodata"); }
+    dirty = true;
+  }
+  function applyReplay(r, ep) {
+    if (ep !== undefined) { if (epoch !== null && ep !== epoch) forget(); epoch = ep; }
+    rp = r || null;
+    rpAt = performance.now();
+    renderReplay();
+  }
+  let replayShown = "";
+  function renderReplay() {
+    const bar = $("replayBar");
+    bar.hidden = !rp;
+    if (!rp) { replayShown = ""; return; }
+    const indexing = rp.phase === "indexing", failed = rp.phase === "failed", playing = rp.phase === "playing";
+    const pos = dragging ?? replayPos();
+    const key = [rp.name, rp.phase, rp.message, rp.duration, Math.floor(pos * 4), dragging !== null].join("|");
+    if (key === replayShown) return;
+    replayShown = key;
+    bar.classList.toggle("failed", failed);
+    $("replayTitle").textContent = `Replay · ${rp.name}` + (indexing ? " · reading the log…" : rp.phase === "ended" ? " · end" :
+      failed ? ` · ${rp.message || "failed"}` : "");
+    $("replayPos").textContent = hms(pos);
+    $("replayDur").textContent = hms(rp.duration || 0);
+    const sl = $("replaySlider");
+    sl.max = String(rp.duration || 1);
+    if (dragging === null) sl.value = String(pos);
+    sl.disabled = indexing || failed || !(rp.duration > 0);
+    const b = $("replayPlay");
+    b.disabled = indexing || failed;
+    b.title = playing ? "Pause" : "Play";
+    b.setAttribute("aria-label", b.title);
+    $("replayIcon").setAttribute("d", playing ? "M8 5v14M16 5v14" : "M7 4.5l12 7.5-12 7.5z");
+  }
+  const replay = (body) => post("/replay", body).then((j) => {
+    applyReplay(j.replay, j.replay?.epoch);
+    if (rp && body.action === "seek") { rp.position = body.s; rpAt = performance.now(); renderReplay(); }
+  }).catch((e) => flash(e.message));
+  $("replayPlay").onclick = () => replay({ action: rp?.phase === "playing" ? "pause" : "play" });
+  $("replayStop").onclick = () => replay({ action: "stop" });
+  // While the thumb is held it shows where you're dragging to; the seek happens on release
+  $("replaySlider").addEventListener("input", (e) => { dragging = Number(e.target.value); renderReplay(); });
+  $("replaySlider").addEventListener("change", (e) => {
+    const s = Number(e.target.value);
+    dragging = null;
+    replay({ action: "seek", s });
+  });
+  // The picker lists the captures folder each time it's opened
+  const fillReplays = () => fetch("/captures").then((r) => r.json()).then((c) => {
+    const sel = $("replaySel");
+    sel.innerHTML = `<option value="">a capture…</option>` + c.captures.filter((x) => !x.recording)
+      .map((x) => `<option value="${esc(x.name)}">${esc(x.name)}</option>`).join("");
+  }).catch(() => {});
+  $("replaySel").addEventListener("pointerdown", fillReplays);
+  $("replaySel").addEventListener("focus", fillReplays);
+  $("replaySel").addEventListener("change", (e) => {
+    const name = e.target.value;
+    e.target.value = "";
+    if (name) replay({ capture: name }).then(() => flash(`Replaying ${name}`));
+  });
+
   // ---- incoming data ----
   function status(st) {
-    const ok = st.status === "live";
+    applyReplay(st.replay, st.epoch);
+    const ok = st.status === "live" || !!st.replay;
     $("status").className = "pill " + (ok ? "live" : st.status === "disconnected" ? "down" : "");
-    $("statusText").textContent = ok ? "live" : st.status;
+    $("statusText").textContent = st.replay ? "replay" : st.status === "idle" ? "no panda" : ok ? "live" : st.status;
     $("status").title = st.source || "";
     $("rate").textContent = `${(st.fps || 0).toLocaleString()} frames/s`;
     recording = !!st.recording;
@@ -681,7 +790,7 @@
 
   function snapshot(st) {
     status(st);
-    const now = performance.now();
+    const now = clockNow();
     for (const [k, d] of Object.entries(st.values || {})) {
       const l = live[k];
       if (!l) continue;
@@ -703,7 +812,7 @@
 
   let sampleCount = 0;
   function samples(batch) {
-    const now = performance.now();
+    const now = clockNow();
     const touched = new Set();
     for (const [k, v] of batch.s) {
       const l = live[k];
@@ -757,15 +866,17 @@
   // and the traces every frame.
   let rateMark = performance.now();
   function frame() {
-    const now = performance.now();
-    if (now - rateMark >= 1000) {
-      const secs = (now - rateMark) / 1000;
+    const wall = performance.now();
+    if (wall - rateMark >= 1000) {
+      const secs = (wall - rateMark) / 1000;
       for (const l of Object.values(live)) { l.hz = l.count / secs; l.count = 0; }
       $("sps").textContent = `${Math.round(sampleCount / secs).toLocaleString()} samples/s`;
       sampleCount = 0;
-      rateMark = now;
+      rateMark = wall;
       dirty = true;
     }
+    if (rp) renderReplay();
+    const now = clockNow();
     const noticed = [], counts = {};
     for (const s of signals) {
       const l = live[s.key];
