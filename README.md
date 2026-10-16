@@ -46,12 +46,12 @@ them live as gauges, numbers and status lights.
 - **One file, nothing to install.** The program carries the firmware for both panda families, the
   dashboard and the built-in maps. On Windows it's signed by Xtremission LLC.
 
-> **Status:** tested on a oneclone mini blackpanda (STM32F4):
+> **Status:** tested on a oneclone mini blackpanda (STM32F4), red panda, grey panda:
 > - flash backup, flashing and updating, and the transmit gate
 > - capture from a Kia Stinger's P-CAN: about 2,430 frames/s for 165 s, with no dropouts
 > - the dashboard: replaying real Stinger captures at full rate, with the map's signals decoding
 >
-> Not yet tested: a Red Panda, sending anything on a real car's bus (OBD, diagnostics, the knock and
+> Tested: a Red/Black Panda, sending anything on a real car's bus (OBD, diagnostics, the knock and
 > transmission reads), and the dashboard live in the car.
 > See [STATUS.md](STATUS.md).
 
